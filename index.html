@@ -6,12 +6,14 @@
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#2E6B4F">
 <title>ระบบค่าหมาย · ศาลจังหวัดลพบุรี</title>
+<link rel="icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&amp;display=swap">
-<link rel="stylesheet" href="app.css?v=0.3.0">
-<script src="config.js?v=0.3.0"></script>
+<link rel="stylesheet" href="app.css?v=0.4.0">
+<script src="config.js?v=0.4.0"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script defer src="app.js?v=0.3.0"></script>
+<script defer src="app.js?v=0.4.0"></script>
 </head>
 <body>
 <noscript><p style="padding:24px">กรุณาเปิดใช้ JavaScript เพื่อใช้งานระบบค่าหมาย</p></noscript>
@@ -20,9 +22,7 @@
 <main id="login" class="login">
   <div class="login-card clay">
     <div class="brand">
-      <div class="seal" id="seal" role="img" aria-label="ตราศาลจังหวัดลพบุรี">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7A5413" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M6 21h12"/><path d="M4 7h16"/><path d="M7 7l-3 7a3 3 0 0 0 6 0z"/><path d="M17 7l-3 7a3 3 0 0 0 6 0z"/></svg>
-      </div>
+      <div class="seal seal-img" id="seal"><img src="court-seal.webp" alt="ตราศาลจังหวัดลพบุรี"></div>
       <div><h1>ระบบค่าหมาย</h1><p>ศาลจังหวัดลพบุรี</p></div>
     </div>
 
@@ -69,8 +69,7 @@
 
     <div class="foot">
       <p>ไม่พบชื่อ หรือยังไม่ได้ตั้ง PIN ติดต่อผู้ดูแลระบบ</p>
-      <p>ใช้ PIN เดียวกับปริ้นฮับ</p>
-      <p style="margin-top:6px;color:var(--faint)" id="ver">รุ่น 0.3.0</p>
+      <p style="margin-top:6px;color:var(--faint)" id="ver">รุ่น 0.4.0</p>
     </div>
   </div>
 </main>
@@ -79,9 +78,7 @@
 <div id="app" class="app hidden">
   <aside class="side clay">
     <div class="brand">
-      <div class="seal" role="img" aria-label="ตราศาลจังหวัดลพบุรี">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7A5413" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M6 21h12"/><path d="M4 7h16"/><path d="M7 7l-3 7a3 3 0 0 0 6 0z"/><path d="M17 7l-3 7a3 3 0 0 0 6 0z"/></svg>
-      </div>
+      <div class="seal seal-img"><img src="court-seal.webp" alt="ตราศาลจังหวัดลพบุรี"></div>
       <div><h1 style="font-size:18px">ระบบค่าหมาย</h1><p>ศาลจังหวัดลพบุรี</p></div>
     </div>
     <nav class="nav" id="nav" aria-label="เมนูหลัก"></nav>

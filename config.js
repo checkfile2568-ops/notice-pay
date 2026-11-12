@@ -3,6 +3,6 @@
    SEAL_URL = ไฟล์ตราศาล (เว้นว่าง = ใช้รูปตาชั่งแทน) เช่น 'court-seal.webp' วางไว้โฟลเดอร์เดียวกัน */
 window.NP_CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbxqQaTG6NO5XA_dv6LRhG5ljRuyXk_nF-8wP_cuoV_ic7GrNJ2MbEfxkKVD6X64YSyU/exec',
-  SEAL_URL: '',
-  VERSION: '0.3.0'
+  SEAL_URL: 'court-seal.webp',
+  VERSION: '0.4.0'
 };
