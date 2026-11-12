@@ -168,3 +168,6 @@ tr:last-child td{border-bottom:none}
 .kind .howto b{font-weight:700;font-size:13px;display:inline;margin:0}
 tr.sum td{background:var(--card2)}
 .btn-s{padding:6px 12px;font-size:13px}
+.flag-ok{color:var(--amber);font-weight:700}
+.chk-acts{display:flex;flex-wrap:wrap;gap:6px}
+td .btn-s{white-space:nowrap}

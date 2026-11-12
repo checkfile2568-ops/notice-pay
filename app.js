@@ -32,6 +32,13 @@
   /** หมายเหตุของหมาย — ข้อที่ต้องเห็นชัดแสดงอักษรสีแดง */
   const flagHtml = (f) => String(f || '').split(';').filter(Boolean)
     .map((x) => '<span class="tiny ' + (FLAGS_RED.indexOf(x) >= 0 ? 'flag-r' : 'flag-a') + '">' + esc(x) + '</span>').join('<br>');
+  /** สัญลักษณ์ "เคยยอดไม่ตรง" — ยอดที่ยืนยันแล้วไม่แสดงสีแดง แต่คงเครื่องหมายไว้ถาวร */
+  const okMark = (ok) => '<span class="tiny flag-ok" title="ยืนยันโดย ' + esc(ok.by) + ' ' + esc(thDate(ok.at, true)) + '">◆ เคยยอดไม่ตรง · ยืนยันแล้ว</span>';
+  const flagsOf = (r) => {
+    const ok = r.amount_ok && r.amount_ok.current;
+    const rest = String(r.flags || '').split(';').filter((x) => x && !(ok && x === FLAGS_RED[0])).join(';');
+    return [ok ? okMark(r.amount_ok) : '', flagHtml(rest)].filter(Boolean).join('<br>');
+  };
 
   /* ---------------------------------------------------------------- API */
   async function api(action, body) {
@@ -144,11 +151,13 @@
 
   /* ================================================================ โครงแอป */
   const has = (...r) => S.user && S.user.roles.some((x) => r.indexOf(x) >= 0);
+  /** บัญชีดูสถิติรวม (ไอดีเดียวของเจ้าหน้าที่ส่งหมาย) — ดูยอดทุกคน ไม่เห็นชื่อผู้รับ/รายละเอียดคดี */
+  const viewerOnly = () => S.user && S.user.roles.length > 0 && S.user.roles.every((x) => x === 'VIEWER');
   function pages() {
     return [
       { id: 'home', th: 'หน้าแรก', show: true },
-      { id: 'search', th: 'ค้นหาหมาย', show: true },
-      { id: 'import', th: 'นำเข้าข้อมูล', show: has('NOTICE', 'ADMIN') },
+      { id: 'search', th: 'ค้นหาหมาย', show: !viewerOnly() },
+      { id: 'import', th: 'นำเข้าข้อมูล', show: has('NOTICE', 'FINANCE', 'ADMIN') },
       { id: 'history', th: 'ประวัติการนำเข้า', show: has('NOTICE', 'FINANCE', 'ADMIN') },
       { id: 'calc', th: 'คำนวณค่าหมาย', show: true },
       { id: 'officers', th: 'ผู้ส่งหมายและอัตรา', show: true },
@@ -229,7 +238,7 @@
             (r.result ? '<br><span class="tiny muted">' + esc(r.result) + '</span>' : '') + '</td>' +
             '<td class="n">' + (r.calc_amount !== '' && r.calc_amount !== undefined ? '<b>' + num(r.calc_amount) + '</b>' : '—') + (r.budget_unit_id ? '<br><span class="tiny muted">รวมใน ' + esc(r.budget_unit_id) + '</span>' : '') +
             (r.calc_rule && r.pay_type === 'BUDGET' ? '<br><span class="tiny muted">' + esc(r.calc_rule) + '</span>' : '') + '</td><td><span class="pill ' + (r.status === 'DELIVERED' ? 'g' : 'a') + '">' + esc(STATUS_TH[r.status] || r.status) + '</span>' +
-            (r.flags ? '<br>' + flagHtml(r.flags) : '') + '</td></tr>').join('') + '</tbody></table></div>' : '<p class="muted" style="margin:0">ไม่พบหมาย</p>') + '</div>';
+            (r.flags ? '<br>' + flagsOf(r) : '') + '</td></tr>').join('') + '</tbody></table></div>' : '<p class="muted" style="margin:0">ไม่พบหมาย</p>') + '</div>';
       } catch (er) { out.innerHTML = '<div class="clay panel"><p class="note r" style="margin:0">' + esc(er.message) + '</p></div>'; }
     });
   };
@@ -406,6 +415,8 @@
       (p.totals ? '<p class="note g" style="margin:12px 0 0">หมายมีเงิน ' + num(p.totals.PAID.n) + ' รายการ รวม ' + num(p.totals.PAID.amount) + ' บาท · หมายฟรี (เงินงบประมาณ) ' + num(p.totals.BUDGET.n) + ' รายการ' +
         (p.period ? ' · ช่วงรายงาน ' + esc(thDate(p.period.from)) + ' – ' + esc(thDate(p.period.to)) : '') + '<br><span class="tiny">เทียบกับยอด "รวม … บาท" ท้ายบัญชีจ่ายหมาย (ไม่รวมแถวกำกวม/ผิดพลาด)</span></p>' : '') +
       (p.counts.OUTSIDE ? '<p class="note" style="margin:12px 0 0">' + num(p.counts.OUTSIDE) + ' แถว จ่ายหมายก่อนวันเริ่มประมวลผล ' + esc(thDate(p.start_date)) + ' (ปีงบ ' + esc(p.start_fy) + ') — ไม่นำเข้า ไม่เข้ารอตรวจ</p>' : '') +
+      (p.crosses_start ? '<p class="note r" style="margin:12px 0 0"><b>ช่วงวันที่ของไฟล์คร่อมวันเริ่มปีงบ ' + esc(thDate(p.start_date)) + '</b> — ไฟล์ 50 ไม่มีวันที่จ่ายรายแถว ระบบรับไว้ทุกแถว ' +
+        num(p.date_unsure) + ' รายการใหม่ทำเครื่องหมาย "รอยืนยันวันที่จ่าย" ยังไม่คิดเงิน<br><span class="tiny">เมื่อนำเข้าไฟล์ 42 (มีวันที่จ่ายรายแถว) ระบบจะคัดให้เอง: หมายฟรีที่จ่ายก่อนวันเริ่มปีงบ = ไม่นับ · หมายมีเงิน = นับตามวันที่ส่ง</span></p>' : '') +
       (p.price_ne_rate ? '<p class="note r" style="margin:12px 0 0"><b>' + num(p.price_ne_rate) + ' รายการ เงินไม่เท่ากับอัตราของตำบล</b> — นำเข้าได้ ระบบใช้ "ราคา" ตามไฟล์ และแสดงหมายเหตุสีแดงไว้ทุกจุด</p>' : '') +
       '<div class="tbl-wrap" style="margin-top:12px"><table><thead><tr><th>แถว</th><th>เลขคดี</th><th>ชนิดหมาย</th><th>ผู้รับ</th><th style="min-width:130px">ผู้ส่ง</th><th style="min-width:110px">ประเภท / เงิน</th><th>พื้นที่</th><th>จ่าย / ส่ง</th><th>หมายเหตุ</th></tr></thead><tbody>' +
       (list.length ? list.map((r) => '<tr><td>' + r.row_no + '</td><td>' + esc(r.case_no) + (r.case_ref ? '<br><span class="tiny muted">' + esc(r.case_ref) + '</span>' : '') + '</td><td class="small">' + esc(r.notice_kind) + '</td><td class="small">' + esc(r.recipient) + '</td><td class="small">' + esc(r.officer) + '</td><td>' + esc(PAY_TH[r.pay_type] || '') +
@@ -444,7 +455,7 @@
     m.innerHTML = top('ประวัติการนำเข้า') + '<div class="clay panel"><div class="tbl-wrap"><table><thead><tr><th>เวลา</th><th>ชนิด</th><th>ไฟล์</th><th class="n">แถว</th><th class="n">ใหม่</th><th class="n">เดิม</th><th class="n">เปลี่ยน</th><th class="n">รออนุมัติ</th><th class="n">กำกวม</th><th class="n">ผิดพลาด</th><th>ผู้นำเข้า</th><th></th></tr></thead><tbody>' +
       (d.batches.length ? d.batches.map((b) => '<tr><td>' + esc(thDate(b.imported_at, true)) + '</td><td>' + esc(b.kind_th) + '</td><td>' + esc(b.file_name) + '</td><td class="n">' + num(b.rows_total) + '</td><td class="n">' + num(b.n_new) +
         '</td><td class="n">' + num(b.n_same) + '</td><td class="n">' + num(b.n_changed) + '</td><td class="n">' + num(b.n_held) + '</td><td class="n">' + num(b.n_ambiguous) + '</td><td class="n">' + num(b.n_error) + '</td><td>' + esc(b.imported_by) + '</td><td>' +
-        (has('NOTICE', 'ADMIN') && (b.n_ambiguous + b.n_error) ? '<button type="button" class="btn btn-sm rv" data-b="' + esc(b.batch_id) + '">ดูแถวรอตรวจ</button>' : '') + '</td></tr>').join('')
+        (has('NOTICE', 'FINANCE', 'ADMIN') && (b.n_ambiguous + b.n_error) ? '<button type="button" class="btn btn-sm rv" data-b="' + esc(b.batch_id) + '">ดูแถวรอตรวจ</button>' : '') + '</td></tr>').join('')
         : '<tr><td colspan="12" class="muted">ยังไม่มีการนำเข้า</td></tr>') + '</tbody></table></div></div><div id="rvBox"></div>';
     m.querySelectorAll('.rv').forEach((b) => b.addEventListener('click', async () => {
       const box = $('#rvBox'); box.innerHTML = '<div class="clay panel"><span class="spin"></span></div>';
@@ -474,8 +485,9 @@
         kpi('หมายฟรี (คิดแล้ว)', baht(t.free_amount) + ' ฿', num(t.free_units) + ' หน่วยเบิก', 'mint') +
         kpi('หมายฟรี รอวันที่ส่ง', num(t.free_wait), 'ยังไม่คิดเงิน') +
         kpi('รวมค่าหมาย', baht(t.paid_amount + t.free_amount) + ' ฿', 'ก่อนแบ่ง 60:40') +
-        kpi('ข้อควรตรวจ', num(d.warnings.length + t.review), t.red ? 'เงินไม่เท่าอัตราตำบล ' + num(t.red) : '') +
+        kpi('ข้อควรตรวจ', num(d.warnings.length + t.review + t.red + (t.date_wait || 0)), [t.red ? 'ยอดไม่ตรงอัตรา รอยืนยัน ' + num(t.red) : '', t.date_wait ? 'วันที่จ่ายไม่แน่ชัด ' + num(t.date_wait) : ''].filter(Boolean).join(' · ')) +
       '</div>' +
+      (t.date_wait ? '<p class="note r" style="margin:0 6px 12px"><b>' + num(t.date_wait) + ' หมาย อาจจ่ายเดือน ก.ย. · รอยืนยันวันที่จ่าย</b> (ไฟล์ 50 คร่อม 1 ต.ค. และยังไม่พบในไฟล์ 42) — ยังไม่รวมในยอดด้านบน · ดูและยืนยันได้ที่ "รายการรอยืนยัน" ด้านล่าง</p>' : '') +
       '<div class="clay panel"><h3>' + (d.scope_officer ? 'ค่าหมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่งหมาย</th>' +
       '<th class="n">มีเงิน (ฉบับ)</th><th class="n">มีเงิน (บาท)</th><th class="n">ฟรี (ฉบับ)</th><th class="n">หน่วยเบิก</th><th class="n">ฟรี (บาท)</th><th class="n">ฟรี รอวันส่ง</th><th class="n">รวม (บาท)</th><th></th></tr></thead><tbody>' +
       d.officers.map((o) => '<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) +
@@ -489,7 +501,8 @@
       (d.warnings.length ? '<div class="clay panel"><h3>ข้อควรตรวจ</h3><div class="tbl-wrap"><table><thead><tr><th>วันที่ส่ง</th><th>ผู้ส่ง</th><th>รายละเอียด</th><th class="n">ฉบับ</th><th>หน่วยเบิก</th></tr></thead><tbody>' +
         d.warnings.map((w) => '<tr><td>' + esc(thDate(w.date)) + '</td><td class="small">' + esc(w.officer) + '</td><td class="small">' + esc(w.text) + (w.place_key && !/^X:/.test(w.place_key) ? ' · ' + esc(w.place_key) : '') +
           '</td><td class="n">' + num(w.count) + '</td><td class="tiny">' + esc(w.unit_id) + '</td></tr>').join('') + '</tbody></table></div></div>' : '') +
-      '<div id="unitBox"></div>';
+      '<div id="chkBox"></div><div id="unitBox"></div>';
+    drawChecks();
     if ($('#runCalc')) $('#runCalc').addEventListener('click', async (e) => {
       const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังคำนวณ…';
       try { const r = await api('calc_run'); toast('คำนวณเสร็จ · หน่วยเบิก ' + num(r.units) + ' หน่วย'); go('calc'); }
@@ -498,6 +511,59 @@
     m.querySelectorAll('.ou').forEach((b) => b.addEventListener('click', () => drawUnits(b.dataset.o, b.dataset.n)));
     if (d.scope_officer && d.officers[0] && d.officers[0].free_n) drawUnits(d.officers[0].officer_id, d.officers[0].name);
   };
+  /* รายการรอยืนยัน: ยอดเงินไม่ตรงอัตราตำบล · วันที่จ่ายไม่แน่ชัด (ไฟล์ 50 คร่อม 1 ต.ค.) */
+  async function drawChecks() {
+    const box = $('#chkBox'); if (!box || viewerOnly()) return;
+    let d;
+    try { d = await api('notice_checks', { fy: S.fy }); } catch (e) { box.innerHTML = ''; return; }
+    if (!d.amount.length && !d.date.length) { box.innerHTML = ''; return; }
+    const caseCell = (x) => '<b>' + esc(x.case_no) + '</b>' + (x.case_ref ? '<br><span class="tiny muted">' + esc(x.case_ref) + '</span>' : '') + '<br><span class="tiny muted">' + esc(x.kind) + '</span>';
+    const redN = d.amount.filter((x) => x.red).length, waitN = d.date.filter((x) => !x.date_ok).length;
+    let h = '';
+    if (d.amount.length) h += '<div class="clay panel"><h3>ยอดเงินไม่ตรงอัตราตำบล · รอยืนยัน ' + num(redN) + ' · ยืนยันแล้ว ' + num(d.amount.length - redN) + '</h3>' +
+      '<p class="tiny muted" style="margin:0 0 10px">ตรวจกับต้นฉบับแล้วกด "ยืนยันยอดตรง" — ระบบใช้ราคาตามไฟล์ และคงสัญลักษณ์ <span class="flag-ok">◆ เคยยอดไม่ตรง</span> ไว้ทุกจุด พร้อมผู้ยืนยันและเวลา · ถ้าราคาเปลี่ยนภายหลัง ต้องยืนยันใหม่</p>' +
+      '<div class="tbl-wrap"><table><thead><tr><th>เลขคดี</th><th>ผู้ส่ง</th><th>ผู้รับ / พื้นที่</th><th class="n">ราคา</th><th class="n">อัตราตำบล</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+      d.amount.map((x) => '<tr><td>' + caseCell(x) + '</td><td class="small">' + esc(x.officer) + '</td><td class="small">' + esc(x.recipient) + '<br><span class="tiny muted">' + esc(x.place) + '</span></td>' +
+        '<td class="n"><b>' + num(x.amount) + '</b></td><td class="n">' + num(x.rate) + '</td>' +
+        '<td class="small">' + (x.red ? '<span class="flag-r">เงินไม่เท่ากับอัตราของตำบล · ยังไม่ยืนยัน</span>'
+          : okMark(x.ok) + '<br><span class="tiny muted">' + esc(x.ok.by) + ' · ' + esc(thDate(x.ok.at, true)) + '</span>') + '</td>' +
+        '<td>' + (x.red && d.can_amount ? '<button type="button" class="btn btn-s ca" data-u="' + esc(x.notice_uid) + '">ยืนยันยอดตรง</button>' : '') +
+        (!x.red && d.can_undo ? '<button type="button" class="btn btn-s cu" data-u="' + esc(x.notice_uid) + '">ยกเลิกยืนยัน</button>' : '') + '</td></tr>').join('') +
+      '</tbody></table></div></div>';
+    if (d.date.length) h += '<div class="clay panel"><h3>วันที่จ่ายไม่แน่ชัด · รอยืนยัน ' + num(waitN) + ' · ยืนยันแล้ว ' + num(d.date.length - waitN) + '</h3>' +
+      '<p class="tiny muted" style="margin:0 0 10px">หมายจากไฟล์ 50 ที่ช่วงวันที่คร่อม 1 ต.ค. และไม่พบวันที่จ่ายในไฟล์ 42 — ส่วนใหญ่คือหมายที่จ่ายเดือน ก.ย. · จ่ายเดือน ก.ย.: หมายฟรีไม่นับ หมายมีเงินนับเมื่อไฟล์ 42 ให้วันที่ส่งตั้งแต่ 1 ต.ค. · ถ้าภายหลังไฟล์ 42 มีวันที่จ่ายของหมายนั้น ระบบใช้วันที่จริงแทนการยืนยัน</p>' +
+      (waitN && d.can_date ? '<p style="margin:0 0 10px"><button type="button" class="btn btn-s" id="cbAll">ยืนยันทั้งหมดที่เหลือ: จ่ายเดือน ก.ย. (' + num(waitN) + ')</button></p>' : '') +
+      '<div class="tbl-wrap"><table><thead><tr><th>เลขคดี</th><th>ประเภท</th><th>ผู้ส่ง</th><th>ผู้รับ / พื้นที่</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+      d.date.map((x) => '<tr><td>' + caseCell(x) + '</td><td><span class="pill ' + (x.pay_type === 'BUDGET' ? 'b' : 'g') + '">' + esc(PAY_TH[x.pay_type] || '') + '</span>' +
+        (x.pay_type === 'PAID' && x.amount !== '' ? '<br><span class="tiny">' + num(x.amount) + ' บาท</span>' : '') + '</td><td class="small">' + esc(x.officer) + '</td>' +
+        '<td class="small">' + esc(x.recipient) + '<br><span class="tiny muted">' + esc(x.place) + '</span></td>' +
+        '<td class="small">' + (!x.date_ok ? '<span class="flag-r">อาจจ่ายเดือน ก.ย. · รอยืนยัน</span>'
+          : '<span class="pill ' + (x.date_ok === 'BEFORE' ? 'a' : 'g') + '">' + (x.date_ok === 'BEFORE' ? 'จ่ายเดือน ก.ย. · ไม่นับ' : 'จ่ายตั้งแต่ 1 ต.ค.') + '</span><br><span class="tiny muted">' + esc(x.date_ok_by) + ' · ' + esc(thDate(x.date_ok_at, true)) + '</span>') + '</td>' +
+        '<td><div class="chk-acts">' + (!x.date_ok && d.can_date ? '<button type="button" class="btn btn-s cb" data-u="' + esc(x.notice_uid) + '" data-v="BEFORE">จ่ายเดือน ก.ย.</button><button type="button" class="btn btn-s cb" data-u="' + esc(x.notice_uid) + '" data-v="AFTER">จ่ายตั้งแต่ 1 ต.ค.</button>' : '') +
+        (x.date_ok && d.can_undo ? '<button type="button" class="btn btn-s cb" data-u="' + esc(x.notice_uid) + '" data-v="CLEAR">ล้าง</button>' : '') + '</div></td></tr>').join('') +
+      '</tbody></table></div></div>';
+    box.innerHTML = h;
+    const busy = (b) => { b.disabled = true; b.innerHTML = '<span class="spin"></span>'; };
+    box.querySelectorAll('.ca').forEach((b) => b.addEventListener('click', async () => {
+      busy(b);
+      try { await api('notice_confirm_amount', { notice_uids: [b.dataset.u] }); toast('ยืนยันยอดตรงแล้ว'); go('calc'); } catch (e) { toast(e.message); drawChecks(); }
+    }));
+    box.querySelectorAll('.cu').forEach((b) => b.addEventListener('click', async () => {
+      const reason = window.prompt('เหตุผลที่ยกเลิกการยืนยันยอด'); if (!reason) return;
+      busy(b);
+      try { await api('notice_confirm_amount', { notice_uids: [b.dataset.u], undo: true, reason: reason }); toast('ยกเลิกการยืนยันแล้ว'); go('calc'); } catch (e) { toast(e.message); drawChecks(); }
+    }));
+    box.querySelectorAll('.cb').forEach((b) => b.addEventListener('click', async () => {
+      busy(b);
+      try { await api('notice_confirm_date', { notice_uids: [b.dataset.u], value: b.dataset.v }); toast('บันทึกแล้ว · คำนวณใหม่แล้ว'); go('calc'); } catch (e) { toast(e.message); drawChecks(); }
+    }));
+    if ($('#cbAll')) $('#cbAll').addEventListener('click', async (e) => {
+      const ids = d.date.filter((x) => !x.date_ok).map((x) => x.notice_uid);
+      if (!window.confirm('ยืนยันว่า ' + ids.length + ' หมายนี้จ่ายเดือน ก.ย. (ก่อนเริ่มปีงบ)?\nหมายฟรีจะไม่นับ · หมายมีเงินนับเมื่อมีวันที่ส่งตั้งแต่ 1 ต.ค.')) return;
+      busy(e.currentTarget);
+      try { const r = await api('notice_confirm_date', { notice_uids: ids, value: 'BEFORE' }); toast('ยืนยันแล้ว ' + num(r.updated) + ' หมาย'); go('calc'); } catch (er) { toast(er.message); drawChecks(); }
+    });
+  }
   async function drawUnits(oid, name) {
     const box = $('#unitBox');
     box.innerHTML = '<div class="clay panel"><span class="spin"></span> กำลังโหลดหน่วยเบิก…</div>';
