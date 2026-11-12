@@ -21,6 +21,41 @@
     return (+m[3]) + ' ' + TH_M[+m[2] - 1] + ' ' + (+m[1] + 543) + (withTime && m[4] ? ' ' + m[4] + ':' + m[5] + ' น.' : '');
   }
   let toastT;
+  /* ---------- ลูกเล่น: ตัวเลขวิ่ง · สีสถานะ · กราฟเส้นเล็ก ---------- */
+  const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** <b data-count> นับจาก 0 ถึงค่าจริงใน 0.6 วินาที (ค่าเงินมีทศนิยมได้ 2 ตำแหน่ง) */
+  function countUp(root) {
+    if (reduceMotion()) return;
+    (root || document).querySelectorAll('[data-count]').forEach((el) => {
+      const end = Number(el.dataset.count) || 0, money = el.dataset.money === '1', suffix = el.dataset.suffix || '';
+      if (!end) return;
+      const fmt = (v) => (money ? v.toLocaleString('th-TH', { maximumFractionDigits: v === end ? 2 : 0 }) : Math.round(v).toLocaleString('th-TH')) + suffix;
+      const t0 = performance.now();
+      const step = (t) => { const p = Math.min(1, (t - t0) / 600); el.textContent = fmt(p < 1 ? end * (1 - Math.pow(1 - p, 3)) : end); if (p < 1) requestAnimationFrame(step); };
+      el.textContent = fmt(0); requestAnimationFrame(step);
+    });
+  }
+  /** สีสถานะเดียวกันทุกหน้าจอ: เทา รอผล · ส้ม พร้อมเบิก/รอวันจ่าย · ฟ้า เบิกแล้วรอจ่าย · เขียว จ่ายแล้ว · แดง รอตรวจ */
+  const ST = [
+    { k: 'wait', th: 'รอผล / ยังไม่ส่ง', c: '#B4B2A9' }, { k: 'ready', th: 'พร้อมเบิก / รอวันจ่าย', c: '#EF9F27' },
+    { k: 'claim', th: 'เบิกแล้ว รอจ่าย', c: '#378ADD' }, { k: 'paid', th: 'จ่ายแล้ว', c: '#639922' }, { k: 'check', th: 'รอตรวจ', c: '#E24B4A' }];
+  const ST_BY = Object.fromEntries(ST.map((x) => [x.k, x]));
+  function stBar(m) {
+    const tot = ST.reduce((a, x) => a + (Number(m[x.k]) || 0), 0);
+    if (!tot) return '<div class="stbar" title="ยังไม่มียอดเงิน"></div>';
+    const tip = ST.filter((x) => m[x.k]).map((x) => x.th + ' ' + Number(m[x.k]).toLocaleString('th-TH') + ' ฿').join('\n');
+    return '<div class="stbar" title="' + esc(tip) + '" role="img" aria-label="' + esc(tip.replace(/\n/g, ' · ')) + '">' +
+      ST.filter((x) => m[x.k]).map((x) => '<i style="width:' + (m[x.k] / tot * 100).toFixed(2) + '%;background:' + x.c + '"></i>').join('') + '</div>';
+  }
+  function spark(w) {
+    const a = (w || []).map(Number), mx = Math.max(1, ...a);
+    const pts = a.map((v, i) => (2 + i * 13) + ',' + (19 - v / mx * 16).toFixed(1)).join(' ');
+    return '<svg class="spark" viewBox="0 0 70 22" width="70" height="22" role="img" aria-label="ส่งหมายรายสัปดาห์ (6 สัปดาห์): ' + a.join(', ') + '">' +
+      '<polyline fill="none" stroke="#2E6B4F" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" points="' + pts + '"/>' +
+      (a.length ? '<circle cx="' + (2 + (a.length - 1) * 13) + '" cy="' + (19 - a[a.length - 1] / mx * 16).toFixed(1) + '" r="2.4" fill="#2E6B4F"/>' : '') + '</svg>';
+  }
+  const stChip = (k) => { const x = ST_BY[k] || ST_BY.wait; return '<span class="stchip" style="--c:' + x.c + '">' + esc(x.th) + '</span>'; };
+
   function toast(msg) {
     const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
     clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hidden'), 3800);
@@ -176,11 +211,12 @@
     drawNav(); go('home');
   }
   function drawNav() {
-    $('#nav').innerHTML = pages().filter((p) => p.sec || p.show).map((p) => p.sec
+    $('#nav').innerHTML = (viewerOnly() ? '' : '<button type="button" class="qs-btn" id="qsOpen">ค้นเลขคดีดูสถานะ <kbd>Ctrl K</kbd></button>') + pages().filter((p) => p.sec || p.show).map((p) => p.sec
       ? '<div class="nav-sec">' + esc(p.sec) + '</div>'
       : '<button type="button" data-p="' + p.id + '"' + (p.soon ? ' disabled' : '') + (S.page === p.id ? ' class="on" aria-current="page"' : '') + '>' +
         esc(p.th) + (p.soon ? '<span class="soon">' + esc(p.soon) + '</span>' : '') + '</button>').join('');
     $('#nav').querySelectorAll('button[data-p]:not([disabled])').forEach((b) => b.addEventListener('click', () => go(b.dataset.p)));
+    if ($('#qsOpen')) $('#qsOpen').addEventListener('click', openQuickSearch);
   }
   const RENDER = {};
   function go(p) {
@@ -192,6 +228,80 @@
   }
   function top(title, extra) { return '<div class="top clay"><h2>' + esc(title) + '</h2>' + (extra || '') + '</div>'; }
 
+  /* ---------- ใบสรุปพิมพ์ได้ (รูปแบบเอกสารราชการ · ตราศาล · TH Sarabun) ---------- */
+  async function printSummary(d) {
+    if (!document.getElementById('fSarabun')) {
+      const l = document.createElement('link'); l.id = 'fSarabun'; l.rel = 'stylesheet';
+      l.href = 'https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap'; document.head.appendChild(l);
+    }
+    const t = d.totals, now = new Date();
+    const dLong = now.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+    const tm = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    const b = (v) => baht(v);
+    const rows = d.officers.map((o, i) => '<tr><td class="c">' + (i + 1) + '</td><td>' + esc(o.name) + '</td><td class="n">' + num(o.paid_n) + '</td><td class="n">' + b(o.paid_amount) +
+      '</td><td class="n">' + num(o.free_n) + '</td><td class="n">' + num(o.free_units) + '</td><td class="n">' + b(o.free_amount) + '</td><td class="n">' + num(o.free_wait) +
+      '</td><td class="n"><b>' + b(o.paid_amount + o.free_amount) + '</b></td></tr>').join('');
+    let pa = document.getElementById('printArea');
+    if (!pa) { pa = document.createElement('div'); pa.id = 'printArea'; document.body.appendChild(pa); }
+    pa.innerHTML = '<div class="pr-head"><img src="court-seal.webp" alt=""><div class="pr-court">ศาลจังหวัดลพบุรี</div>' +
+      '<div class="pr-title">บัญชีสรุปยอดค่าหมาย ปีงบประมาณ พ.ศ. ' + esc(d.fy) + '</div>' +
+      '<div class="pr-sub">ข้อมูล ณ วันที่ ' + esc(dLong) + ' เวลา ' + esc(tm) + ' น. · คำนวณล่าสุด ' + esc(thDate(d.last_run, true) || '—') + '</div></div>' +
+      '<table class="pr-tbl"><thead><tr><th rowspan="2">ที่</th><th rowspan="2">ชื่อ – สกุล</th><th colspan="2">หมายมีเงิน</th><th colspan="4">หมายฟรี (เงินงบประมาณ)</th><th rowspan="2">รวม (บาท)</th></tr>' +
+      '<tr><th>ฉบับ</th><th>บาท</th><th>ฉบับ</th><th>หน่วยเบิก</th><th>บาท</th><th>รอวันที่ส่ง</th></tr></thead><tbody>' + rows +
+      '<tr class="pr-sum"><td></td><td><b>รวมทั้งสิ้น</b></td><td class="n"><b>' + num(t.paid_n) + '</b></td><td class="n"><b>' + b(t.paid_amount) + '</b></td><td class="n"><b>' + num(t.free_n) +
+      '</b></td><td class="n"><b>' + num(t.free_units) + '</b></td><td class="n"><b>' + b(t.free_amount) + '</b></td><td class="n"><b>' + num(t.free_wait) + '</b></td><td class="n"><b>' + b(t.paid_amount + t.free_amount) + '</b></td></tr></tbody></table>' +
+      '<div class="pr-note"><b>หมายเหตุ</b> ๑. หมายมีเงินคิดตามราคาที่วางในบัญชีจ่ายหมาย ๒. หมายฟรีคิดตามระเบียบ ก.บ.ศ. ว่าด้วยค่าตอบแทนฯ พ.ศ. ๒๕๖๒ ข้อ ๗ อำเภอเมืองลพบุรี ๓๐๐ บาท อำเภออื่นตามอัตราตำบล ' +
+      '๓. ไม่รวมหมายที่ยังไม่มีวันที่ส่ง หมายที่รอยืนยัน และหมายก่อนเริ่มปีงบประมาณ ๔. ยอดนี้ยังไม่แบ่งส่วน ๖๐ : ๔๐ และแยกจากเอกสารเบิกจ่ายทางราชการ</div>' +
+      '<div class="pr-sign"><div>ลงชื่อ ......................................................... ผู้จัดทำ<br>(' + esc(S.user ? S.user.name : '') + ')<br>ตำแหน่ง .........................................................</div>' +
+      '<div>ลงชื่อ ......................................................... ผู้ตรวจสอบ<br>(.........................................................)<br>ตำแหน่ง .........................................................</div></div>';
+    try { await Promise.race([document.fonts.load('16pt Sarabun'), new Promise((r) => setTimeout(r, 1500))]); } catch (e) { /* พิมพ์ด้วยฟอนต์สำรอง */ }
+    const img = pa.querySelector('img');
+    if (img && !img.complete) await new Promise((r) => { img.onload = img.onerror = r; setTimeout(r, 1500); });
+    window.print();
+  }
+
+  /* ---------- ค้นเลขคดีด่วน (Ctrl+K หรือ /) ---------- */
+  let qsT = 0;
+  function openQuickSearch() {
+    if (!S.user || viewerOnly()) return;
+    let ov = document.getElementById('qs');
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'qs'; ov.className = 'qs-ov';
+      ov.innerHTML = '<div class="qs clay" role="dialog" aria-modal="true" aria-label="ค้นเลขคดีดูสถานะ">' +
+        '<div class="qs-in"><label class="sr" for="qsq">พิมพ์เลขคดี</label><input id="qsq" class="inp" autocomplete="off" placeholder="พิมพ์เลขคดี เช่น ต1250/2569">' +
+        '<button type="button" class="btn btn-s" id="qsx" aria-label="ปิด">Esc</button></div><div id="qsr" class="qs-r"><p class="tiny muted" style="margin:6px 4px">พิมพ์อย่างน้อย 2 ตัวอักษร</p></div></div>';
+      document.body.appendChild(ov);
+      ov.addEventListener('click', (e) => { if (e.target === ov) closeQuickSearch(); });
+      $('#qsx').addEventListener('click', closeQuickSearch);
+      $('#qsq').addEventListener('input', (e) => { clearTimeout(qsT); const q = e.target.value.trim(); qsT = setTimeout(() => quickSearch(q), 300); });
+    }
+    ov.classList.remove('hidden'); $('#qsq').value = ''; $('#qsr').innerHTML = '<p class="tiny muted" style="margin:6px 4px">พิมพ์อย่างน้อย 2 ตัวอักษร</p>';
+    setTimeout(() => $('#qsq').focus(), 30);
+  }
+  function closeQuickSearch() { const ov = document.getElementById('qs'); if (ov) ov.classList.add('hidden'); }
+  async function quickSearch(q) {
+    const box = $('#qsr'); if (!box) return;
+    if (q.length < 2) { box.innerHTML = '<p class="tiny muted" style="margin:6px 4px">พิมพ์อย่างน้อย 2 ตัวอักษร</p>'; return; }
+    box.innerHTML = '<p class="tiny muted" style="margin:6px 4px"><span class="spin"></span> กำลังค้นหา…</p>';
+    try {
+      const d = await api('notice_search', { q: q });
+      if ($('#qsq').value.trim() !== q) return;
+      if (!d.rows.length) { box.innerHTML = '<p class="small muted" style="margin:6px 4px">ไม่พบหมาย</p>'; return; }
+      box.innerHTML = d.rows.slice(0, 20).map((r) => '<div class="qs-item">' +
+        '<div class="qs-top"><b>' + esc(r.case_no) + '</b>' + stChip(r.money_status) +
+        (r.amount_ok && r.amount_ok.current ? '<span class="tiny flag-ok">◆ เคยยอดไม่ตรง</span>' : '') + '</div>' +
+        '<div class="small">' + esc(r.notice_kind) + ' · ' + esc(PAY_TH[r.pay_type] || '') + ' · ' + esc(r.officer) + '</div>' +
+        '<div class="tiny muted">จ่าย ' + esc(thDate(r.issued_date) || '—') + ' · ส่ง ' + esc(thDate(r.delivered_date) || 'ยังไม่ส่ง') +
+        (r.calc_amount !== '' && r.calc_amount !== undefined ? ' · ' + baht(r.calc_amount) + ' ฿' : '') + (r.calc_rule ? ' · ' + esc(r.calc_rule) : '') + '</div></div>').join('') +
+        (d.rows.length > 20 ? '<p class="tiny muted" style="margin:6px 4px">แสดง 20 จาก ' + num(d.rows.length) + ' รายการ — ใช้หน้า "ค้นหาหมาย" เพื่อดูทั้งหมด</p>' : '');
+    } catch (e) { box.innerHTML = '<p class="small flag-r" style="margin:6px 4px">' + esc(e.message) + '</p>'; }
+  }
+  document.addEventListener('keydown', (e) => {
+    const typing = /INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '');
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); openQuickSearch(); }
+    else if (e.key === '/' && !typing) { e.preventDefault(); openQuickSearch(); }
+    else if (e.key === 'Escape') closeQuickSearch();
+  });
   /* ---------------------------------------------------------------- หน้าแรก */
   RENDER.home = async (m) => {
     const d = await api('dashboard', { fy: S.fy });
@@ -199,7 +309,7 @@
     const t = d.totals;
     const fySel = '<label class="small muted" for="fy">ปีงบประมาณ</label> <select id="fy" class="sel">' +
       d.fys.map((y) => '<option' + (y === d.fy ? ' selected' : '') + '>' + esc(y) + '</option>').join('') + '</select>';
-    const kpi = (lbl, v, cls) => '<div class="kpi clay ' + (cls || '') + '"><span>' + esc(lbl) + '</span><b>' + num(v) + '</b></div>';
+    const kpi = (lbl, v, cls) => '<div class="kpi clay ' + (cls || '') + '"><span>' + esc(lbl) + '</span><b data-count="' + Number(v || 0) + '">' + num(v) + '</b></div>';
     const notes = [];
     if (d.pending_review) notes.push('<div class="note">มีแถวรอตรวจสอบจากการนำเข้า ' + num(d.pending_review) + ' แถว (ดูในประวัติการนำเข้า)</div>');
     if (d.pending_changes) notes.push('<div class="note">มีรายการแก้ไขหมายที่ล็อกแล้ว รออนุมัติ ' + num(d.pending_changes) + ' รายการ</div>');
@@ -209,14 +319,18 @@
       kpi('จ่ายหมายแล้ว รอผล', t.issued) + kpi('ส่งแล้ว', t.delivered) + '</div>' +
       (notes.length ? '<div style="display:flex;flex-direction:column;gap:10px">' + notes.join('') + '</div>' : '') +
       '<div class="clay panel"><h3>' + (d.scope_officer ? 'หมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่งหมาย</th>' +
-      '<th class="n">มีเงิน รอผล</th><th class="n">มีเงิน ส่งแล้ว</th><th class="n">ฟรี รอผล</th><th class="n">ฟรี ส่งแล้ว</th><th class="n">รวม</th></tr></thead><tbody>' +
+      '<th class="n">มีเงิน รอผล</th><th class="n">มีเงิน ส่งแล้ว</th><th class="n">ฟรี รอผล</th><th class="n">ฟรี ส่งแล้ว</th><th class="n">รวม</th><th style="min-width:150px">ยอดเงินตามสถานะ</th><th>6 สัปดาห์</th></tr></thead><tbody>' +
       d.officers.map((o) => '<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) + '</td>' +
         '<td class="n">' + num(o.paid_issued) + '</td><td class="n">' + num(o.paid_delivered) + '</td><td class="n">' + num(o.free_issued) + '</td><td class="n">' + num(o.free_delivered) +
-        '</td><td class="n"><b>' + num(o.paid_issued + o.paid_delivered + o.free_issued + o.free_delivered) + '</b></td></tr>').join('') +
-      '</tbody></table></div></div>' +
+        '</td><td class="n"><b>' + num(o.paid_issued + o.paid_delivered + o.free_issued + o.free_delivered) + '</b></td>' +
+        '<td>' + stBar(o.money || {}) + '<span class="tiny muted">พร้อมเบิก ' + baht((o.money || {}).ready) + ' ฿</span></td><td>' + spark(o.weeks) + '</td></tr>').join('') +
+      '</tbody></table></div>' +
+      '<div class="stlegend">' + ST.map((x) => '<span><i style="background:' + x.c + '"></i>' + esc(x.th) + '</span>').join('') +
+      '<span class="muted">· กราฟเส้น = จำนวนหมายที่ส่งแล้วรายสัปดาห์</span></div></div>' +
       '<p class="small muted" style="margin:0 6px">ข้อมูลล่าสุด ณ นำเข้าไฟล์จ่ายหมาย ' + esc(thDate(d.last_issue_import, true) || '—') +
-      ' · ไฟล์ผลหมาย ' + esc(thDate(d.last_result_import, true) || '—') + ' · ยอดเงินและสถานะเบิกจ่ายจะแสดงเมื่อเปิดใช้ระยะ 3–5</p>';
+      ' · ไฟล์ผลหมาย ' + esc(thDate(d.last_result_import, true) || '—') + ' · สีฟ้า (เบิกแล้ว) และสีเขียว (จ่ายแล้ว) จะเริ่มมีเมื่อเปิดใช้ระยะ 4</p>';
     $('#fy').addEventListener('change', (e) => { S.fy = e.target.value; go('home'); });
+    countUp(m);
   };
 
   /* ---------------------------------------------------------------- ค้นหาหมาย */
@@ -476,15 +590,16 @@
     const d = await api('calc_summary', { fy: S.fy });
     S.fy = d.fy;
     const t = d.totals;
-    const kpi = (lbl, v, sub, cls) => '<div class="kpi clay ' + (cls || '') + '"><span>' + esc(lbl) + '</span><b>' + v + '</b>' + (sub ? '<span class="tiny muted">' + sub + '</span>' : '') + '</div>';
+    const kpi = (lbl, v, sub, cls, raw, money) => '<div class="kpi clay ' + (cls || '') + '"><span>' + esc(lbl) + '</span><b' +
+      (raw !== undefined ? ' data-count="' + Number(raw || 0) + '"' + (money ? ' data-money="1" data-suffix=" ฿"' : '') : '') + '>' + v + '</b>' + (sub ? '<span class="tiny muted">' + sub + '</span>' : '') + '</div>';
     m.innerHTML = top('คำนวณค่าหมาย · ปีงบประมาณ ' + esc(d.fy),
-        (d.can_run ? '<button type="button" class="btn btn-g" id="runCalc">คำนวณใหม่</button>' : '')) +
+        '<button type="button" class="btn" id="printSum">พิมพ์ใบสรุป</button>' + (d.can_run ? ' <button type="button" class="btn btn-g" id="runCalc">คำนวณใหม่</button>' : '')) +
       '<p class="small muted" style="margin:0 6px">คำนวณล่าสุด ' + esc(thDate(d.last_run, true) || '—') + ' · ระบบคำนวณให้อัตโนมัติทุกครั้งที่นำเข้าไฟล์ · หมายฟรี: กฎหลายคดีต่างบ้าน หมู่เดียวกัน = ' + (d.mode === 'ONE' ? '1 หมาย' : 'หมายละกึ่งหนึ่ง') + ' (ระเบียบ ก.บ.ศ. 2562 ข้อ 7)</p>' +
       '<div class="grid-k">' +
-        kpi('หมายมีเงิน', baht(t.paid_amount) + ' ฿', num(t.paid_n) + ' ฉบับ · ยังไม่ส่ง ' + num(t.paid_wait), 'mint') +
-        kpi('หมายฟรี (คิดแล้ว)', baht(t.free_amount) + ' ฿', num(t.free_units) + ' หน่วยเบิก', 'mint') +
-        kpi('หมายฟรี รอวันที่ส่ง', num(t.free_wait), 'ยังไม่คิดเงิน') +
-        kpi('รวมค่าหมาย', baht(t.paid_amount + t.free_amount) + ' ฿', 'ก่อนแบ่ง 60:40') +
+        kpi('หมายมีเงิน', baht(t.paid_amount) + ' ฿', num(t.paid_n) + ' ฉบับ · ยังไม่ส่ง ' + num(t.paid_wait), 'mint', t.paid_amount, true) +
+        kpi('หมายฟรี (คิดแล้ว)', baht(t.free_amount) + ' ฿', num(t.free_units) + ' หน่วยเบิก', 'mint', t.free_amount, true) +
+        kpi('หมายฟรี รอวันที่ส่ง', num(t.free_wait), 'ยังไม่คิดเงิน', '', t.free_wait) +
+        kpi('รวมค่าหมาย', baht(t.paid_amount + t.free_amount) + ' ฿', 'ก่อนแบ่ง 60:40', '', t.paid_amount + t.free_amount, true) +
         kpi('ข้อควรตรวจ', num(d.warnings.length + t.review + t.red + (t.date_wait || 0)), [t.red ? 'ยอดไม่ตรงอัตรา รอยืนยัน ' + num(t.red) : '', t.date_wait ? 'วันที่จ่ายไม่แน่ชัด ' + num(t.date_wait) : ''].filter(Boolean).join(' · ')) +
       '</div>' +
       (t.date_wait ? '<p class="note r" style="margin:0 6px 12px"><b>' + num(t.date_wait) + ' หมาย อาจจ่ายเดือน ก.ย. · รอยืนยันวันที่จ่าย</b> (ไฟล์ 50 คร่อม 1 ต.ค. และยังไม่พบในไฟล์ 42) — ยังไม่รวมในยอดด้านบน · ดูและยืนยันได้ที่ "รายการรอยืนยัน" ด้านล่าง</p>' : '') +
@@ -503,6 +618,8 @@
           '</td><td class="n">' + num(w.count) + '</td><td class="tiny">' + esc(w.unit_id) + '</td></tr>').join('') + '</tbody></table></div></div>' : '') +
       '<div id="chkBox"></div><div id="unitBox"></div>';
     drawChecks();
+    countUp(m);
+    $('#printSum').addEventListener('click', () => printSummary(d));
     if ($('#runCalc')) $('#runCalc').addEventListener('click', async (e) => {
       const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังคำนวณ…';
       try { const r = await api('calc_run'); toast('คำนวณเสร็จ · หน่วยเบิก ' + num(r.units) + ' หน่วย'); go('calc'); }

@@ -171,3 +171,36 @@ tr.sum td{background:var(--card2)}
 .flag-ok{color:var(--amber);font-weight:700}
 .chk-acts{display:flex;flex-wrap:wrap;gap:6px}
 td .btn-s{white-space:nowrap}
+
+/* ---------- ลูกเล่น 0.4.2: แถบสีสถานะ · กราฟเส้น · ค้นด่วน · ใบสรุปพิมพ์ ---------- */
+.stbar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--sunk);box-shadow:var(--sh-in);margin:2px 0 4px;min-width:120px}
+.stbar i{display:block;height:100%}
+.stlegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:12px 2px 0;font-size:12px;color:var(--ink2)}
+.stlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.spark{display:block}
+.stchip{display:inline-block;font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;color:var(--ink);background:color-mix(in srgb,var(--c) 22%,#fff);border:1px solid color-mix(in srgb,var(--c) 55%,#fff)}
+.qs-btn{display:flex!important;align-items:center;justify-content:space-between;gap:8px;width:100%;margin:0 0 10px;background:var(--sunk)!important;box-shadow:var(--sh-in)!important;color:var(--muted)!important;font-weight:600}
+.qs-btn kbd{font-family:inherit;font-size:11px;padding:1px 6px;border-radius:6px;background:var(--card);color:var(--faint)}
+.qs-ov{position:fixed;inset:0;z-index:60;background:rgba(29,58,44,.28);display:flex;align-items:flex-start;justify-content:center;padding:9vh 14px 14px}
+.qs{width:min(620px,100%);max-height:78vh;display:flex;flex-direction:column;padding:14px}
+.qs-in{display:flex;gap:8px;align-items:center}.qs-in .inp{flex:1}
+.qs-r{overflow:auto;margin-top:10px}
+.qs-item{padding:10px 12px;border-radius:var(--r-s);background:var(--card);margin:0 0 8px;box-shadow:var(--sh-btn)}
+.qs-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:2px}
+#printArea{display:none}
+@media print{
+  @page{size:A4 portrait;margin:15mm 15mm 18mm}
+  body{background:#fff!important}
+  body>*:not(#printArea){display:none!important}
+  #printArea{display:block!important;font-family:'TH Sarabun New','TH SarabunPSK',Sarabun,serif;font-size:16pt;line-height:1.3;color:#000}
+  .pr-head{text-align:center;margin-bottom:10pt}.pr-head img{width:20mm;height:auto;display:block;margin:0 auto 4pt}
+  .pr-court{font-size:18pt;font-weight:700}.pr-title{font-size:18pt;font-weight:700}.pr-sub{font-size:14pt}
+  .pr-tbl{width:100%;border-collapse:collapse;font-size:14pt}
+  .pr-tbl th,.pr-tbl td{border:0.6pt solid #000;padding:2pt 5pt;vertical-align:top}
+  .pr-tbl th{font-weight:700;text-align:center;font-size:14pt;color:#000!important;background:none!important;text-transform:none;letter-spacing:0;vertical-align:middle}
+  .pr-tbl td{color:#000}.pr-tbl .n{text-align:right;white-space:nowrap}.pr-tbl .c{text-align:center}
+  .pr-sum td{border-top:1.2pt solid #000}
+  .pr-note{font-size:14pt;margin-top:10pt}
+  .pr-sign{display:flex;justify-content:space-between;gap:20pt;margin-top:28pt;text-align:center;font-size:16pt;page-break-inside:avoid}
+  .pr-sign>div{flex:1}
+}
