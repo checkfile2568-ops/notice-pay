@@ -54,6 +54,47 @@
       '<polyline fill="none" stroke="#2E6B4F" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" points="' + pts + '"/>' +
       (a.length ? '<circle cx="' + (2 + (a.length - 1) * 13) + '" cy="' + (19 - a[a.length - 1] / mx * 16).toFixed(1) + '" r="2.4" fill="#2E6B4F"/>' : '') + '</svg>';
   }
+  /** การ์ดค่อย ๆ ปรากฏเมื่อเลื่อนมาถึง (ครั้งเดียว · ใช้ GPU · ปิดเองถ้าเครื่องตั้งค่าลดภาพเคลื่อนไหว) */
+  let revealObs = null;
+  function reveal(root) {
+    if (reduceMotion() || !('IntersectionObserver' in window)) return;
+    if (!revealObs) revealObs = new IntersectionObserver((es) => es.forEach((e) => {
+      if (!e.isIntersecting) return;
+      e.target.classList.add('in'); revealObs.unobserve(e.target);
+      if (e.target.dataset.onview === 'donut') drawDonut3d(e.target);
+    }), { threshold: 0.08, rootMargin: '0px 0px -30px 0px' });
+    let i = 0;
+    root.querySelectorAll('.kpi, .clay.panel, .note').forEach((el) => {
+      if (el.classList.contains('rv')) return;
+      el.classList.add('rv'); el.style.transitionDelay = (el.classList.contains('kpi') ? Math.min(i++, 6) * 45 : 0) + 'ms';
+      revealObs.observe(el);
+    });
+  }
+
+  /* ---------- กราฟวงแหวน 3 มิติ: ยอดเงินตามสถานะ (กดสีเพื่อกรองตาราง) ---------- */
+  const DN_R = 78, DN_C = 2 * Math.PI * DN_R, DN_DEPTH = 9;
+  function donut3dHtml(money) {
+    const tot = ST.reduce((a, x) => a + (Number(money[x.k]) || 0), 0);
+    if (!tot) return '<p class="small muted" style="margin:0">ยังไม่มียอดเงิน (นำเข้าไฟล์จ่ายหมายแล้วจะแสดงที่นี่)</p>';
+    let acc = 0;
+    const segs = ST.filter((x) => money[x.k] > 0).map((x) => { const f = money[x.k] / tot, o = { k: x.k, c: x.c, f: f, at: acc }; acc += f; return o; });
+    const layer = (z, side) => '<svg class="dn-layer' + (side ? ' side' : '') + '" viewBox="0 0 220 220" style="transform:translateZ(' + (-z * 1.7).toFixed(1) + 'px)" aria-hidden="' + (side ? 'true' : 'false') + '">' +
+      segs.map((g) => '<circle class="dn-seg" data-k="' + g.k + '" cx="110" cy="110" r="' + DN_R + '" fill="none" stroke="' + g.c + '" stroke-width="34"' +
+        ' stroke-dasharray="0 ' + DN_C.toFixed(1) + '" data-len="' + Math.max(4, g.f * DN_C - (segs.length > 1 ? 2.5 : 0)).toFixed(1) + '" data-at="' + g.at.toFixed(4) + '" data-f="' + g.f.toFixed(4) + '"' +
+        ' style="stroke-dashoffset:' + (-g.at * DN_C).toFixed(1) + '" transform="rotate(-90 110 110)"' + (side ? '' : ' tabindex="0" role="button" aria-label="' + esc((ST_BY[g.k] || {}).th + ' ' + Number(money[g.k]).toLocaleString('th-TH') + ' บาท') + '"') + '/>').join('') + '</svg>';
+    let layers = ''; for (let z = DN_DEPTH; z >= 1; z--) layers += layer(z, true);
+    return '<div class="dn3d"><div class="dn-shadow"></div><div class="dn-tilt">' + layers + layer(0, false) + '</div>' +
+      '<div class="dn-center"><b id="dnVal">' + baht(tot) + '</b><span id="dnLbl">บาท รวมทั้งหมด</span></div></div>';
+  }
+  function drawDonut3d(box) {
+    box.querySelectorAll('.dn-seg').forEach((c) => {
+      const len = Number(c.dataset.len), at = Number(c.dataset.at), f = Number(c.dataset.f);
+      if (reduceMotion()) { c.style.strokeDasharray = len + ' ' + DN_C; return; }
+      c.style.transition = 'stroke-dasharray ' + Math.max(0.15, f * 0.9).toFixed(2) + 's cubic-bezier(.3,.6,.3,1) ' + (0.1 + at * 0.9).toFixed(2) + 's';
+      requestAnimationFrame(() => { c.style.strokeDasharray = len + ' ' + DN_C; });
+    });
+  }
+
   const stChip = (k) => { const x = ST_BY[k] || ST_BY.wait; return '<span class="stchip" style="--c:' + x.c + '">' + esc(x.th) + '</span>'; };
 
   function toast(msg) {
@@ -223,7 +264,7 @@
     S.page = p; drawNav();
     const m = $('#main');
     m.innerHTML = '<div class="clay panel"><span class="spin"></span> <span class="muted">กำลังโหลด…</span></div>';
-    Promise.resolve(RENDER[p](m)).catch((e) => { m.innerHTML = '<div class="clay panel"><p class="note r" style="margin:0">' + esc(e.message) + '</p></div>'; });
+    Promise.resolve(RENDER[p](m)).then(() => reveal(m)).catch((e) => { m.innerHTML = '<div class="clay panel"><p class="note r" style="margin:0">' + esc(e.message) + '</p></div>'; });
     m.focus({ preventScroll: true }); window.scrollTo(0, 0);
   }
   function top(title, extra) { return '<div class="top clay"><h2>' + esc(title) + '</h2>' + (extra || '') + '</div>'; }
@@ -318,20 +359,48 @@
       '<div class="grid-k">' + kpi('หมายทั้งหมด', t.total, 'mint') + kpi('หมายมีเงิน', t.paid) + kpi('หมายฟรี', t.free) +
       kpi('จ่ายหมายแล้ว รอผล', t.issued) + kpi('ส่งแล้ว', t.delivered) + '</div>' +
       (notes.length ? '<div style="display:flex;flex-direction:column;gap:10px">' + notes.join('') + '</div>' : '') +
-      '<div class="clay panel"><h3>' + (d.scope_officer ? 'หมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่งหมาย</th>' +
+      '<div class="clay panel dn-panel" data-onview="donut"><h3>ยอดเงินตามสถานะ</h3><div class="dn-grid"><div>' + donut3dHtml(t.money || {}) + '</div>' +
+        '<div class="dn-legend">' + ST.map((x) => '<button type="button" class="dn-lg" data-k="' + x.k + '"><i style="background:' + x.c + '"></i><span>' + esc(x.th) + '</span><b>' + baht((t.money || {})[x.k]) + ' ฿</b></button>').join('') +
+        '<p class="tiny muted" style="margin:6px 4px 0">กดที่สีบนวงแหวนหรือรายการ เพื่อกรองตารางผู้ส่งหมายด้านล่าง</p></div></div></div>' +
+      '<div class="clay panel"><div class="row" style="justify-content:space-between;align-items:center;margin:0 0 6px"><h3 style="margin:0">' + (d.scope_officer ? 'หมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><span id="dnFilter"></span></div><div class="tbl-wrap"><table id="offTbl"><thead><tr><th>ผู้ส่งหมาย</th>' +
       '<th class="n">มีเงิน รอผล</th><th class="n">มีเงิน ส่งแล้ว</th><th class="n">ฟรี รอผล</th><th class="n">ฟรี ส่งแล้ว</th><th class="n">รวม</th><th style="min-width:150px">ยอดเงินตามสถานะ</th><th>6 สัปดาห์</th></tr></thead><tbody>' +
-      d.officers.map((o) => '<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) + '</td>' +
-        '<td class="n">' + num(o.paid_issued) + '</td><td class="n">' + num(o.paid_delivered) + '</td><td class="n">' + num(o.free_issued) + '</td><td class="n">' + num(o.free_delivered) +
-        '</td><td class="n"><b>' + num(o.paid_issued + o.paid_delivered + o.free_issued + o.free_delivered) + '</b></td>' +
-        '<td>' + stBar(o.money || {}) + '<span class="tiny muted">พร้อมเบิก ' + baht((o.money || {}).ready) + ' ฿</span></td><td>' + spark(o.weeks) + '</td></tr>').join('') +
-      '</tbody></table></div>' +
+      offRows(d.officers, null) + '</tbody></table></div>' +
       '<div class="stlegend">' + ST.map((x) => '<span><i style="background:' + x.c + '"></i>' + esc(x.th) + '</span>').join('') +
       '<span class="muted">· กราฟเส้น = จำนวนหมายที่ส่งแล้วรายสัปดาห์</span></div></div>' +
       '<p class="small muted" style="margin:0 6px">ข้อมูลล่าสุด ณ นำเข้าไฟล์จ่ายหมาย ' + esc(thDate(d.last_issue_import, true) || '—') +
       ' · ไฟล์ผลหมาย ' + esc(thDate(d.last_result_import, true) || '—') + ' · สีฟ้า (เบิกแล้ว) และสีเขียว (จ่ายแล้ว) จะเริ่มมีเมื่อเปิดใช้ระยะ 4</p>';
     $('#fy').addEventListener('change', (e) => { S.fy = e.target.value; go('home'); });
     countUp(m);
+    // กรองตารางตามสีที่เลือก
+    let sel = null;
+    const apply = (k) => {
+      sel = sel === k ? null : k;
+      m.querySelectorAll('.dn-seg').forEach((c) => c.classList.toggle('dim', !!sel && c.dataset.k !== sel));
+      m.querySelectorAll('.dn-lg').forEach((b) => b.classList.toggle('on', b.dataset.k === sel));
+      const x = sel && ST_BY[sel];
+      if ($('#dnVal')) { $('#dnVal').textContent = baht(x ? (t.money || {})[sel] : ST.reduce((a, y) => a + (Number((t.money || {})[y.k]) || 0), 0)); $('#dnLbl').textContent = x ? x.th : 'บาท รวมทั้งหมด'; }
+      $('#offTbl tbody').innerHTML = offRows(d.officers, sel);
+      $('#dnFilter').innerHTML = x ? '<button type="button" class="stchip" style="--c:' + x.c + ';cursor:pointer" id="dnClr">กรอง: ' + esc(x.th) + ' ✕</button>' : '';
+      if ($('#dnClr')) $('#dnClr').addEventListener('click', () => apply(sel));
+    };
+    m.querySelectorAll('.dn-lg').forEach((b) => b.addEventListener('click', () => apply(b.dataset.k)));
+    m.querySelectorAll('.dn-layer:not(.side) .dn-seg').forEach((c) => {
+      c.addEventListener('click', () => apply(c.dataset.k));
+      c.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply(c.dataset.k); } });
+    });
+    if (reduceMotion() || !('IntersectionObserver' in window)) { const dp = m.querySelector('.dn-panel'); if (dp) drawDonut3d(dp); }
   };
+  /** แถวตารางผู้ส่งหมาย (กรองตามสถานะยอดเงินได้) */
+  function offRows(list, sel) {
+    let L = list.slice();
+    if (sel) L = L.filter((o) => (o.money || {})[sel] > 0).sort((a, b) => b.money[sel] - a.money[sel]);
+    if (!L.length) return '<tr><td colspan="8" class="muted small">ยังไม่มีผู้ส่งที่มียอดในสถานะนี้</td></tr>';
+    const lbl = sel ? ST_BY[sel].th : 'พร้อมเบิก', key = sel || 'ready';
+    return L.map((o) => '<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) + '</td>' +
+      '<td class="n">' + num(o.paid_issued) + '</td><td class="n">' + num(o.paid_delivered) + '</td><td class="n">' + num(o.free_issued) + '</td><td class="n">' + num(o.free_delivered) +
+      '</td><td class="n"><b>' + num(o.paid_issued + o.paid_delivered + o.free_issued + o.free_delivered) + '</b></td>' +
+      '<td>' + stBar(o.money || {}) + '<span class="tiny muted">' + esc(lbl) + ' ' + baht((o.money || {})[key]) + ' ฿</span></td><td>' + spark(o.weeks) + '</td></tr>').join('');
+  }
 
   /* ---------------------------------------------------------------- ค้นหาหมาย */
   RENDER.search = (m) => {
@@ -752,4 +821,10 @@
   };
 
   document.addEventListener('DOMContentLoaded', initLogin);
+  // เร่งความเร็ว (1): ปลุกเซิร์ฟเวอร์ Apps Script ตั้งแต่หน้าเข้าระบบ ระหว่างผู้ใช้พิมพ์ชื่อ/PIN
+  document.addEventListener('DOMContentLoaded', () => { api('ping').catch(() => { /* ไม่เป็นไร */ }); });
+  // เร่งความเร็ว (2): เก็บไฟล์หน้าเว็บไว้ในเครื่อง (ไม่เก็บข้อมูลคดี/การเงิน)
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { /* ใช้งานต่อได้ตามปกติ */ }); });
+  }
 })();

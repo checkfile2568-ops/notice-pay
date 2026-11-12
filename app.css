@@ -204,3 +204,27 @@ td .btn-s{white-space:nowrap}
   .pr-sign{display:flex;justify-content:space-between;gap:20pt;margin-top:28pt;text-align:center;font-size:16pt;page-break-inside:avoid}
   .pr-sign>div{flex:1}
 }
+
+/* ---------- 0.4.3: การ์ดค่อย ๆ ปรากฏ · วงแหวน 3 มิติ ---------- */
+.rv{opacity:0;transform:translateY(16px) scale(.985);transition:opacity .45s ease,transform .5s cubic-bezier(.2,.7,.2,1)}
+.rv.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}}
+.dn-grid{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr);gap:18px;align-items:center}
+@media (max-width:760px){.dn-grid{grid-template-columns:1fr}}
+.dn3d{position:relative;width:280px;height:230px;margin:0 auto;perspective:900px}
+.dn-tilt{position:absolute;left:30px;top:4px;width:220px;height:220px;transform-style:preserve-3d;transform:rotateX(50deg) rotateZ(-8deg)}
+.dn-layer{position:absolute;inset:0;width:220px;height:220px;overflow:visible}
+.dn-layer.side{pointer-events:none;filter:brightness(.72) saturate(1.1)}
+.dn-layer:not(.side) .dn-seg{cursor:pointer;transition:opacity .25s}
+.dn-seg.dim{opacity:.28}
+.dn-layer:not(.side) .dn-seg:hover{filter:brightness(1.08)}
+.dn-layer:not(.side) .dn-seg:focus-visible{outline:none;stroke-width:38}
+.dn-shadow{position:absolute;left:44px;top:158px;width:200px;height:56px;border-radius:50%;background:radial-gradient(closest-side,rgba(33,80,58,.32),rgba(33,80,58,0));filter:blur(3px)}
+.dn-center{position:absolute;left:0;right:0;top:94px;text-align:center;pointer-events:none}
+.dn-center b{display:inline-block;font-size:19px;font-weight:800;color:var(--ink);background:rgba(248,252,249,.92);padding:1px 12px;border-radius:999px;box-shadow:0 2px 6px rgba(33,80,58,.12)}
+.dn-center span{display:table;margin:3px auto 0;font-size:11.5px;color:var(--muted);font-weight:700;background:rgba(248,252,249,.9);padding:0 8px;border-radius:999px}
+.dn-legend{display:flex;flex-direction:column;gap:6px}
+.dn-lg{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;cursor:pointer;padding:9px 12px;border-radius:var(--r-s);background:var(--card);box-shadow:var(--sh-btn);color:var(--ink);font-weight:600}
+.dn-lg i{width:12px;height:12px;border-radius:4px;flex:none}
+.dn-lg span{flex:1;font-size:14px}.dn-lg b{font-size:15px}
+.dn-lg.on{background:var(--sunk);box-shadow:var(--sh-in)}
