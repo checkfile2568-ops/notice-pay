@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#2E6B4F">
+<title>ระบบค่าหมาย · ศาลจังหวัดลพบุรี</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="app.css?v=0.3.0">
+<script src="config.js?v=0.3.0"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script defer src="app.js?v=0.3.0"></script>
+</head>
+<body>
+<noscript><p style="padding:24px">กรุณาเปิดใช้ JavaScript เพื่อใช้งานระบบค่าหมาย</p></noscript>
+
+<!-- ============================ เข้าสู่ระบบ ============================ -->
+<main id="login" class="login">
+  <div class="login-card clay">
+    <div class="brand">
+      <div class="seal" id="seal" role="img" aria-label="ตราศาลจังหวัดลพบุรี">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7A5413" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M6 21h12"/><path d="M4 7h16"/><path d="M7 7l-3 7a3 3 0 0 0 6 0z"/><path d="M17 7l-3 7a3 3 0 0 0 6 0z"/></svg>
+      </div>
+      <div><h1>ระบบค่าหมาย</h1><p>ศาลจังหวัดลพบุรี</p></div>
+    </div>
+
+    <div class="welcome clay-mint" id="welcome">
+      <h2>ยินดีต้อนรับ</h2>
+      <p>ดูยอดค่าหมาย ติดตามการเบิกจ่าย ด้วยชื่อและ PIN 4 หลัก</p>
+      <div class="mascot" aria-hidden="true">
+        <div class="m-doc"><i></i><i></i><i style="width:28px"></i></div>
+        <div class="m-env"><div class="m-flap"></div><div class="m-eye l"></div><div class="m-eye r"></div><div class="m-mouth"></div><div class="m-blush l"></div><div class="m-blush r"></div></div>
+        <div class="m-coin"></div>
+      </div>
+    </div>
+
+    <ol class="steps" aria-label="ขั้นตอนเข้าสู่ระบบ">
+      <li class="step on" id="st1"><b>1</b>เลือกชื่อ</li>
+      <li class="step-line" aria-hidden="true"></li>
+      <li class="step" id="st2"><b>2</b>ใส่ PIN</li>
+    </ol>
+
+    <!-- ขั้น 1 -->
+    <section id="step1" style="display:flex;flex-direction:column;gap:14px">
+      <label for="q" style="font-size:15px;font-weight:700">พิมพ์ชื่อหรือนามสกุลของคุณ แล้วแตะชื่อเพื่อใส่ PIN</label>
+      <div class="field sunk">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2E6B4F" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="q" type="search" autocomplete="off" placeholder="เช่น สมชาย">
+      </div>
+      <div id="picks" class="picks" role="list" aria-label="ผลการค้นหา" aria-live="polite"></div>
+    </section>
+
+    <!-- ขั้น 2 -->
+    <section id="step2" class="hidden" style="display:flex;flex-direction:column;gap:16px">
+      <div class="who clay-mint">
+        <span class="avatar av0" id="whoAv" aria-hidden="true"></span>
+        <span style="display:flex;flex-direction:column;flex:1;min-width:0"><b id="whoName" style="font-size:17px"></b><span id="whoDept" class="tiny" style="color:var(--ink2)"></span></span>
+        <button type="button" class="btn btn-sm" id="changeWho">เปลี่ยนชื่อ</button>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+        <h2 id="pinlabel" style="font-size:15px;font-weight:700">ใส่ PIN 4 หลัก</h2>
+        <div class="dots" id="dots" role="img" aria-label="ใส่แล้ว 0 จาก 4 หลัก"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <p class="pin-msg" id="pinMsg" aria-live="polite">แตะตัวเลข ระบบตรวจทันทีเมื่อครบ 4 หลัก</p>
+      </div>
+      <div class="keypad" id="keypad" aria-labelledby="pinlabel"></div>
+    </section>
+
+    <div class="foot">
+      <p>ไม่พบชื่อ หรือยังไม่ได้ตั้ง PIN ติดต่อผู้ดูแลระบบ</p>
+      <p>ใช้ PIN เดียวกับปริ้นฮับ</p>
+      <p style="margin-top:6px;color:var(--faint)" id="ver">รุ่น 0.3.0</p>
+    </div>
+  </div>
+</main>
+
+<!-- ============================ แอป ============================ -->
+<div id="app" class="app hidden">
+  <aside class="side clay">
+    <div class="brand">
+      <div class="seal" role="img" aria-label="ตราศาลจังหวัดลพบุรี">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7A5413" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M6 21h12"/><path d="M4 7h16"/><path d="M7 7l-3 7a3 3 0 0 0 6 0z"/><path d="M17 7l-3 7a3 3 0 0 0 6 0z"/></svg>
+      </div>
+      <div><h1 style="font-size:18px">ระบบค่าหมาย</h1><p>ศาลจังหวัดลพบุรี</p></div>
+    </div>
+    <nav class="nav" id="nav" aria-label="เมนูหลัก"></nav>
+    <div class="me-wrap">
+      <div class="me sunk">
+        <span class="avatar av1" id="meAv" aria-hidden="true"></span>
+        <span class="nm"><b id="meName"></b><span id="meRoles"></span></span>
+      </div>
+      <button type="button" class="btn btn-sm" id="logout" style="width:100%;margin-top:10px">ออกจากระบบ</button>
+    </div>
+  </aside>
+  <main class="main" id="main" tabindex="-1"></main>
+</div>
+
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>
