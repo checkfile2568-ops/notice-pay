@@ -56,12 +56,32 @@
   }
   /** การ์ดค่อย ๆ ปรากฏเมื่อเลื่อนมาถึง (ครั้งเดียว · ใช้ GPU · ปิดเองถ้าเครื่องตั้งค่าลดภาพเคลื่อนไหว) */
   let revealObs = null;
+  /**
+   * จัดการตัดบรรทัดภาษาไทย: ไม่ให้ตัวเลขแยกจากหน่วย/คำนำหน้า ("116,700 ฿", "หมาย 2 ฉบับ", "ผู้รับตัวอย่าง 0001", "1 พ.ย. 2569")
+   * ใช้ช่องว่างไม่ตัดบรรทัด (U+00A0) เฉพาะรอบตัวเลข — คำไทยทั่วไปยังตัดตามพจนานุกรมของเบราว์เซอร์
+   */
+  const NBSP_RULES = [
+    [/(\d[\d,.]*)[ \t]+(?=[฿%]|บาท|ฉบับ|หน่วย|แถว|รายการ|คน|ครั้ง|วัน|สัปดาห์|เดือน|ปี|ม\.|น\.|หมาย)/g, '$1 '],
+    [/([ก-๙.)])[ \t]+(?=\d)/g, '$1 '],
+    [/(\d{1,2})[ \t]+(?=(ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.))/g, '$1 '],
+    [/(ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)[ \t]+(?=\d)/g, '$1 '],
+    [/(ต\.|อ\.|จ\.)[ \t]+(?=[ก-๙])/g, '$1 ']
+  ];
+  function glueThai(root) {
+    if (!root) return;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => {
+      const p = n.parentNode && n.parentNode.nodeName;
+      return /^(SCRIPT|STYLE|TEXTAREA|INPUT|OPTION|KBD|CODE)$/.test(p) || !/\d|ต\.|อ\./.test(n.nodeValue) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    } });
+    const list = []; while (w.nextNode()) list.push(w.currentNode);
+    list.forEach((n) => { let v = n.nodeValue; NBSP_RULES.forEach(([re, to]) => { v = v.replace(re, to); }); if (v !== n.nodeValue) n.nodeValue = v; });
+  }
   function reveal(root) {
     if (reduceMotion() || !('IntersectionObserver' in window)) return;
     if (!revealObs) revealObs = new IntersectionObserver((es) => es.forEach((e) => {
       if (!e.isIntersecting) return;
       e.target.classList.add('in'); revealObs.unobserve(e.target);
-      if (e.target.dataset.onview === 'donut') drawDonut3d(e.target);
+      if (e.target.dataset.onview === 'bars') drawBars(e.target);
     }), { threshold: 0.08, rootMargin: '0px 0px -30px 0px' });
     let i = 0;
     root.querySelectorAll('.kpi, .clay.panel, .note').forEach((el) => {
@@ -71,27 +91,31 @@
     });
   }
 
-  /* ---------- กราฟวงแหวน 3 มิติ: ยอดเงินตามสถานะ (กดสีเพื่อกรองตาราง) ---------- */
-  const DN_R = 78, DN_C = 2 * Math.PI * DN_R, DN_DEPTH = 9;
-  function donut3dHtml(money) {
+  /* ---------- กราฟยอดเงินตามสถานะ: แถบสถานะเต็มกว้าง (ค่าเริ่มต้น) · กราฟแยกสถานะ (ไทล์) — กดสีเพื่อกรองตาราง ---------- */
+  const pctOf = (v, tot) => { if (!v || !tot) return '0%'; const p = v / tot * 100; return p < 1 ? '<1%' : (Math.round(p * 10) / 10).toLocaleString('th-TH') + '%'; };
+  function moneyBarHtml(money) {
     const tot = ST.reduce((a, x) => a + (Number(money[x.k]) || 0), 0);
     if (!tot) return '<p class="small muted" style="margin:0">ยังไม่มียอดเงิน (นำเข้าไฟล์จ่ายหมายแล้วจะแสดงที่นี่)</p>';
-    let acc = 0;
-    const segs = ST.filter((x) => money[x.k] > 0).map((x) => { const f = money[x.k] / tot, o = { k: x.k, c: x.c, f: f, at: acc }; acc += f; return o; });
-    const layer = (z, side) => '<svg class="dn-layer' + (side ? ' side' : '') + '" viewBox="0 0 220 220" style="transform:translateZ(' + (-z * 1.7).toFixed(1) + 'px)" aria-hidden="' + (side ? 'true' : 'false') + '">' +
-      segs.map((g) => '<circle class="dn-seg" data-k="' + g.k + '" cx="110" cy="110" r="' + DN_R + '" fill="none" stroke="' + g.c + '" stroke-width="34"' +
-        ' stroke-dasharray="0 ' + DN_C.toFixed(1) + '" data-len="' + Math.max(4, g.f * DN_C - (segs.length > 1 ? 2.5 : 0)).toFixed(1) + '" data-at="' + g.at.toFixed(4) + '" data-f="' + g.f.toFixed(4) + '"' +
-        ' style="stroke-dashoffset:' + (-g.at * DN_C).toFixed(1) + '" transform="rotate(-90 110 110)"' + (side ? '' : ' tabindex="0" role="button" aria-label="' + esc((ST_BY[g.k] || {}).th + ' ' + Number(money[g.k]).toLocaleString('th-TH') + ' บาท') + '"') + '/>').join('') + '</svg>';
-    let layers = ''; for (let z = DN_DEPTH; z >= 1; z--) layers += layer(z, true);
-    return '<div class="dn3d"><div class="dn-shadow"></div><div class="dn-tilt">' + layers + layer(0, false) + '</div>' +
-      '<div class="dn-center"><b id="dnVal">' + baht(tot) + '</b><span id="dnLbl">บาท รวมทั้งหมด</span></div></div>';
+    const segs = ST.filter((x) => money[x.k] > 0);
+    return '<div class="mbar" role="group" aria-label="แถบยอดเงินตามสถานะ">' + segs.map((x) =>
+      '<button type="button" class="mseg" data-k="' + x.k + '" data-w="' + Math.max(1.2, money[x.k] / tot * 100).toFixed(2) + '" style="--c:' + x.c + '" aria-label="' + esc(x.th + ' ' + baht(money[x.k]) + ' บาท') + '" title="' + esc(x.th + ' ' + baht(money[x.k]) + ' ฿') + '"></button>').join('') + '</div>' +
+      '<div class="mleg">' + ST.map((x) => '<button type="button" class="dn-lg' + (money[x.k] ? '' : ' zero') + '" data-k="' + x.k + '"><i style="background:' + x.c + '"></i><span>' + esc(x.th) + '</span><em>' + pctOf(money[x.k], tot) + '</em><b>' + baht(money[x.k]) + ' ฿</b></button>').join('') + '</div>';
   }
-  function drawDonut3d(box) {
-    box.querySelectorAll('.dn-seg').forEach((c) => {
-      const len = Number(c.dataset.len), at = Number(c.dataset.at), f = Number(c.dataset.f);
-      if (reduceMotion()) { c.style.strokeDasharray = len + ' ' + DN_C; return; }
-      c.style.transition = 'stroke-dasharray ' + Math.max(0.15, f * 0.9).toFixed(2) + 's cubic-bezier(.3,.6,.3,1) ' + (0.1 + at * 0.9).toFixed(2) + 's';
-      requestAnimationFrame(() => { c.style.strokeDasharray = len + ' ' + DN_C; });
+  function moneyTilesHtml(money) {
+    const tot = ST.reduce((a, x) => a + (Number(money[x.k]) || 0), 0);
+    const order = ['ready', 'wait', 'check', 'claim', 'paid'];
+    return '<div class="stt">' + order.map((k) => { const x = ST_BY[k], v = Number(money[k]) || 0;
+      return '<button type="button" class="stt-t dn-lg' + (k === 'ready' ? ' big' : '') + (v ? '' : ' zero') + '" data-k="' + k + '" style="--c:' + x.c + '">' +
+        '<span class="stt-h"><i style="background:' + x.c + '"></i>' + esc(x.th) + '</span><b>' + baht(v) + '&nbsp;฿</b>' +
+        '<span class="stt-bar"><i data-w="' + (tot ? Math.max(v ? 1.5 : 0, v / tot * 100) : 0).toFixed(2) + '"></i></span><span class="tiny muted">' + pctOf(v, tot) + ' ของยอดรวม</span></button>'; }).join('') + '</div>';
+  }
+  /** แถบค่อย ๆ ยืดเมื่อเลื่อนมาถึง */
+  function drawBars(box) {
+    box.querySelectorAll('[data-w]').forEach((el, i) => {
+      const w = el.dataset.w + '%';
+      if (reduceMotion()) { el.style.width = w; return; }
+      el.style.transitionDelay = (i * 60) + 'ms';
+      requestAnimationFrame(() => requestAnimationFrame(() => { el.style.width = w; }));
     });
   }
 
@@ -264,7 +288,7 @@
     S.page = p; drawNav();
     const m = $('#main');
     m.innerHTML = '<div class="clay panel"><span class="spin"></span> <span class="muted">กำลังโหลด…</span></div>';
-    Promise.resolve(RENDER[p](m)).then(() => reveal(m)).catch((e) => { m.innerHTML = '<div class="clay panel"><p class="note r" style="margin:0">' + esc(e.message) + '</p></div>'; });
+    Promise.resolve(RENDER[p](m)).then(() => { glueThai(m); reveal(m); }).catch((e) => { m.innerHTML = '<div class="clay panel"><p class="note r" style="margin:0">' + esc(e.message) + '</p></div>'; });
     m.focus({ preventScroll: true }); window.scrollTo(0, 0);
   }
   function top(title, extra) { return '<div class="top clay"><h2>' + esc(title) + '</h2>' + (extra || '') + '</div>'; }
@@ -354,41 +378,69 @@
     const notes = [];
     if (d.pending_review) notes.push('<div class="note">มีแถวรอตรวจสอบจากการนำเข้า ' + num(d.pending_review) + ' แถว (ดูในประวัติการนำเข้า)</div>');
     if (d.pending_changes) notes.push('<div class="note">มีรายการแก้ไขหมายที่ล็อกแล้ว รออนุมัติ ' + num(d.pending_changes) + ' รายการ</div>');
-    if (t.flagged) notes.push('<div class="note">หมาย ' + num(t.flagged) + ' ฉบับ ไม่พบตำบลในตารางอัตรา — ตรวจชื่อตำบล/อำเภอในไฟล์ต้นทาง</div>');
+    if (t.no_area) notes.push('<div class="note">หมาย ' + num(t.no_area) + ' ฉบับ ไม่พบตำบลในตารางอัตรา — ตรวจชื่อตำบล/อำเภอในไฟล์ต้นทาง</div>');
+    if (t.red) notes.push('<div class="note r">หมาย ' + num(t.red) + ' ฉบับ ราคาไม่เท่ากับอัตราของตำบล รอยืนยันยอด — ดูที่หน้า "คำนวณค่าหมาย"</div>');
+    if (t.date_wait) notes.push('<div class="note r">หมาย ' + num(t.date_wait) + ' ฉบับ อาจจ่ายเดือน ก.ย. รอยืนยันวันที่จ่าย — ดูที่หน้า "คำนวณค่าหมาย"</div>');
+    if (t.no_addr) notes.push('<div class="note">หมายฟรี ' + num(t.no_addr) + ' ฉบับ ไม่มีที่อยู่ นับเต็มอัตราแยกฉบับ — ควรตรวจกับต้นฉบับ</div>');
+    const tot = t.total || 0, money = t.money || {};
+    const mTot = ST.reduce((a2, x) => a2 + (Number(money[x.k]) || 0), 0);
+    const IC = { all: '<path d="M4 6h16M4 12h16M4 18h10"/>', paid: '<rect x="3" y="6" width="18" height="12" rx="3"/><circle cx="12" cy="12" r="2.5"/>',
+      free: '<path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/>', wait: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', done: '<path d="M4 12l5 5L20 6"/>' };
+    const tile = (area, cls, ic, lbl, v, sub) => '<div class="kpi clay kt ' + cls + '" style="grid-area:' + area + '"><span class="kt-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' + IC[ic] + '</svg></span>' +
+      '<span>' + esc(lbl) + '</span><b data-count="' + Number(v || 0) + '">' + num(v) + '</b><small>' + sub + '</small></div>';
+    const share = (v) => tot ? 'ฉบับ · ' + pctOf(v, tot) + ' ของทั้งหมด' : 'ฉบับ';
+    let view = 'bar'; try { view = localStorage.getItem('np_money_view') === 'tiles' ? 'tiles' : 'bar'; } catch (e) { /* ใช้ค่าเริ่มต้น */ }
+    const canImport = has('NOTICE', 'FINANCE', 'ADMIN');
+    const shortcut = '<div class="clay panel kt-nt" style="grid-area:nt"><h3>' + (canImport ? 'ทางลัด' : 'ข้อมูลล่าสุด') + '</h3>' +
+      (canImport ? '<div class="row" style="gap:8px;margin-bottom:10px"><button type="button" class="btn btn-g btn-sm" data-go="import">นำเข้าไฟล์</button><button type="button" class="btn btn-sm" data-go="calc">คำนวณ · พิมพ์ใบสรุป</button></div>' : '') +
+      '<p class="tiny muted" style="margin:0">ไฟล์จ่ายหมาย ' + esc(thDate(d.last_issue_import, true) || '—') + '<br>ไฟล์ผลหมาย ' + esc(thDate(d.last_result_import, true) || '—') + '</p></div>';
     m.innerHTML = top('หน้าแรก', fySel) +
-      '<div class="grid-k">' + kpi('หมายทั้งหมด', t.total, 'mint') + kpi('หมายมีเงิน', t.paid) + kpi('หมายฟรี', t.free) +
-      kpi('จ่ายหมายแล้ว รอผล', t.issued) + kpi('ส่งแล้ว', t.delivered) + '</div>' +
-      (notes.length ? '<div style="display:flex;flex-direction:column;gap:10px">' + notes.join('') + '</div>' : '') +
-      '<div class="clay panel dn-panel" data-onview="donut"><h3>ยอดเงินตามสถานะ</h3><div class="dn-grid"><div>' + donut3dHtml(t.money || {}) + '</div>' +
-        '<div class="dn-legend">' + ST.map((x) => '<button type="button" class="dn-lg" data-k="' + x.k + '"><i style="background:' + x.c + '"></i><span>' + esc(x.th) + '</span><b>' + baht((t.money || {})[x.k]) + ' ฿</b></button>').join('') +
-        '<p class="tiny muted" style="margin:6px 4px 0">กดที่สีบนวงแหวนหรือรายการ เพื่อกรองตารางผู้ส่งหมายด้านล่าง</p></div></div></div>' +
-      '<div class="clay panel"><div class="row" style="justify-content:space-between;align-items:center;margin:0 0 6px"><h3 style="margin:0">' + (d.scope_officer ? 'หมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><span id="dnFilter"></span></div><div class="tbl-wrap"><table id="offTbl"><thead><tr><th>ผู้ส่งหมาย</th>' +
+      '<div class="bento"><div class="bn">' +
+      '<section class="clay panel hero rv-b" style="grid-area:hero" data-onview="bars" aria-labelledby="heroH">' +
+        '<div class="hero-h"><h3 id="heroH">ยอดเงินตามสถานะ</h3><button type="button" class="btn btn-sm" id="mvBtn" aria-pressed="' + (view === 'tiles') + '">' + (view === 'tiles' ? 'แถบสถานะ' : 'กราฟแยกสถานะ') + '</button></div>' +
+        '<div class="hero-t"><b data-count="' + mTot + '" data-money="1" data-suffix="&nbsp;฿">' + baht(mTot) + '&nbsp;฿</b><span>รวมทั้งหมด ก่อนแบ่ง 60:40</span></div>' +
+        '<div id="mvBox">' + (view === 'tiles' ? moneyTilesHtml(money) : moneyBarHtml(money)) + '</div>' +
+        '<p class="tiny muted" style="margin:10px 2px 0">กดที่สีเพื่อกรองตารางผู้ส่งหมาย · สีฟ้า (เบิกแล้ว) และสีเขียว (จ่ายแล้ว) จะเริ่มมีเมื่อเปิดใช้ระยะ 4</p></section>' +
+      tile('k1', 'k-all', 'all', 'หมายทั้งหมด', t.total, 'ฉบับ · ปีงบ ' + esc(d.fy)) +
+      tile('k2', 'k-paid', 'paid', 'หมายมีเงิน', t.paid, share(t.paid)) +
+      tile('k3', 'k-free', 'free', 'หมายฟรี', t.free, share(t.free)) +
+      tile('k4', 'k-wait', 'wait', 'จ่ายหมายแล้ว รอผล', t.issued, share(t.issued)) +
+      tile('k5', 'k-done', 'done', 'ส่งแล้ว', t.delivered, share(t.delivered)) +
+      shortcut +
+      '<div style="grid-area:al;display:flex;flex-direction:column;gap:10px">' + (notes.length ? notes.join('') : '<div class="note g">ไม่มีรายการค้างตรวจ</div>') + '</div>' +
+      '<div class="clay panel" style="grid-area:off;min-width:0"><div class="row" style="justify-content:space-between;align-items:center;margin:0 0 6px"><h3 style="margin:0">' + (d.scope_officer ? 'หมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><span id="dnFilter"></span></div><div class="tbl-wrap"><table id="offTbl"><thead><tr><th>ผู้ส่งหมาย</th>' +
       '<th class="n">มีเงิน รอผล</th><th class="n">มีเงิน ส่งแล้ว</th><th class="n">ฟรี รอผล</th><th class="n">ฟรี ส่งแล้ว</th><th class="n">รวม</th><th style="min-width:150px">ยอดเงินตามสถานะ</th><th>6 สัปดาห์</th></tr></thead><tbody>' +
       offRows(d.officers, null) + '</tbody></table></div>' +
       '<div class="stlegend">' + ST.map((x) => '<span><i style="background:' + x.c + '"></i>' + esc(x.th) + '</span>').join('') +
       '<span class="muted">· กราฟเส้น = จำนวนหมายที่ส่งแล้วรายสัปดาห์</span></div></div>' +
-      '<p class="small muted" style="margin:0 6px">ข้อมูลล่าสุด ณ นำเข้าไฟล์จ่ายหมาย ' + esc(thDate(d.last_issue_import, true) || '—') +
-      ' · ไฟล์ผลหมาย ' + esc(thDate(d.last_result_import, true) || '—') + ' · สีฟ้า (เบิกแล้ว) และสีเขียว (จ่ายแล้ว) จะเริ่มมีเมื่อเปิดใช้ระยะ 4</p>';
+      '</div></div>';
     $('#fy').addEventListener('change', (e) => { S.fy = e.target.value; go('home'); });
+    m.querySelectorAll('[data-go]').forEach((b2) => b2.addEventListener('click', () => go(b2.dataset.go)));
     countUp(m);
     // กรองตารางตามสีที่เลือก
     let sel = null;
+    const mark = () => {
+      m.querySelectorAll('#mvBox [data-k]').forEach((c) => { c.classList.toggle('on', c.dataset.k === sel); c.classList.toggle('dim', !!sel && c.dataset.k !== sel); c.setAttribute('aria-pressed', String(c.dataset.k === sel)); });
+    };
     const apply = (k) => {
       sel = sel === k ? null : k;
-      m.querySelectorAll('.dn-seg').forEach((c) => c.classList.toggle('dim', !!sel && c.dataset.k !== sel));
-      m.querySelectorAll('.dn-lg').forEach((b) => b.classList.toggle('on', b.dataset.k === sel));
+      mark();
       const x = sel && ST_BY[sel];
-      if ($('#dnVal')) { $('#dnVal').textContent = baht(x ? (t.money || {})[sel] : ST.reduce((a, y) => a + (Number((t.money || {})[y.k]) || 0), 0)); $('#dnLbl').textContent = x ? x.th : 'บาท รวมทั้งหมด'; }
       $('#offTbl tbody').innerHTML = offRows(d.officers, sel);
       $('#dnFilter').innerHTML = x ? '<button type="button" class="stchip" style="--c:' + x.c + ';cursor:pointer" id="dnClr">กรอง: ' + esc(x.th) + ' ✕</button>' : '';
       if ($('#dnClr')) $('#dnClr').addEventListener('click', () => apply(sel));
     };
-    m.querySelectorAll('.dn-lg').forEach((b) => b.addEventListener('click', () => apply(b.dataset.k)));
-    m.querySelectorAll('.dn-layer:not(.side) .dn-seg').forEach((c) => {
-      c.addEventListener('click', () => apply(c.dataset.k));
-      c.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply(c.dataset.k); } });
+    const bind = () => m.querySelectorAll('#mvBox [data-k]').forEach((b2) => b2.addEventListener('click', () => apply(b2.dataset.k)));
+    bind();
+    $('#mvBtn').addEventListener('click', () => {
+      view = view === 'tiles' ? 'bar' : 'tiles';
+      try { localStorage.setItem('np_money_view', view); } catch (e) { /* ไม่เป็นไร */ }
+      $('#mvBox').innerHTML = view === 'tiles' ? moneyTilesHtml(money) : moneyBarHtml(money);
+      $('#mvBtn').textContent = view === 'tiles' ? 'แถบสถานะ' : 'กราฟแยกสถานะ';
+      $('#mvBtn').setAttribute('aria-pressed', String(view === 'tiles'));
+      bind(); mark(); drawBars($('#mvBox'));
     });
-    if (reduceMotion() || !('IntersectionObserver' in window)) { const dp = m.querySelector('.dn-panel'); if (dp) drawDonut3d(dp); }
+    if (reduceMotion() || !('IntersectionObserver' in window)) drawBars(m.querySelector('.hero'));
   };
   /** แถวตารางผู้ส่งหมาย (กรองตามสถานะยอดเงินได้) */
   function offRows(list, sel) {
@@ -660,7 +712,7 @@
     S.fy = d.fy;
     const t = d.totals;
     const kpi = (lbl, v, sub, cls, raw, money) => '<div class="kpi clay ' + (cls || '') + '"><span>' + esc(lbl) + '</span><b' +
-      (raw !== undefined ? ' data-count="' + Number(raw || 0) + '"' + (money ? ' data-money="1" data-suffix=" ฿"' : '') : '') + '>' + v + '</b>' + (sub ? '<span class="tiny muted">' + sub + '</span>' : '') + '</div>';
+      (raw !== undefined ? ' data-count="' + Number(raw || 0) + '"' + (money ? ' data-money="1" data-suffix="&nbsp;฿"' : '') : '') + '>' + v + '</b>' + (sub ? '<span class="tiny muted">' + sub + '</span>' : '') + '</div>';
     m.innerHTML = top('คำนวณค่าหมาย · ปีงบประมาณ ' + esc(d.fy),
         '<button type="button" class="btn" id="printSum">พิมพ์ใบสรุป</button>' + (d.can_run ? ' <button type="button" class="btn btn-g" id="runCalc">คำนวณใหม่</button>' : '')) +
       '<p class="small muted" style="margin:0 6px">คำนวณล่าสุด ' + esc(thDate(d.last_run, true) || '—') + ' · ระบบคำนวณให้อัตโนมัติทุกครั้งที่นำเข้าไฟล์ · หมายฟรี: กฎหลายคดีต่างบ้าน หมู่เดียวกัน = ' + (d.mode === 'ONE' ? '1 หมาย' : 'หมายละกึ่งหนึ่ง') + ' (ระเบียบ ก.บ.ศ. 2562 ข้อ 7)</p>' +
@@ -669,7 +721,7 @@
         kpi('หมายฟรี (คิดแล้ว)', baht(t.free_amount) + ' ฿', num(t.free_units) + ' หน่วยเบิก', 'mint', t.free_amount, true) +
         kpi('หมายฟรี รอวันที่ส่ง', num(t.free_wait), 'ยังไม่คิดเงิน', '', t.free_wait) +
         kpi('รวมค่าหมาย', baht(t.paid_amount + t.free_amount) + ' ฿', 'ก่อนแบ่ง 60:40', '', t.paid_amount + t.free_amount, true) +
-        kpi('ข้อควรตรวจ', num(d.warnings.length + t.review + t.red + (t.date_wait || 0)), [t.red ? 'ยอดไม่ตรงอัตรา รอยืนยัน ' + num(t.red) : '', t.date_wait ? 'วันที่จ่ายไม่แน่ชัด ' + num(t.date_wait) : ''].filter(Boolean).join(' · ')) +
+        kpi('ข้อควรตรวจ', num(d.warnings.length + t.review + t.red + (t.date_wait || 0)), [t.red ? '<span class="nb">ยอดไม่ตรงอัตรา</span> <span class="nb">รอยืนยัน ' + num(t.red) + '</span>' : '', t.date_wait ? '<span class="nb">วันที่จ่ายไม่แน่ชัด ' + num(t.date_wait) + '</span>' : ''].filter(Boolean).join(' · ')) +
       '</div>' +
       (t.date_wait ? '<p class="note r" style="margin:0 6px 12px"><b>' + num(t.date_wait) + ' หมาย อาจจ่ายเดือน ก.ย. · รอยืนยันวันที่จ่าย</b> (ไฟล์ 50 คร่อม 1 ต.ค. และยังไม่พบในไฟล์ 42) — ยังไม่รวมในยอดด้านบน · ดูและยืนยันได้ที่ "รายการรอยืนยัน" ด้านล่าง</p>' : '') +
       '<div class="clay panel"><h3>' + (d.scope_officer ? 'ค่าหมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่งหมาย</th>' +
@@ -820,6 +872,15 @@
     }));
   };
 
+  // ข้อความที่เติมทีหลัง (ผลค้น รายการรอยืนยัน หน่วยเบิก ตัวเลขวิ่ง) ก็จัดตัดบรรทัดด้วย
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!('MutationObserver' in window)) return;
+    let q = new Set(), t = 0;
+    new MutationObserver((ms) => {
+      ms.forEach((m) => m.addedNodes.forEach((n) => { q.add(n.nodeType === 3 ? n.parentNode : n); }));
+      if (!t) t = requestAnimationFrame(() => { t = 0; const xs = q; q = new Set(); xs.forEach((n) => { if (n && n.isConnected) glueThai(n); }); });
+    }).observe(document.body, { childList: true, subtree: true });
+  });
   document.addEventListener('DOMContentLoaded', initLogin);
   // เร่งความเร็ว (1): ปลุกเซิร์ฟเวอร์ Apps Script ตั้งแต่หน้าเข้าระบบ ระหว่างผู้ใช้พิมพ์ชื่อ/PIN
   document.addEventListener('DOMContentLoaded', () => { api('ping').catch(() => { /* ไม่เป็นไร */ }); });
