@@ -264,6 +264,7 @@
       { id: 'search', th: 'ค้นหาหมาย', show: !viewerOnly() },
       { id: 'import', th: 'นำเข้าข้อมูล', show: has('NOTICE', 'FINANCE', 'ADMIN') },
       { id: 'history', th: 'ประวัติการนำเข้า', show: has('NOTICE', 'FINANCE', 'ADMIN') },
+      { id: 'review', th: 'แถวรอตรวจ', show: has('NOTICE', 'FINANCE', 'ADMIN') },
       { id: 'calc', th: 'คำนวณค่าหมาย', show: true },
       { id: 'officers', th: 'ผู้ส่งหมายและอัตรา', show: true },
       { id: 'users', th: 'ผู้ใช้และสิทธิ์', show: has('ADMIN') },
@@ -406,7 +407,7 @@
       d.fys.map((y) => '<option' + (y === d.fy ? ' selected' : '') + '>' + esc(y) + '</option>').join('') + '</select>';
     const kpi = (lbl, v, cls) => '<div class="kpi clay ' + (cls || '') + '"><span>' + esc(lbl) + '</span><b data-count="' + Number(v || 0) + '">' + num(v) + '</b></div>';
     const notes = [];
-    if (d.pending_review) notes.push('<div class="note">มีแถวรอตรวจสอบจากการนำเข้า ' + num(d.pending_review) + ' แถว (ดูในประวัติการนำเข้า)</div>');
+    if (d.pending_review) notes.push('<div class="note">มีแถวรอตรวจสอบจากการนำเข้า ' + num(d.pending_review) + ' แถว' + (has('NOTICE', 'FINANCE', 'ADMIN') ? ' <button type="button" class="btn btn-xs" data-go="review">ไปที่แถวรอตรวจ</button>' : '') + '</div>');
     if (d.pending_changes) notes.push('<div class="note">มีรายการแก้ไขหมายที่ล็อกแล้ว รออนุมัติ ' + num(d.pending_changes) + ' รายการ</div>');
     if (t.no_area) notes.push('<div class="note">หมาย ' + num(t.no_area) + ' ฉบับ ไม่พบตำบลในตารางอัตรา — ตรวจชื่อตำบล/อำเภอในไฟล์ต้นทาง</div>');
     if (t.adj_up || t.adj_dn) notes.push('<div class="note">หมายมีเงิน ' + num((t.adj_up || 0) + (t.adj_dn || 0)) + ' ฉบับ ราคาไม่เท่าอัตราตำบล — คิดตามอัตราตำบลแล้ว' + (t.adj_up ? ' · <span class="flag-up">▲ เกิน ' + num(t.adj_up) + '</span>' : '') + (t.adj_dn ? ' · <span class="flag-r">▼ ต่ำกว่า ' + num(t.adj_dn) + '</span>' : '') + ' (ดูที่หน้า "คำนวณค่าหมาย")</div>');
@@ -818,7 +819,7 @@
       const r = await api('import_commit', importBody());
       IM.meta = await api('import_templates'); paintKinds();
       $('#imPrev').innerHTML = '<div class="clay panel"><h3>นำเข้าเรียบร้อย</h3><p class="note g" style="margin:0 0 12px">เลขชุด ' + esc(r.batch_id) +
-        ' · เพิ่มใหม่ ' + num(r.inserted) + ' · ปรับปรุง ' + num(r.updated) + ' · รออนุมัติแก้ ' + num(r.held_changes) + ' · แถวรอตรวจสอบ ' + num(r.review_rows) + '</p>' +
+        ' · เพิ่มใหม่ ' + num(r.inserted) + ' · ปรับปรุง ' + num(r.updated) + ' · รออนุมัติแก้ ' + num(r.held_changes) + ' · แถวรอตรวจสอบ ' + num(r.review_rows) + (r.review_auto_resolved ? ' · ระบบจับคู่แถวที่ค้างให้แล้ว ' + num(r.review_auto_resolved) + ' แถว' : '') + '</p>' +
         (r.calc ? (r.calc.error ? '<p class="note r" style="margin:0 0 12px">คำนวณค่าหมายไม่สำเร็จ: ' + esc(r.calc.error) + '</p>'
           : '<p class="note g" style="margin:0 0 12px">คำนวณค่าหมายใหม่แล้ว · หน่วยเบิกหมายฟรี ' + num(r.calc.units) + ' หน่วย' + (r.calc.warnings ? ' · ข้อควรตรวจ ' + num(r.calc.warnings) + ' รายการ' : '') + '</p>') : '') +
         '<div class="row"><button type="button" class="btn btn-g" id="again">นำเข้าไฟล์ถัดไป</button><button type="button" class="btn" id="toCalc">ดูยอดค่าหมาย</button><button type="button" class="btn" id="toHome">ไปหน้าแรก</button></div></div>';
@@ -828,6 +829,64 @@
       $('#toCalc').addEventListener('click', () => go('calc'));
     } catch (e) { b.disabled = false; b.textContent = 'ยืนยันนำเข้า'; toast(e.message); }
   }
+
+  /* ---------------------------------------------------------------- แถวรอตรวจ (0.6.3) */
+  /* ระบบจับคู่ให้เองก่อนทุกครั้งที่นำเข้า · หน้านี้เหลือเฉพาะแถวที่ระบบตัดสินเองไม่ได้ ให้เลือกฉบับหรือปิดแถว */
+  RENDER.review = async (m) => {
+    const d = await api('review_open');
+    const canAct = has('NOTICE', 'ADMIN');
+    const KTH = { RESULT: 'ไฟล์ผลหมาย (42)', ISSUE: 'ไฟล์จ่ายหมาย (50)' };
+    const cand = (x, c, i) => {
+      const where = [c.house_no ? 'บ้าน ' + c.house_no : '', c.moo ? 'ม.' + c.moo : '', c.tambon ? 'ต.' + c.tambon : ''].filter(Boolean).join(' ');
+      const dis = !canAct || x.kind !== 'RESULT' || c.locked;
+      return '<label class="rvc' + (c.like ? ' like' : '') + (dis ? ' dis' : '') + '"><input type="radio" name="rv' + esc(x.id) + '" value="' + esc(c.notice_uid) + '"' + (dis ? ' disabled' : '') + (c.like && !dis ? ' checked' : '') + '>' +
+        '<span><b>' + esc(c.notice_kind || '—') + '</b> · ' + esc(where || '—') + ' · ' + esc(c.officer) + ' ' + typeChip(c.pay_type) +
+        '<br><span class="tiny">' + (c.delivered_date ? 'ส่งแล้ว ' + esc(thDate(c.delivered_date)) : '<b>รอผล</b>') + (c.result ? ' · ผลในไฟล์จ่ายหมาย: ' + esc(c.result) : '') +
+        (c.court_amount !== null && c.court_amount !== undefined ? ' · ศาลคิด ' + num(c.court_amount) + ' ฿' : '') + (c.locked ? ' · เข้ารอบเบิกแล้ว' : '') +
+        (c.like ? ' · <span class="pill g">ผลการส่งตรงกัน</span>' : '') + '</span></span></label>';
+    };
+    const card = (x) => '<div class="clay panel rvbox" data-id="' + esc(x.id) + '" data-b="' + esc(x.batch_id) + '" data-r="' + x.row_no + '">' +
+      '<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><span class="pill a">' + esc(KTH[x.kind] || x.kind) + '</span><span class="small muted">ชุด ' + esc(x.batch_id) + ' · แถว ' + x.row_no + '</span></div>' +
+      '<p style="margin:0 0 6px"><b>' + esc(x.reason) + '</b></p>' +
+      '<p class="small" style="margin:0 0 10px">เลขคดี <b>' + esc(x.case_no || '—') + '</b> · ' + esc(x.notice_kind || '—') + ' · ผู้รับ ' + esc(x.recipient || '—') + ' · ผู้ส่ง ' + esc(x.officer || '—') +
+        (x.delivered_date ? ' · ส่ง ' + esc(thDate(x.delivered_date)) : '') + (x.reported_date ? ' · รายงาน ' + esc(thDate(x.reported_date)) : '') + (x.result ? '<br>ผล: ' + esc(x.result) : '') + '</p>' +
+      (x.cands.length ? '<div class="small muted" style="margin:0 0 4px">หมายในระบบของคดีนี้' + (x.kind === 'RESULT' ? ' — เลือกฉบับที่เป็นของผลนี้' : '') + '</div><div class="rvcs">' + x.cands.map((c, i) => cand(x, c, i)).join('') + '</div>'
+        : '<p class="note" style="margin:0">ไม่พบหมายของคดีนี้ในระบบ — ถ้าเป็นหมายของศาลนี้ ให้นำเข้าไฟล์จ่ายหมาย (50) ช่วงที่จ่ายหมายนี้ ระบบจะจับคู่ให้เอง</p>') +
+      (canAct ? '<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">' +
+        (x.kind === 'RESULT' && x.cands.some((c) => !c.locked) ? '<button type="button" class="btn btn-g btn-sm rv-apply">ใช้ผลนี้กับหมายที่เลือก</button>' : '') +
+        '<input class="inp rv-why" style="flex:1;min-width:180px" placeholder="เหตุผลที่ไม่ใช้แถวนี้ เช่น แถวซ้ำ / ไม่ใช่หมายศาลนี้" aria-label="เหตุผลที่ไม่ใช้แถวนี้">' +
+        '<button type="button" class="btn btn-sm rv-ign">ไม่ใช้แถวนี้</button></div>' : '') + '</div>';
+    m.innerHTML = top('แถวรอตรวจ', canAct ? '<button type="button" class="btn" id="rvRetry">ให้ระบบลองจับคู่ใหม่</button>' : '') +
+      '<p class="small muted" style="margin:0 6px 10px">ระบบจับคู่ให้เองทุกครั้งที่นำเข้าไฟล์ (รวมถึงเลือกฉบับจากผลการส่งในไฟล์จ่ายหมาย และปิดแถวที่ซ้ำ) · หน้านี้แสดงเฉพาะแถวที่ระบบตัดสินเองไม่ได้ · เลือกแล้วระบบคำนวณค่าหมายใหม่ทันที</p>' +
+      (!d.total ? '<div class="clay panel"><p class="note g" style="margin:0">ไม่มีแถวรอตรวจ — ระบบจับคู่ได้ครบทุกแถว</p></div>' : '') +
+      (d.total && !d.n_action ? '<div class="clay panel"><p class="note g" style="margin:0">ไม่มีแถวที่ต้องเลือกเอง</p></div>' : '') +
+      d.rows.filter((x) => x.cands.length).map(card).join('') +
+      (d.n_wait ? '<div class="clay panel"><h3 style="margin-top:0">ผลหมายที่ยังไม่พบหมายต้นทาง ' + num(d.n_wait) + ' แถว</h3>' +
+        '<p class="small" style="margin:0 0 8px">ไม่ต้องทำอะไรทีละแถว — นำเข้า <b>ไฟล์จ่ายหมาย (50)</b> ที่ครอบช่วงวันที่จ่ายหมาย' + (d.wait_from ? ' <b>' + esc(thLong(d.wait_from)) + ' – ' + esc(thLong(d.wait_to)) + '</b>' : '') + ' ระบบจะจับคู่และปิดแถวเหล่านี้ให้เองทันที (ไม่ต้องนำเข้าไฟล์ผลซ้ำ)</p>' +
+        '<details><summary class="small">ดูรายการ</summary>' + d.rows.filter((x) => !x.cands.length).map(card).join('') + '</details></div>' : '') +
+      (d.total > d.rows.length ? '<p class="small muted">แสดง ' + num(d.rows.length) + ' จาก ' + num(d.total) + ' แถว</p>' : '');
+    const act = async (b, body, okMsg) => {
+      b.disabled = true; const t0 = b.textContent; b.innerHTML = '<span class="spin"></span>';
+      try { const r = await api('review_resolve', body); toast(okMsg(r)); go('review'); }
+      catch (e) { toast(e.message); b.disabled = false; b.textContent = t0; }
+    };
+    if ($('#rvRetry')) $('#rvRetry').addEventListener('click', (e) => act(e.currentTarget, { op: 'RETRY' }, (r) => 'ระบบจับคู่ได้เพิ่ม ' + num(r.closed) + ' แถว · เหลือ ' + num(r.left) + ' แถว'));
+    m.querySelectorAll('.rvbox').forEach((bx) => {
+      const base = { batch_id: bx.dataset.b, row_no: Number(bx.dataset.r) };
+      const ap = bx.querySelector('.rv-apply');
+      if (ap) ap.addEventListener('click', () => {
+        const pick = bx.querySelector('input[type=radio]:checked');
+        if (!pick) { toast('เลือกหมายที่เป็นของผลนี้ก่อน'); return; }
+        act(ap, Object.assign({ op: 'APPLY', notice_uid: pick.value }, base), () => 'บันทึกผลการส่งแล้ว · คำนวณค่าหมายใหม่แล้ว');
+      });
+      const ig = bx.querySelector('.rv-ign');
+      if (ig) ig.addEventListener('click', () => {
+        const why = bx.querySelector('.rv-why').value.trim();
+        if (!why) { toast('ระบุเหตุผลที่ไม่ใช้แถวนี้'); bx.querySelector('.rv-why').focus(); return; }
+        act(ig, Object.assign({ op: 'IGNORE', reason: why }, base), () => 'ปิดแถวนี้แล้ว');
+      });
+    });
+  };
 
   /* ---------------------------------------------------------------- ประวัติการนำเข้า */
   RENDER.history = async (m) => {
@@ -841,7 +900,7 @@
       const box = $('#rvBox'); box.innerHTML = '<div class="clay panel"><span class="spin"></span></div>';
       try {
         const r = await api('import_review', { batch_id: b.dataset.b });
-        box.innerHTML = '<div class="clay panel"><h3>แถวรอตรวจสอบ · ' + esc(b.dataset.b) + '</h3><p class="small muted" style="margin:0 0 10px">แก้ที่ไฟล์ต้นทาง หรือแก้ชื่อผู้ส่ง/ชื่อเรียกอื่นในหน้า "ผู้ส่งหมายและอัตรา" แล้วนำเข้าไฟล์อีกครั้ง</p><div class="tbl-wrap"><table><thead><tr><th>แถว</th><th>กลุ่ม</th><th>เหตุผล</th><th>ข้อมูลในไฟล์</th></tr></thead><tbody>' +
+        box.innerHTML = '<div class="clay panel"><h3>แถวรอตรวจสอบ · ' + esc(b.dataset.b) + '</h3><p class="small muted" style="margin:0 0 10px">แถวที่ยังค้าง เลือกฉบับหรือปิดแถวได้ที่หน้า "แถวรอตรวจ" · ชื่อผู้ส่งไม่ตรง แก้ชื่อเรียกอื่นในหน้า "ผู้ส่งหมายและอัตรา" แล้วนำเข้าไฟล์อีกครั้ง</p><div class="tbl-wrap"><table><thead><tr><th>แถว</th><th>กลุ่ม</th><th>เหตุผล</th><th>ข้อมูลในไฟล์</th></tr></thead><tbody>' +
           r.rows.map((x) => '<tr><td>' + x.row_no + '</td><td><span class="pill ' + (x.cls === 'ERROR' ? 'r' : 'a') + '">' + esc(CLS_TH[x.cls]) + '</span></td><td>' + esc(x.reason) + '</td><td class="tiny">' +
             esc(Object.keys(x.raw).map((k) => k + ': ' + x.raw[k]).join(' · ')) + '</td></tr>').join('') + '</tbody></table></div></div>';
         box.scrollIntoView({ behavior: 'smooth' });
