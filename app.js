@@ -123,6 +123,43 @@
 
   const stChip = (k) => { const x = ST_BY[k] || ST_BY.wait; return '<span class="stchip" style="--c:' + x.c + '">' + esc(x.th) + '</span>'; };
 
+  /**
+   * 0.6.5 กล่องยืนยันกลางจอ (แทน confirm/prompt ของเบราว์เซอร์ ซึ่งแสดงชื่อเว็บไซต์/บัญชีเจ้าของ และขึ้นด้านบนจอ)
+   * askBox(ข้อความ) → true/false · askBox(ข้อความ, { input: 'คำแนะนำ' }) → ข้อความที่กรอก หรือ null
+   */
+  function askBox(msg, opt) {
+    opt = opt || {};
+    return new Promise((resolve) => {
+      const last = document.activeElement;
+      const ov = document.createElement('div'); ov.className = 'ask-ov';
+      ov.innerHTML = '<div class="ask clay" role="dialog" aria-modal="true" aria-labelledby="askMsg"><p id="askMsg" class="ask-msg"></p>' +
+        (opt.input !== undefined ? '<input class="inp ask-in" aria-label="ระบุเหตุผล">' : '') +
+        '<div class="ask-btns"><button type="button" class="btn ask-no">ยกเลิก</button><button type="button" class="btn btn-g ask-ok">ตกลง</button></div></div>';
+      ov.querySelector('.ask-msg').textContent = String(msg);
+      document.body.appendChild(ov);
+      const inp = ov.querySelector('.ask-in'), ok = ov.querySelector('.ask-ok');
+      if (inp) inp.placeholder = String(opt.input || '');
+      const done = (v) => { ov.remove(); document.removeEventListener('keydown', key, true); if (last && last.focus) last.focus(); resolve(v); };
+      const yes = () => {
+        if (!inp) return done(true);
+        const v = inp.value.trim(); if (!v) { inp.focus(); inp.classList.add('ask-need'); return; }
+        done(v);
+      };
+      const key = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); done(inp ? null : false); }
+        else if (e.key === 'Enter' && (inp ? document.activeElement === inp : true)) { e.preventDefault(); yes(); }
+        else if (e.key === 'Tab') {                                   // วนโฟกัสอยู่ในกล่อง
+          const f = Array.from(ov.querySelectorAll('input,button')); const i = f.indexOf(document.activeElement);
+          e.preventDefault(); f[(i + (e.shiftKey ? f.length - 1 : 1)) % f.length].focus();
+        }
+      };
+      document.addEventListener('keydown', key, true);
+      ok.addEventListener('click', yes);
+      ov.querySelector('.ask-no').addEventListener('click', () => done(inp ? null : false));
+      ov.addEventListener('click', (e) => { if (e.target === ov) done(inp ? null : false); });
+      (inp || ok).focus();
+    });
+  }
   function toast(msg) {
     const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
     clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hidden'), 3800);
@@ -994,7 +1031,7 @@
       try { await api('notice_confirm_amount', { notice_uids: [b.dataset.u] }); toast('ยืนยันยอดตรงแล้ว'); go('calc'); } catch (e) { toast(e.message); drawChecks(); }
     }));
     box.querySelectorAll('.cu').forEach((b) => b.addEventListener('click', async () => {
-      const reason = window.prompt('เหตุผลที่ยกเลิกการยืนยันยอด'); if (!reason) return;
+      const reason = await askBox('เหตุผลที่ยกเลิกการยืนยันยอด', { input: 'ระบุเหตุผล' }); if (!reason) return;
       busy(b);
       try { await api('notice_confirm_amount', { notice_uids: [b.dataset.u], undo: true, reason: reason }); toast('ยกเลิกการยืนยันแล้ว'); go('calc'); } catch (e) { toast(e.message); drawChecks(); }
     }));
@@ -1004,7 +1041,7 @@
     }));
     if ($('#cbAll')) $('#cbAll').addEventListener('click', async (e) => {
       const ids = d.date.filter((x) => !x.date_ok).map((x) => x.notice_uid);
-      if (!window.confirm('ยืนยันว่า ' + ids.length + ' หมายนี้จ่ายเดือน ก.ย. (ก่อนเริ่มปีงบ)?\nหมายฟรีจะไม่นับ · หมายมีเงินนับเมื่อมีวันที่ส่งตั้งแต่ 1 ต.ค.')) return;
+      if (!(await askBox('ยืนยันว่า ' + ids.length + ' หมายนี้จ่ายเดือน ก.ย. (ก่อนเริ่มปีงบ)?\nหมายฟรีจะไม่นับ · หมายมีเงินนับเมื่อมีวันที่ส่งตั้งแต่ 1 ต.ค.'))) return;
       busy(e.currentTarget);
       try { const r = await api('notice_confirm_date', { notice_uids: ids, value: 'BEFORE' }); toast('ยืนยันแล้ว ' + num(r.updated) + ' หมาย'); go('calc'); } catch (er) { toast(er.message); drawChecks(); }
     });
@@ -1254,8 +1291,8 @@
       const inc = d.items.length - off.size, carryC = Math.round(Number($('#pCarry').value || 0) * 100);
       if (carryC !== carry0 && !$('#pCarryNote').value.trim()) { toast('กรุณาใส่เหตุผลที่แก้เศษยกมา'); $('#pCarryNote').focus(); return; }
       const bad = Object.keys(targets).filter((id) => { const s = byOff[id].filter((it) => !off.has(it.key)).reduce((a, x) => a + x.amount_c, 0); return s !== targets[id]; });
-      if (!window.confirm('ยืนยันรอบ' + RTYPE_TH[d.round_type] + ' วันที่ ' + thDate(d.pay_date) + '\n' + (free ? 'เบิก ' + inc + ' เรื่อง · ยังไม่เสนอเบิกจ่าย ' + off.size + ' เรื่อง' : 'ตามบัญชีจ่ายเงิน ' + inc + ' เรื่อง') +
-        '\nคนนั่งงาน ' + $('#pSeats').value + ' คน · เศษยกมา ' + baht2(carryC / 100) + (bad.length ? '\n⚠ ยอดไม่ตรงใบแบ่งยอด ' + bad.length + ' คน' : ''))) return;
+      if (!(await askBox('ยืนยันรอบ' + RTYPE_TH[d.round_type] + ' วันที่ ' + thDate(d.pay_date) + '\n' + (free ? 'เบิก ' + inc + ' เรื่อง · ยังไม่เสนอเบิกจ่าย ' + off.size + ' เรื่อง' : 'ตามบัญชีจ่ายเงิน ' + inc + ' เรื่อง') +
+        '\nคนนั่งงาน ' + $('#pSeats').value + ' คน · เศษยกมา ' + baht2(carryC / 100) + (bad.length ? '\n⚠ ยอดไม่ตรงใบแบ่งยอด ' + bad.length + ' คน' : '')))) return;
       const b = $('#pOk'); b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังบันทึก…';
       try {
         const r = await api('payout_confirm', { round_type: d.round_type, pay_date: d.pay_date, cutoff: d.cutoff, seats: Number($('#pSeats').value),
@@ -1288,7 +1325,7 @@
       const b = $('#pClose'); b.disabled = !sel.size; b.textContent = 'ปิดเป็น "ไม่เบิก" (' + sel.size + ')';
     }));
     if ($('#pClose')) $('#pClose').addEventListener('click', async () => {
-      const reason = window.prompt('เหตุผลที่ไม่เบิก ' + sel.size + ' เรื่อง (บันทึกไว้ตรวจย้อนหลัง)'); if (!reason) return;
+      const reason = await askBox('เหตุผลที่ไม่เบิก ' + sel.size + ' เรื่อง (บันทึกไว้ตรวจย้อนหลัง)', { input: 'ระบุเหตุผล' }); if (!reason) return;
       try { await api('payout_noclaim', { notice_uids: Array.from(sel), reason: reason }); toast('ปิดเป็น "ไม่เบิก" แล้ว'); S.payoutSub = 'backlog'; go('payout'); } catch (x) { toast(x.message); }
     });
     m.querySelectorAll('[data-re]').forEach((b) => b.addEventListener('click', async () => {
@@ -1323,7 +1360,7 @@
     $('#pPrint').addEventListener('click', () => printPayout(d));
     if ($('#pClaim')) $('#pClaim').addEventListener('click', () => printClaim(inc.map((it) => ({ officer_id: it.officer_id, case_list: it.case_list, report_date: it.delivered_date, amount_c: Math.round(it.amount * 100) })), names, { pay_date: r.pay_date, cutoff: r.cutoff_date, source: r.source_label, round_id: r.round_id }, false));
     if ($('#pCancel')) $('#pCancel').addEventListener('click', async () => {
-      const reason = window.prompt('เหตุผลที่ยกเลิกรอบนี้ (หมายในรอบจะกลับเป็นพร้อมเบิก)'); if (!reason) return;
+      const reason = await askBox('เหตุผลที่ยกเลิกรอบนี้ (หมายในรอบจะกลับเป็นพร้อมเบิก)', { input: 'ระบุเหตุผล' }); if (!reason) return;
       try { await api('payout_cancel', { round_id: rid, reason: reason }); toast('ยกเลิกรอบแล้ว'); S.payoutSub = 'round:' + rid; go('payout'); } catch (x) { toast(x.message); }
     });
   }
