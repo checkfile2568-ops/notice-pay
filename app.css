@@ -310,3 +310,30 @@ td.n,th.n{white-space:nowrap}
 .ptbl .pcnt{display:block;font-size:11px;color:var(--muted,#7a8a80);font-weight:400;line-height:1.2}.ptbl td.n{white-space:nowrap}.ptbl td.pnm{white-space:nowrap}
 
 .flag-up{color:#a8620a;font-weight:600}.nb.flag-up,.nb.flag-r{font-weight:700}.pit .flag-up,.pit .flag-r{white-space:nowrap;margin-left:6px}
+
+/* 0.6.0 รอบเบิกตามบัญชีจริง */
+.pit{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+.pit>input,.pit>.pdot{flex:none}
+.pit .pcase{flex:1 1 200px}
+.pit .pamt{margin-left:auto;order:3}
+.pit .pdt{flex:1 1 100%;order:4;padding-left:30px}
+.pit .ph,.pit .flag-up,.pit .flag-r,.pit .tiny.muted:not(.pdt){order:5}
+.pit .pnot{order:6;margin-left:auto}
+.pit.pzero{opacity:.72}
+.pit.pzero .pamt{color:var(--muted);font-weight:500}
+.pit.out-i{cursor:default;opacity:.85}
+.pdot{width:10px;height:10px;border-radius:50%;background:#7BB36B;display:inline-block}
+.pdot.r{background:#D9534F}
+.pinfo{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.pinfo-r{display:flex;gap:10px;align-items:flex-start}
+.pinfo-r>.pchip{margin-top:2px}
+.pdates{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.pdate{font-size:13px}
+.ptgt{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:0}
+.ptin{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ptin .inp{width:130px;min-height:36px;padding:4px 10px;text-align:right}
+.btn-xs{min-height:28px;padding:0 10px;border-radius:9px;font-size:12px}
+.pseat .tiny{font-weight:400}
+.pr-grp td{background:#f3f3f3;border-top:1pt solid #000}
+@media (max-width:640px){.pit .pdt{padding-left:0}.ptin .inp{width:110px}}
+.pdet>summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--muted);padding:6px 4px}
