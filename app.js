@@ -497,8 +497,8 @@
         '<span class="howto">นำเข้าไฟล์เมนู <b>บัญชีหมาย</b> › ประเภท <b>42. บัญชีผลการส่งคำคู่ความ ส่งโดยเจ้าพนักงาน</b> › เลือกวันที่ ถึงวันที่</span></button>' +
       '<button type="button" class="kind clay-mint" data-k="FREE18"><b>ราคาหมายฟรีตามบัญชีศาล</b><span class="small">ราคาหมายฟรีรายเรื่องที่ศาลคิด (รวมหมายตามข้อ 7 แล้ว) · ใช้เป็นยอดเบิกในรอบหมายฟรี · นำเข้าก่อนตั้งรอบหมายฟรีทุกครั้ง</span>' +
         '<span class="howto">นำเข้าไฟล์เมนู <b>บัญชีหมาย</b> › ประเภท <b>18. บัญชีจ่ายหมาย พนักงานศาลนี้ส่ง หมายฟรี</b></span></button>' +
-      '<button type="button" class="kind clay-mint" data-k="PAY"><b>บัญชีจ่ายเงินหมายมีเงิน</b><span class="small">หมายมีเงินที่จ่ายจริง แยกตามวันที่จ่าย · ใช้ตั้งรอบหมายเงิน (ยอดตามไฟล์) · ไฟล์เดียวมีได้หลายวันจ่าย</span>' +
-        '<span class="howto">นำเข้าไฟล์ <b>บัญชีการจ่ายเงินให้เจ้าพนักงานศาล</b> (แบบหลายใบเสร็จ) › เลือกวันที่ ถึงวันที่</span></button>' +
+      '<button type="button" class="kind clay-mint" data-k="PAY"><b>บัญชีจ่ายเงินหมายมีเงิน</b><span class="small">หมายมีเงินที่จ่ายจริง แยกตามวันที่จ่าย · นำเข้าทุกสัปดาห์ก่อนตั้งรอบหมายเงิน (ยอดตามไฟล์) · ไฟล์เดียวมีได้หลายวันจ่าย</span>' +
+        '<span class="howto">นำเข้าไฟล์เมนู <b>บัญชีเบิกจ่ายหมาย</b> › ประเภท <b>30. บัญชีการจ่ายเงินให้เจ้าพนักงานศาล</b> (แบบหลายใบเสร็จ) › เลือกวันที่ ถึงวันที่</span></button>' +
       '</div></div><div id="imFile"></div><div id="imMap"></div><div id="imPrev"></div>' +
       (IM.meta.start_fy ? '<p class="small" style="margin:0 6px 6px"><span class="period">เริ่มประมวลผลตั้งแต่ปีงบประมาณ ' + esc(IM.meta.start_fy) + ' (1 ต.ค. ' + esc(Number(IM.meta.start_fy) - 1) + ')</span> หมายที่จ่ายก่อนวันนี้ไม่นำเข้า</p>' : '') +
       '<p class="small muted" style="margin:0 6px">กฎการนำเข้าตามข้อกำหนดฉบับ 4.0 ข้อ 3: นำเข้าไฟล์เดิมซ้ำได้ ยอดไม่เพิ่ม · ไม่ลบข้อมูลที่ไม่อยู่ในไฟล์ล่าสุด · หมายที่เข้ารอบจ่าย/เบิกแล้วจะไม่ถูกเขียนทับ</p>';
@@ -510,7 +510,7 @@
 
   function drawFile() {
     $('#imMap').innerHTML = ''; $('#imPrev').innerHTML = '';
-    $('#imFile').innerHTML = '<div class="clay panel"><h3>2 · เลือกไฟล์ ' + ({ ISSUE: 'จ่ายหมาย', RESULT: 'ผลหมาย', FREE18: 'บัญชีจ่ายหมาย หมายฟรี (ประเภท 18)', PAY: 'บัญชีการจ่ายเงินให้เจ้าพนักงานศาล' }[IM.kind] || '') + '</h3>' +
+    $('#imFile').innerHTML = '<div class="clay panel"><h3>2 · เลือกไฟล์ ' + ({ ISSUE: 'จ่ายหมาย', RESULT: 'ผลหมาย', FREE18: 'บัญชีจ่ายหมาย หมายฟรี (ประเภท 18)', PAY: 'บัญชีการจ่ายเงินให้เจ้าพนักงานศาล (ประเภท 30)' }[IM.kind] || '') + '</h3>' +
       '<label class="drop sunk" id="drop"><input type="file" id="fin" accept=".xlsx,.xls,.csv" class="sr">' +
       '<b>แตะเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง</b><span class="small muted">รองรับ .xlsx .xls .csv · ไฟล์สะสมตั้งแต่ต้นปีงบได้</span></label><div id="fInfo"></div></div>';
     const drop = $('#drop');
@@ -991,7 +991,7 @@
           '<div class="tiny muted">ราคาหมายฟรีตามบัญชีศาล: ' + (d.free18_at ? 'นำเข้าล่าสุด ' + esc(thDate(d.free18_at, true)) : '<span class="flag-r">ยังไม่นำเข้า — รอบหมายฟรีจะใช้ยอดที่ระบบคำนวณ</span>') + ' · ที่มา ' + esc(d.sources.FREE18) + '</div></div></div>' +
         '<div class="pinfo-r"><span class="pchip pm">มีเงิน</span><div><b>บัญชีจ่ายเงินที่รอตั้งรอบ</b>' +
           (d.pending_dates.length ? '<div class="pdates">' + d.pending_dates.map((x) => '<button type="button" class="btn btn-sm pdate" data-pd="' + esc(x.pay_date) + '"' + (d.can_create ? '' : ' disabled') + '>' + esc(thDate(x.pay_date)) + ' · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + '&nbsp;฿' + (x.none ? ' <span class="flag-r">ไม่พบ ' + num(x.none) + '</span>' : '') + '</button>').join('') + '</div>'
-            : '<div class="small muted">ไม่มี — นำเข้า "' + esc(d.sources.PAY) + '" ที่เมนูนำเข้าข้อมูล</div>') + '</div></div></div>' +
+            : '<div class="small muted">ไม่มี — ดาวน์โหลดไฟล์ ' + esc(d.sources.PAY) + ' แล้วนำเข้าที่ "นำเข้าข้อมูล › บัญชีจ่ายเงินหมายมีเงิน"</div>') + '</div></div></div>' +
       '<div class="clay panel"><div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">กล่อง "ยังไม่ได้เบิก"</h3>' +
       '<span class="small muted">ส่งแล้ว ยังไม่เข้ารอบใด · รวม <b>' + baht2(T.p + T.b) + ' ฿</b>' + (d.can_detail ? ' <button type="button" class="btn btn-sm" id="pBl">ดูรายเรื่อง</button>' : '') + '</span></div>' +
       '<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>ผู้ส่งหมาย</th><th class="n">หมายเงิน (เรื่อง)</th><th class="n">บาท</th><th class="n">หมายฟรี (เรื่อง)</th><th class="n">บาท</th><th class="n">เคยเลื่อน</th><th class="n">ค้างนานสุด</th></tr></thead><tbody>' +
