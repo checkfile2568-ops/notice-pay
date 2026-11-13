@@ -308,3 +308,5 @@ td.n,th.n{white-space:nowrap}
 .bn4{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
 
 .ptbl .pcnt{display:block;font-size:11px;color:var(--muted,#7a8a80);font-weight:400;line-height:1.2}.ptbl td.n{white-space:nowrap}.ptbl td.pnm{white-space:nowrap}
+
+.flag-up{color:#a8620a;font-weight:600}.nb.flag-up,.nb.flag-r{font-weight:700}.pit .flag-up,.pit .flag-r{white-space:nowrap;margin-left:6px}

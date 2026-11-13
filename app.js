@@ -134,10 +134,13 @@
     .map((x) => '<span class="tiny ' + (FLAGS_RED.indexOf(x) >= 0 ? 'flag-r' : 'flag-a') + '">' + esc(x) + '</span>').join('<br>');
   /** สัญลักษณ์ "เคยยอดไม่ตรง" — ยอดที่ยืนยันแล้วไม่แสดงสีแดง แต่คงเครื่องหมายไว้ถาวร */
   const okMark = (ok) => '<span class="tiny flag-ok" title="ยืนยันโดย ' + esc(ok.by) + ' ' + esc(thDate(ok.at, true)) + '">◆ เคยยอดไม่ตรง · ยืนยันแล้ว</span>';
+  /** ราคาไม่เท่าอัตราตำบล → คิดตามอัตราตำบล: ▲ เกิน (ส่วนเกินไม่นำมาคิด) · ▼ ต่ำกว่า (อักษรสีแดง) */
+  const adjMark = (a, long) => !a ? '' : (a.dir === 'UP'
+    ? '<span class="tiny flag-up" title="ราคาไฟล์ ' + num(a.src) + ' · คิดตามอัตราตำบล ' + num(a.rate) + '">▲ เกินอัตราตำบล ' + num(a.diff) + '&nbsp;฿' + (long ? ' (ไฟล์ ' + num(a.src) + ' · คิด ' + num(a.rate) + ') ส่วนเกินไม่นำมาคิด' : '') + '</span>'
+    : '<span class="tiny flag-r" title="ราคาไฟล์ ' + num(a.src) + ' · คิดตามอัตราตำบล ' + num(a.rate) + '">▼ ต่ำกว่าอัตราตำบล ' + num(a.diff) + '&nbsp;฿' + (long ? ' (ไฟล์ ' + num(a.src) + ' · คิด ' + num(a.rate) + ')' : '') + '</span>');
   const flagsOf = (r) => {
-    const ok = r.amount_ok && r.amount_ok.current;
-    const rest = String(r.flags || '').split(';').filter((x) => x && !(ok && x === FLAGS_RED[0])).join(';');
-    return [ok ? okMark(r.amount_ok) : '', flagHtml(rest)].filter(Boolean).join('<br>');
+    const rest = String(r.flags || '').split(';').filter((x) => x && !(r.adj && x === FLAGS_RED[0])).join(';');
+    return [adjMark(r.adj, true), flagHtml(rest)].filter(Boolean).join('<br>');
   };
 
   /* ---------------------------------------------------------------- API */
@@ -315,7 +318,7 @@
       '<tr><th>ฉบับ</th><th>บาท</th><th>ฉบับ</th><th>หน่วยเบิก</th><th>บาท</th><th>รอวันที่ส่ง</th></tr></thead><tbody>' + rows +
       '<tr class="pr-sum"><td></td><td><b>รวมทั้งสิ้น</b></td><td class="n"><b>' + num(t.paid_n) + '</b></td><td class="n"><b>' + b(t.paid_amount) + '</b></td><td class="n"><b>' + num(t.free_n) +
       '</b></td><td class="n"><b>' + num(t.free_units) + '</b></td><td class="n"><b>' + b(t.free_amount) + '</b></td><td class="n"><b>' + num(t.free_wait) + '</b></td><td class="n"><b>' + b(t.paid_amount + t.free_amount) + '</b></td></tr></tbody></table>' +
-      '<div class="pr-note"><b>หมายเหตุ</b> ๑. หมายมีเงินคิดตามราคาที่วางในบัญชีจ่ายหมาย ๒. หมายฟรีคิดตามระเบียบ ก.บ.ศ. ว่าด้วยค่าตอบแทนฯ พ.ศ. ๒๕๖๒ ข้อ ๗ อำเภอเมืองลพบุรี ๓๐๐ บาท อำเภออื่นตามอัตราตำบล ' +
+      '<div class="pr-note"><b>หมายเหตุ</b> ๑. หมายมีเงินคิดตามราคาที่วางในบัญชีจ่ายหมาย กรณีราคาไม่เท่าอัตราตำบลคิดตามอัตราตำบล' + ((t.adj_up || t.adj_dn) ? ' (' + [t.adj_up ? '▲ เกินอัตรา ' + num(t.adj_up) + ' ฉบับ ส่วนเกิน ' + num(t.adj_up_baht) + ' บาท ไม่นำมาคิด' : '', t.adj_dn ? '▼ ต่ำกว่าอัตรา ' + num(t.adj_dn) + ' ฉบับ ปรับขึ้น ' + num(t.adj_dn_baht) + ' บาท' : ''].filter(Boolean).join(' · ') + ')' : '') + ' ๒. หมายฟรีคิดตามระเบียบ ก.บ.ศ. ว่าด้วยค่าตอบแทนฯ พ.ศ. ๒๕๖๒ ข้อ ๗ อำเภอเมืองลพบุรี ๓๐๐ บาท อำเภออื่นตามอัตราตำบล ' +
       '๓. ไม่รวมหมายที่ยังไม่มีวันที่ส่ง หมายที่รอยืนยัน และหมายก่อนเริ่มปีงบประมาณ ๔. ยอดนี้ยังไม่แบ่งส่วน ๖๐ : ๔๐ และแยกจากเอกสารเบิกจ่ายทางราชการ</div>' +
       '<div class="pr-sign"><div>ลงชื่อ ......................................................... ผู้จัดทำ<br>(' + esc(S.user ? S.user.name : '') + ')<br>ตำแหน่ง .........................................................</div>' +
       '<div>ลงชื่อ ......................................................... ผู้ตรวจสอบ<br>(.........................................................)<br>ตำแหน่ง .........................................................</div></div>';
@@ -354,7 +357,7 @@
       if (!d.rows.length) { box.innerHTML = '<p class="small muted" style="margin:6px 4px">ไม่พบหมาย</p>'; return; }
       box.innerHTML = d.rows.slice(0, 20).map((r) => '<div class="qs-item">' +
         '<div class="qs-top"><b>' + esc(r.case_no) + '</b>' + stChip(r.money_status) +
-        (r.amount_ok && r.amount_ok.current ? '<span class="tiny flag-ok">◆ เคยยอดไม่ตรง</span>' : '') + '</div>' +
+        adjMark(r.adj) + '</div>' +
         '<div class="small">' + esc(r.notice_kind) + ' · ' + esc(PAY_TH[r.pay_type] || '') + ' · ' + esc(r.officer) + '</div>' +
         '<div class="tiny muted">จ่าย ' + esc(thDate(r.issued_date) || '—') + ' · ส่ง ' + esc(thDate(r.delivered_date) || 'ยังไม่ส่ง') +
         (r.calc_amount !== '' && r.calc_amount !== undefined ? ' · ' + baht(r.calc_amount) + ' ฿' : '') + (r.calc_rule ? ' · ' + esc(r.calc_rule) : '') + '</div></div>').join('') +
@@ -379,7 +382,7 @@
     if (d.pending_review) notes.push('<div class="note">มีแถวรอตรวจสอบจากการนำเข้า ' + num(d.pending_review) + ' แถว (ดูในประวัติการนำเข้า)</div>');
     if (d.pending_changes) notes.push('<div class="note">มีรายการแก้ไขหมายที่ล็อกแล้ว รออนุมัติ ' + num(d.pending_changes) + ' รายการ</div>');
     if (t.no_area) notes.push('<div class="note">หมาย ' + num(t.no_area) + ' ฉบับ ไม่พบตำบลในตารางอัตรา — ตรวจชื่อตำบล/อำเภอในไฟล์ต้นทาง</div>');
-    if (t.red) notes.push('<div class="note r">หมาย ' + num(t.red) + ' ฉบับ ราคาไม่เท่ากับอัตราของตำบล รอยืนยันยอด — ดูที่หน้า "คำนวณค่าหมาย"</div>');
+    if (t.adj_up || t.adj_dn) notes.push('<div class="note">หมายมีเงิน ' + num((t.adj_up || 0) + (t.adj_dn || 0)) + ' ฉบับ ราคาไม่เท่าอัตราตำบล — คิดตามอัตราตำบลแล้ว' + (t.adj_up ? ' · <span class="flag-up">▲ เกิน ' + num(t.adj_up) + '</span>' : '') + (t.adj_dn ? ' · <span class="flag-r">▼ ต่ำกว่า ' + num(t.adj_dn) + '</span>' : '') + ' (ดูที่หน้า "คำนวณค่าหมาย")</div>');
     if (t.date_wait) notes.push('<div class="note r">หมาย ' + num(t.date_wait) + ' ฉบับ อาจจ่ายเดือน ก.ย. รอยืนยันวันที่จ่าย — ดูที่หน้า "คำนวณค่าหมาย"</div>');
     if (t.no_addr) notes.push('<div class="note">หมายฟรี ' + num(t.no_addr) + ' ฉบับ ไม่มีที่อยู่ นับเต็มอัตราแยกฉบับ — ควรตรวจกับต้นฉบับ</div>');
     const tot = t.total || 0, money = t.money || {};
@@ -652,10 +655,12 @@
       (p.counts.OUTSIDE ? '<p class="note" style="margin:12px 0 0">' + num(p.counts.OUTSIDE) + ' แถว จ่ายหมายก่อนวันเริ่มประมวลผล ' + esc(thDate(p.start_date)) + ' (ปีงบ ' + esc(p.start_fy) + ') — ไม่นำเข้า ไม่เข้ารอตรวจ</p>' : '') +
       (p.crosses_start ? '<p class="note r" style="margin:12px 0 0"><b>ช่วงวันที่ของไฟล์คร่อมวันเริ่มปีงบ ' + esc(thDate(p.start_date)) + '</b> — ไฟล์ 50 ไม่มีวันที่จ่ายรายแถว ระบบรับไว้ทุกแถว ' +
         num(p.date_unsure) + ' รายการใหม่ทำเครื่องหมาย "รอยืนยันวันที่จ่าย" ยังไม่คิดเงิน<br><span class="tiny">เมื่อนำเข้าไฟล์ 42 (มีวันที่จ่ายรายแถว) ระบบจะคัดให้เอง: หมายฟรีที่จ่ายก่อนวันเริ่มปีงบ = ไม่นับ · หมายมีเงิน = นับตามวันที่ส่ง</span></p>' : '') +
-      (p.price_ne_rate ? '<p class="note r" style="margin:12px 0 0"><b>' + num(p.price_ne_rate) + ' รายการ เงินไม่เท่ากับอัตราของตำบล</b> — นำเข้าได้ ระบบใช้ "ราคา" ตามไฟล์ และแสดงหมายเหตุสีแดงไว้ทุกจุด</p>' : '') +
+      (p.price_ne_rate ? '<p class="note" style="margin:12px 0 0"><b>' + num(p.price_ne_rate) + ' รายการ ราคาไม่เท่าอัตราตำบล</b> — นำเข้าได้ ระบบคิดเงินตามอัตราตำบล' +
+        (p.price_adj ? (p.price_adj.up ? ' · <span class="flag-up">▲ เกิน ' + num(p.price_adj.up) + ' รายการ ' + num(p.price_adj.up_baht) + ' บาท (ไม่นำมาคิด)</span>' : '') + (p.price_adj.dn ? ' · <span class="flag-r">▼ ต่ำกว่า ' + num(p.price_adj.dn) + ' รายการ ' + num(p.price_adj.dn_baht) + ' บาท (ปรับขึ้นตามอัตรา)</span>' : '') +
+          '<br><span class="tiny">ยอดหมายมีเงินที่คิดได้ ' + num(p.price_adj.calc) + ' บาท (ยอดตามไฟล์ ' + num(p.totals.PAID.amount) + ' บาท)</span>' : '') + '</p>' : '') +
       '<div class="tbl-wrap" style="margin-top:12px"><table><thead><tr><th>แถว</th><th>เลขคดี</th><th>ชนิดหมาย</th><th>ผู้รับ</th><th style="min-width:130px">ผู้ส่ง</th><th style="min-width:110px">ประเภท / เงิน</th><th>พื้นที่</th><th>จ่าย / ส่ง</th><th>หมายเหตุ</th></tr></thead><tbody>' +
       (list.length ? list.map((r) => '<tr><td>' + r.row_no + '</td><td>' + esc(r.case_no) + (r.case_ref ? '<br><span class="tiny muted">' + esc(r.case_ref) + '</span>' : '') + '</td><td class="small">' + esc(r.notice_kind) + '</td><td class="small">' + esc(r.recipient) + '</td><td class="small">' + esc(r.officer) + '</td><td>' + esc(PAY_TH[r.pay_type] || '') +
-        (r.pay_type === 'PAID' && r.amount !== '' ? '<br><span class="tiny">' + num(r.amount) + ' บาท' + (r.rate !== '' && Number(r.rate) !== Number(r.amount) ? ' (อัตราตำบล ' + num(r.rate) + ')' : '') + '</span>' : '') +
+        (r.pay_type === 'PAID' && r.amount !== '' ? '<br><span class="tiny">' + num(r.amount) + ' บาท' + (r.adj ? '<br>' + adjMark(r.adj) : (r.rate !== '' && Number(r.rate) !== Number(r.amount) ? ' (อัตราตำบล ' + num(r.rate) + ')' : '')) + '</span>' : '') +
         '</td><td class="small">' + esc(r.place) + (r.addr_type && r.addr_type !== 'มีหมู่' ? '<br><span class="tiny muted">' + esc(r.addr_type) + '</span>' : '') + '</td><td class="small">' + esc(thDate(r.issued_date) || '—') + (r.delivered_date ? ' / ' + esc(thDate(r.delivered_date)) : '') +
         '</td><td class="small">' + (r.reason ? esc(r.reason) + (r.flags ? '<br>' : '') : '') + flagHtml(r.flags) + '</td></tr>').join('')
         : '<tr><td colspan="9" class="muted">ไม่มีรายการ</td></tr>') +
@@ -721,19 +726,20 @@
         kpi('หมายฟรี (คิดแล้ว)', baht(t.free_amount) + ' ฿', num(t.free_units) + ' หน่วยเบิก', 'mint', t.free_amount, true) +
         kpi('หมายฟรี รอวันที่ส่ง', num(t.free_wait), 'ยังไม่คิดเงิน', '', t.free_wait) +
         kpi('รวมค่าหมาย', baht(t.paid_amount + t.free_amount) + ' ฿', 'ก่อนแบ่ง 60:40', '', t.paid_amount + t.free_amount, true) +
-        kpi('ข้อควรตรวจ', num(d.warnings.length + t.review + t.red + (t.date_wait || 0)), [t.red ? '<span class="nb">ยอดไม่ตรงอัตรา</span> <span class="nb">รอยืนยัน ' + num(t.red) + '</span>' : '', t.date_wait ? '<span class="nb">วันที่จ่ายไม่แน่ชัด ' + num(t.date_wait) + '</span>' : ''].filter(Boolean).join(' · ')) +
+        kpi('ข้อควรตรวจ', num(d.warnings.length + t.review + (t.date_wait || 0)), [(t.adj_up || t.adj_dn) ? '<span class="nb">คิดตามอัตราตำบล</span> ' + (t.adj_up ? '<span class="nb flag-up">▲ ' + num(t.adj_up) + '</span> ' : '') + (t.adj_dn ? '<span class="nb flag-r">▼ ' + num(t.adj_dn) + '</span>' : '') : '', t.date_wait ? '<span class="nb">วันที่จ่ายไม่แน่ชัด ' + num(t.date_wait) + '</span>' : ''].filter(Boolean).join(' · ')) +
       '</div>' +
       (t.date_wait ? '<p class="note r" style="margin:0 6px 12px"><b>' + num(t.date_wait) + ' หมาย อาจจ่ายเดือน ก.ย. · รอยืนยันวันที่จ่าย</b> (ไฟล์ 50 คร่อม 1 ต.ค. และยังไม่พบในไฟล์ 42) — ยังไม่รวมในยอดด้านบน · ดูและยืนยันได้ที่ "รายการรอยืนยัน" ด้านล่าง</p>' : '') +
       '<div class="clay panel"><h3>' + (d.scope_officer ? 'ค่าหมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่งหมาย</th>' +
       '<th class="n">มีเงิน (ฉบับ)</th><th class="n">มีเงิน (บาท)</th><th class="n">ฟรี (ฉบับ)</th><th class="n">หน่วยเบิก</th><th class="n">ฟรี (บาท)</th><th class="n">ฟรี รอวันส่ง</th><th class="n">รวม (บาท)</th><th></th></tr></thead><tbody>' +
       d.officers.map((o) => '<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) +
-        (o.red ? '<br><span class="tiny flag-r">เงินไม่เท่ากับอัตราของตำบล ' + num(o.red) + ' ฉบับ</span>' : '') + '</td>' +
+        (o.adj_up ? '<br><span class="tiny flag-up">▲ เกินอัตรา ' + num(o.adj_up) + ' ฉบับ ' + num(o.adj_up_baht) + '&nbsp;฿</span>' : '') +
+        (o.adj_dn ? '<br><span class="tiny flag-r">▼ ต่ำกว่าอัตรา ' + num(o.adj_dn) + ' ฉบับ ' + num(o.adj_dn_baht) + '&nbsp;฿</span>' : '') + '</td>' +
         '<td class="n">' + num(o.paid_n) + '</td><td class="n">' + baht(o.paid_amount) + '</td><td class="n">' + num(o.free_n) + '</td><td class="n">' + num(o.free_units) +
         '</td><td class="n">' + baht(o.free_amount) + '</td><td class="n">' + num(o.free_wait) + '</td><td class="n"><b>' + baht(o.paid_amount + o.free_amount) + '</b></td>' +
         '<td><button type="button" class="btn btn-s ou" data-o="' + esc(o.officer_id) + '" data-n="' + esc(o.name) + '"' + (o.free_n ? '' : ' disabled') + '>หมายฟรี</button></td></tr>').join('') +
       '<tr class="sum"><td><b>รวม</b></td><td class="n"><b>' + num(t.paid_n) + '</b></td><td class="n"><b>' + baht(t.paid_amount) + '</b></td><td class="n"><b>' + num(t.free_n) + '</b></td><td class="n"><b>' + num(t.free_units) +
         '</b></td><td class="n"><b>' + baht(t.free_amount) + '</b></td><td class="n"><b>' + num(t.free_wait) + '</b></td><td class="n"><b>' + baht(t.paid_amount + t.free_amount) + '</b></td><td></td></tr>' +
-      '</tbody></table></div><p class="tiny muted" style="margin:10px 0 0">หมายมีเงิน = ราคาที่วางตามบัญชีจ่ายหมาย · หมายฟรี = อ.เมืองลพบุรี 300 บาท อำเภออื่นตามอัตราตำบล รวมหมายตาม "คราวเดียวกัน" (ผู้ส่ง + วันที่ส่ง + ตำบล + หมู่/หน่วยงาน/ถนน) · ยอดนี้ยังไม่แบ่ง 60:40 (ระยะ 4)</p></div>' +
+      '</tbody></table></div><p class="tiny muted" style="margin:10px 0 0">หมายมีเงิน = ราคาตามบัญชีจ่ายหมาย ถ้าไม่เท่าอัตราตำบลคิดตามอัตราตำบล (▲ ส่วนเกินไม่นำมาคิด · ▼ ปรับขึ้นเป็นอัตรา) · หมายฟรี = อ.เมืองลพบุรี 300 บาท อำเภออื่นตามอัตราตำบล รวมหมายตาม "คราวเดียวกัน" (ผู้ส่ง + วันที่ส่ง + ตำบล + หมู่/หน่วยงาน/ถนน) · ยอดนี้ยังไม่แบ่ง 60:40 (ดูเมนูรอบเบิก / วันจ่าย 60:40)</p></div>' +
       (d.warnings.length ? '<div class="clay panel"><h3>ข้อควรตรวจ</h3><div class="tbl-wrap"><table><thead><tr><th>วันที่ส่ง</th><th>ผู้ส่ง</th><th>รายละเอียด</th><th class="n">ฉบับ</th><th>หน่วยเบิก</th></tr></thead><tbody>' +
         d.warnings.map((w) => '<tr><td>' + esc(thDate(w.date)) + '</td><td class="small">' + esc(w.officer) + '</td><td class="small">' + esc(w.text) + (w.place_key && !/^X:/.test(w.place_key) ? ' · ' + esc(w.place_key) : '') +
           '</td><td class="n">' + num(w.count) + '</td><td class="tiny">' + esc(w.unit_id) + '</td></tr>').join('') + '</tbody></table></div></div>' : '') +
@@ -756,17 +762,19 @@
     try { d = await api('notice_checks', { fy: S.fy }); } catch (e) { box.innerHTML = ''; return; }
     if (!d.amount.length && !d.date.length) { box.innerHTML = ''; return; }
     const caseCell = (x) => '<b>' + esc(x.case_no) + '</b>' + (x.case_ref ? '<br><span class="tiny muted">' + esc(x.case_ref) + '</span>' : '') + '<br><span class="tiny muted">' + esc(x.kind) + '</span>';
-    const redN = d.amount.filter((x) => x.red).length, waitN = d.date.filter((x) => !x.date_ok).length;
+    const waitN = d.date.filter((x) => !x.date_ok).length;
+    const upL = d.amount.filter((x) => x.adj && x.adj.dir === 'UP'), dnL = d.amount.filter((x) => x.adj && x.adj.dir === 'DOWN');
+    const sumD = (L) => L.reduce((a, x) => a + Number(x.adj.diff), 0);
     let h = '';
-    if (d.amount.length) h += '<div class="clay panel"><h3>ยอดเงินไม่ตรงอัตราตำบล · รอยืนยัน ' + num(redN) + ' · ยืนยันแล้ว ' + num(d.amount.length - redN) + '</h3>' +
-      '<p class="tiny muted" style="margin:0 0 10px">ตรวจกับต้นฉบับแล้วกด "ยืนยันยอดตรง" — ระบบใช้ราคาตามไฟล์ และคงสัญลักษณ์ <span class="flag-ok">◆ เคยยอดไม่ตรง</span> ไว้ทุกจุด พร้อมผู้ยืนยันและเวลา · ถ้าราคาเปลี่ยนภายหลัง ต้องยืนยันใหม่</p>' +
-      '<div class="tbl-wrap"><table><thead><tr><th>เลขคดี</th><th>ผู้ส่ง</th><th>ผู้รับ / พื้นที่</th><th class="n">ราคา</th><th class="n">อัตราตำบล</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+    if (d.amount.length) h += '<div class="clay panel"><h3>ราคาไม่เท่าอัตราตำบล · คิดตามอัตราตำบลแล้ว ' + num(d.amount.length) + ' ฉบับ</h3>' +
+      '<p class="small" style="margin:0 0 10px">' + (upL.length ? '<span class="flag-up">▲ เกินอัตรา ' + num(upL.length) + ' ฉบับ รวม ' + num(sumD(upL)) + ' บาท — ส่วนเกินไม่นำมาคิดและแบ่ง 60:40</span>' : '') +
+        (upL.length && dnL.length ? ' · ' : '') + (dnL.length ? '<span class="flag-r">▼ ต่ำกว่าอัตรา ' + num(dnL.length) + ' ฉบับ รวม ' + num(sumD(dnL)) + ' บาท — ปรับขึ้นเป็นอัตราตำบล</span>' : '') + '</p>' +
+      '<p class="tiny muted" style="margin:0 0 10px">ระบบคิดเงินตามอัตราตำบลให้อัตโนมัติ ไม่ต้องกดยืนยัน · ราคาตามไฟล์เก็บไว้ตามเดิมเพื่อตรวจย้อนหลัง</p>' +
+      '<div class="tbl-wrap"><table><thead><tr><th>เลขคดี</th><th>ผู้ส่ง</th><th>ผู้รับ / พื้นที่</th><th class="n">ราคาไฟล์</th><th class="n">อัตราตำบล (คิดเงิน)</th><th>ส่วนต่าง</th></tr></thead><tbody>' +
       d.amount.map((x) => '<tr><td>' + caseCell(x) + '</td><td class="small">' + esc(x.officer) + '</td><td class="small">' + esc(x.recipient) + '<br><span class="tiny muted">' + esc(x.place) + '</span></td>' +
-        '<td class="n"><b>' + num(x.amount) + '</b></td><td class="n">' + num(x.rate) + '</td>' +
-        '<td class="small">' + (x.red ? '<span class="flag-r">เงินไม่เท่ากับอัตราของตำบล · ยังไม่ยืนยัน</span>'
-          : okMark(x.ok) + '<br><span class="tiny muted">' + esc(x.ok.by) + ' · ' + esc(thDate(x.ok.at, true)) + '</span>') + '</td>' +
-        '<td>' + (x.red && d.can_amount ? '<button type="button" class="btn btn-s ca" data-u="' + esc(x.notice_uid) + '">ยืนยันยอดตรง</button>' : '') +
-        (!x.red && d.can_undo ? '<button type="button" class="btn btn-s cu" data-u="' + esc(x.notice_uid) + '">ยกเลิกยืนยัน</button>' : '') + '</td></tr>').join('') +
+        '<td class="n">' + num(x.amount) + '</td><td class="n"><b>' + num(x.rate) + '</b></td>' +
+        '<td class="small">' + (x.adj ? adjMark(x.adj) + (x.adj.dir === 'UP' ? '<br><span class="tiny muted">ส่วนเกินไม่นำมาคิด</span>' : '<br><span class="tiny muted">ปรับขึ้นเป็นอัตราตำบล</span>') : '<span class="tiny muted">—</span>') +
+        (x.ok ? '<br><span class="tiny muted" title="ประวัติก่อนเปลี่ยนกฎ">เคยยืนยันยอดไฟล์ ' + num(x.ok.value) + ' · ' + esc(x.ok.by) + ' · ' + esc(thDate(x.ok.at, true)) + '</span>' : '') + '</td></tr>').join('') +
       '</tbody></table></div></div>';
     if (d.date.length) h += '<div class="clay panel"><h3>วันที่จ่ายไม่แน่ชัด · รอยืนยัน ' + num(waitN) + ' · ยืนยันแล้ว ' + num(d.date.length - waitN) + '</h3>' +
       '<p class="tiny muted" style="margin:0 0 10px">หมายจากไฟล์ 50 ที่ช่วงวันที่คร่อม 1 ต.ค. และไม่พบวันที่จ่ายในไฟล์ 42 — ส่วนใหญ่คือหมายที่จ่ายเดือน ก.ย. · จ่ายเดือน ก.ย.: หมายฟรีไม่นับ หมายมีเงินนับเมื่อไฟล์ 42 ให้วันที่ส่งตั้งแต่ 1 ต.ค. · ถ้าภายหลังไฟล์ 42 มีวันที่จ่ายของหมายนั้น ระบบใช้วันที่จริงแทนการยืนยัน</p>' +
@@ -925,7 +933,7 @@
       '<span class="pcase">' + esc(it.case_list) + (it.n > 1 ? ' <span class="tiny muted">(' + num(it.n) + ' ฉบับ รวมเป็น 1 หมาย)</span>' : '') + '</span>' +
       '<span class="tiny muted pdt">ส่ง ' + esc(thDate(it.delivered_date)) + (it.age_days ? ' · ค้าง ' + num(it.age_days) + ' วัน' : '') + '</span>' +
       (it.held ? '<span class="pchip ph" title="รอบ ' + esc(it.held.round_id) + '">เคยเลื่อน ' + esc(thDate(it.held.pay_date)) + '</span>' : '') +
-      '<span class="pnot">ยังไม่เสนอเบิกจ่าย</span><b class="pamt">' + cb(it.amount_c) + '</b></label>';
+      (it.adj ? adjMark(it.adj) : '') + '<span class="pnot">ยังไม่เสนอเบิกจ่าย</span><b class="pamt">' + cb(it.amount_c) + '</b></label>';
     box.innerHTML = '<div class="pgrid"><div class="plist">' + offIds.map((id) =>
       '<section class="clay panel poff" data-o="' + esc(id) + '"><div class="poff-h"><label class="ck"><input type="checkbox" checked data-all="' + esc(id) + '"> <span class="odot" style="background:' + esc((names[id] || {}).color || '#999') + '"></span><b>' + esc((names[id] || {}).name || id) + '</b></label>' +
       '<span class="small muted" data-sum="' + esc(id) + '"></span></div>' + byOff[id].map(row).join('') + '</section>').join('') + '</div>' +
@@ -980,6 +988,7 @@
       per_seat_c: Math.round(r.per_seat * 100), extra_one_c: Math.round(r.extra_one * 100), carry_out_c: Math.round(r.carry_out * 100), seats: r.seats };
     const inc = d.items.filter((x) => x.included), exc = d.items.filter((x) => !x.included);
     const itemRows = (L) => L.map((it) => '<tr><td>' + esc((names[it.officer_id] || {}).name || it.officer_id) + '</td><td>' + typeChip(it.type) + '</td><td>' + esc(it.case_list) + (it.n > 1 ? ' <span class="tiny muted">(' + num(it.n) + ' ฉบับ)</span>' : '') +
+      (it.reason && it.reason !== 'ยังไม่เสนอเบิกจ่าย' ? '<br><span class="tiny ' + (/^▼|· ▼/.test(it.reason) ? 'flag-r' : 'flag-up') + '">' + esc(String(it.reason).replace(/^ยังไม่เสนอเบิกจ่าย · /, '')) + '</span>' : '') +
       '</td><td>' + esc(thDate(it.delivered_date)) + '</td><td class="n">' + baht2(it.amount) + '</td></tr>').join('');
     m.innerHTML = top('รอบเบิกวันที่ ' + thDate(r.pay_date), '<div class="row" style="gap:8px"><button type="button" class="btn btn-sm" id="pBack">← รายการรอบ</button><button type="button" class="btn btn-g btn-sm" id="pPrint">พิมพ์ใบแบ่งยอด 60:40</button>' +
       (d.can_cancel ? '<button type="button" class="btn btn-sm" id="pCancel">ยกเลิกรอบ</button>' : '') + '</div>') +
@@ -1000,6 +1009,12 @@
     });
   }
 
+  /** หมายเหตุใบแบ่งยอด: หมายมีเงินที่คิดตามอัตราตำบล (▲ ส่วนเกิน / ▼ ปรับขึ้น) */
+  function adjPrint(items) {
+    const L = (items || []).filter((x) => x.included && /[▲▼]/.test(String(x.reason || '')));
+    if (!L.length) return '';
+    return '(หมายมีเงินราคาไม่เท่าอัตราตำบล คิดตามอัตราตำบล: ' + L.map((x) => esc(x.case_list) + ' ' + esc(String(x.reason).replace(/ — .*$/, '').replace(/^ยังไม่เสนอเบิกจ่าย · /, ''))).join(' ; ') + ') ';
+  }
   async function printPayout(d) {
     if (!document.getElementById('fSarabun')) {
       const l = document.createElement('link'); l.id = 'fSarabun'; l.rel = 'stylesheet';
@@ -1021,7 +1036,7 @@
       '<tr><td><b>ได้คนละ</b></td><td class="n"><b>' + baht2(r.per_seat) + '</b></td></tr>' + (r.extra_one ? '<tr><td>เศษให้ 1 คน</td><td class="n">' + baht2(r.extra_one) + '</td></tr>' : '') +
       '<tr><td>เศษยกไปรอบหน้า</td><td class="n">' + baht2(r.carry_out) + '</td></tr></tbody></table>' +
       '<div class="pr-note"><b>หมายเหตุ</b> ๑. วิธีปัดเศษ: ' + esc(r.policy_th) + ' ๒. หมายฟรีคิดตามระเบียบ ก.บ.ศ. พ.ศ. ๒๕๖๒ ข้อ ๗ (หมายที่รวมเป็น ๑ หมายเบิกครั้งเดียว) ' +
-      '๓. รายการที่ยังไม่เสนอเบิกจ่าย ' + num(r.n_excluded) + ' รายการ ยกไปรอบหน้า ๔. บัญชีแบ่งยอด ๖๐ : ๔๐ เป็นบัญชีคำนวณภายใน แยกจากเอกสารเบิกจ่ายทางราชการ</div>' +
+      '๓. รายการที่ยังไม่เสนอเบิกจ่าย ' + num(r.n_excluded) + ' รายการ ยกไปรอบหน้า ' + adjPrint(d.items) + '๔. บัญชีแบ่งยอด ๖๐ : ๔๐ เป็นบัญชีคำนวณภายใน แยกจากเอกสารเบิกจ่ายทางราชการ</div>' +
       '<div class="pr-sign"><div>ลงชื่อ ......................................................... ผู้จัดทำ<br>(' + esc(S.user ? S.user.name : '') + ')<br>ตำแหน่ง .........................................................</div>' +
       '<div>ลงชื่อ ......................................................... ผู้ตรวจสอบ<br>(.........................................................)<br>ตำแหน่ง .........................................................</div></div>';
     try { await Promise.race([document.fonts.load('16pt Sarabun'), new Promise((res) => setTimeout(res, 1500))]); } catch (e) { /* ฟอนต์สำรอง */ }
