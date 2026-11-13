@@ -20,6 +20,8 @@
     if (!m) return s;
     return (+m[3]) + ' ' + TH_M[+m[2] - 1] + ' ' + (+m[1] + 543) + (withTime && m[4] ? ' ' + m[4] + ':' + m[5] + ' น.' : '');
   }
+  const TH_ML = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  const thLong = (iso) => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (+m[3]) + ' ' + TH_ML[+m[2] - 1] + ' ' + (+m[1] + 543) : ''; };
   let toastT;
   /* ---------- ลูกเล่น: ตัวเลขวิ่ง · สีสถานะ · กราฟเส้นเล็ก ---------- */
   const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -276,15 +278,40 @@
     $('#meName').textContent = S.user.name; $('#meRoles').textContent = S.user.roles_th.join(' · ');
     $('#meAv').textContent = S.user.name.charAt(0);
     $('#logout').onclick = async () => { try { await api('logout'); } catch (e) {} backToLogin(); };
-    drawNav(); go('home');
+    initNavMore(); drawNav(); go('home');
   }
   function drawNav() {
-    $('#nav').innerHTML = (viewerOnly() ? '' : '<button type="button" class="qs-btn" id="qsOpen">ค้นเลขคดีดูสถานะ <kbd>Ctrl K</kbd></button>') + pages().filter((p) => p.sec || p.show).map((p) => p.sec
+    $('#nav').innerHTML = (viewerOnly() ? '' : '<button type="button" class="qs-btn" id="qsOpen" aria-label="ค้นเลขคดีดูสถานะ"><span class="qs-long">ค้นเลขคดีดูสถานะ</span><span class="qs-short" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg> ค้นคดี</span> <kbd>Ctrl K</kbd></button>') + pages().filter((p) => p.sec || p.show).map((p) => p.sec
       ? '<div class="nav-sec">' + esc(p.sec) + '</div>'
       : '<button type="button" data-p="' + p.id + '"' + (p.soon ? ' disabled' : '') + (S.page === p.id ? ' class="on" aria-current="page"' : '') + '>' +
         esc(p.th) + (p.soon ? '<span class="soon">' + esc(p.soon) + '</span>' : '') + '</button>').join('');
     $('#nav').querySelectorAll('button[data-p]:not([disabled])').forEach((b) => b.addEventListener('click', () => { S.payoutSub = 'list'; go(b.dataset.p); }));
     if ($('#qsOpen')) $('#qsOpen').addEventListener('click', openQuickSearch);
+    navMoreSync(true);
+  }
+  /* มือถือ: เมนูเลื่อนซ้าย-ขวา · ปุ่ม "เมนู ›" เลื่อนไปเมนูถัดไป ถึงท้ายแล้วเป็น "‹ เมนู" กลับต้นแถว */
+  function navMoreSync(toActive) {
+    const n = $('#nav'), b = $('#navMore');
+    if (!n || !b) return;
+    if (toActive) {             // เมนูที่เลือกอยู่นอกจอ → เลื่อนมาให้เห็น (เมนูต้นแถวคงตำแหน่งเดิม ปุ่มค้นคดีไม่ถูกตัด)
+      n.scrollLeft = 0;
+      const on = n.querySelector('button.on');
+      if (on) { const rel = on.getBoundingClientRect().left - n.getBoundingClientRect().left; if (rel + on.offsetWidth > n.clientWidth - 12) n.scrollLeft = rel - 56; }
+    }
+    const can = n.scrollWidth > n.clientWidth + 4, end = n.scrollLeft + n.clientWidth >= n.scrollWidth - 4;
+    b.classList.toggle('hide', !can); n.classList.toggle('fade', can && !end);
+    b.innerHTML = end ? '<span aria-hidden="true">‹</span> เมนู' : 'เมนู <span aria-hidden="true">›</span>';
+    b.setAttribute('aria-label', end ? 'เลื่อนกลับไปเมนูแรก' : 'เลื่อนดูเมนูถัดไป');
+  }
+  function initNavMore() {
+    const n = $('#nav'), b = $('#navMore');
+    if (!n || !b || b.dataset.on) return; b.dataset.on = '1';
+    b.addEventListener('click', () => {
+      const end = n.scrollLeft + n.clientWidth >= n.scrollWidth - 4;
+      n.scrollTo({ left: end ? 0 : n.scrollLeft + Math.round(n.clientWidth * 0.9), behavior: reduceMotion() ? 'auto' : 'smooth' });
+    });
+    n.addEventListener('scroll', () => navMoreSync(false), { passive: true });
+    window.addEventListener('resize', () => navMoreSync(false));
   }
   const RENDER = {};
   function go(p) {
@@ -306,7 +333,7 @@
     const dLong = now.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
     const tm = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
     const b = (v) => baht(v);
-    const rows = d.officers.map((o, i) => '<tr><td class="c">' + (i + 1) + '</td><td>' + esc(o.name) + '</td><td class="n">' + num(o.paid_n) + '</td><td class="n">' + b(o.paid_amount) +
+    const rows = d.officers.map((o, i) => '<tr><td class="c">' + (i + 1) + '</td><td>' + esc(o.full_name || o.name) + '</td><td class="n">' + num(o.paid_n) + '</td><td class="n">' + b(o.paid_amount) +
       '</td><td class="n">' + num(o.free_n) + '</td><td class="n">' + num(o.free_units) + '</td><td class="n">' + b(o.free_amount) + '</td><td class="n">' + num(o.free_wait) +
       '</td><td class="n"><b>' + b(o.paid_amount + o.free_amount) + '</b></td></tr>').join('');
     let pa = document.getElementById('printArea');
@@ -488,9 +515,10 @@
 
   RENDER.import = async (m) => {
     if (!IM.meta) IM.meta = await api('import_templates');
+    else api('import_templates').then((x) => { IM.meta = x; paintKinds(); }).catch(() => {});   // สถานะไฟล์ล่าสุด (ผู้อื่นอาจนำเข้าแล้ว)
     resetImport();
     m.innerHTML = top('นำเข้าข้อมูล') +
-      '<div class="clay panel"><h3>1 · เลือกชนิดไฟล์</h3><div class="kinds">' +
+      '<div class="clay panel"><h3>1 · เลือกชนิดไฟล์</h3><p class="small muted" style="margin:-4px 2px 10px"><span class="kdot ok"></span> สีเขียว = นำเข้าแล้ว (แสดงไฟล์ล่าสุด) · <span class="kdot"></span> สีเทา = ยังไม่เคยนำเข้า</p><div class="kinds">' +
       '<button type="button" class="kind clay-mint" data-k="ISSUE"><b>ไฟล์จ่ายหมาย</b><span class="small">นำเข้าวันที่จ่ายหมาย — แบบรวมทุกคน หรือแยกรายคน · หมายใหม่จะมีสถานะ "จ่ายหมายแล้ว รอผล"</span>' +
         '<span class="howto">นำเข้าไฟล์เมนู <b>บัญชีหมาย</b> › ประเภท <b>50. บัญชีจ่ายหมาย พนักงานศาลนี้ส่ง (แบบรวม)</b> › เลือกวันที่ ถึงวันที่</span></button>' +
       '<button type="button" class="kind clay-mint" data-k="RESULT"><b>ไฟล์ผลหมาย</b><span class="small">นำเข้าวันอื่นได้ — หมายที่ส่งแล้วพร้อมวันที่ส่ง · ระบบจับคู่กับหมายเดิมแล้วเปลี่ยนเป็น "ส่งแล้ว"</span>' +
@@ -502,11 +530,29 @@
       '</div></div><div id="imFile"></div><div id="imMap"></div><div id="imPrev"></div>' +
       (IM.meta.start_fy ? '<p class="small" style="margin:0 6px 6px"><span class="period">เริ่มประมวลผลตั้งแต่ปีงบประมาณ ' + esc(IM.meta.start_fy) + ' (1 ต.ค. ' + esc(Number(IM.meta.start_fy) - 1) + ')</span> หมายที่จ่ายก่อนวันนี้ไม่นำเข้า</p>' : '') +
       '<p class="small muted" style="margin:0 6px">กฎการนำเข้าตามข้อกำหนดฉบับ 4.0 ข้อ 3: นำเข้าไฟล์เดิมซ้ำได้ ยอดไม่เพิ่ม · ไม่ลบข้อมูลที่ไม่อยู่ในไฟล์ล่าสุด · หมายที่เข้ารอบจ่าย/เบิกแล้วจะไม่ถูกเขียนทับ</p>';
+    paintKinds();
     m.querySelectorAll('.kind').forEach((b) => b.addEventListener('click', () => {
       m.querySelectorAll('.kind').forEach((x) => x.classList.toggle('on', x === b));
       resetImport(); IM.kind = b.dataset.k; drawFile();
     }));
   };
+
+  /** กล่องชนิดไฟล์: นำเข้าแล้ว = สีเขียว + ไฟล์ล่าสุดและช่วงวันที่ในไฟล์ · ยังไม่เคยนำเข้า = สีเทา */
+  function paintKinds() {
+    const L = (IM.meta && IM.meta.last) || {};
+    document.querySelectorAll('.kinds .kind').forEach((b) => {
+      const x = L[b.dataset.k];
+      b.classList.toggle('clay-mint', !!x); b.classList.toggle('kind-none', !x);
+      let st = b.querySelector('.kstat');
+      if (!st) { st = document.createElement('span'); b.appendChild(st); }
+      st.className = 'kstat' + (x ? ' ok' : '');
+      if (!x) { st.innerHTML = 'ยังไม่เคยนำเข้า'; return; }
+      const per = x.from && x.to
+        ? 'ไฟล์ข้อมูลเริ่มวันที่ <b>' + esc(thLong(x.from)) + '</b> ถึงวันที่ <b>' + esc(thLong(x.to)) + '</b>' + (x.derived ? ' <span class="tiny">(ตามวันที่จ่ายในไฟล์)</span>' : '')
+        : (b.dataset.k === 'FREE18' ? 'ไฟล์ประเภท 18 ไม่ระบุช่วงวันที่ — ข้อมูล ณ วันที่นำเข้า' : 'ไม่ได้บันทึกช่วงวันที่ (นำเข้าก่อนรุ่น 0.6.2) — นำเข้าครั้งถัดไปจะแสดง');
+      st.innerHTML = '✓ นำเข้าล่าสุด ' + esc(thDate(x.at, true)) + ' · ' + num(x.rows) + ' รายการ<br>' + per;
+    });
+  }
 
   function drawFile() {
     $('#imMap').innerHTML = ''; $('#imPrev').innerHTML = '';
@@ -574,7 +620,7 @@
     const badDate = kind === 'PAY' ? rows.filter((x) => !x.pay_date).length : 0;
     const grpBad = groups.filter((g) => Math.abs(rows.filter((x) => x.officer === g.officer).reduce((a, x) => a + x.amount, 0) - g.amount) > 0.005).map((g) => g.officer);
     return { rows: rows, sum: sum, footer: footer, footerN: footerN, groups: groups, grpBad: grpBad, badDate: badDate,
-             title: title, period: period[1] ? period[1] + ' – ' + period[2] : '', wrongKind: kind === 'PAY' ? /หมายฟรี/.test(title) && !/จ่ายเงินให้เจ้าพนักงานศาล/.test(title) : /บัญชีการจ่ายเงินให้เจ้าพนักงานศาล/.test(title) };
+             title: title, period: period[1] ? period[1] + ' – ' + period[2] : '', period_from: period[1] || '', period_to: period[2] || '', wrongKind: kind === 'PAY' ? /หมายฟรี/.test(title) && !/จ่ายเงินให้เจ้าพนักงานศาล/.test(title) : /บัญชีการจ่ายเงินให้เจ้าพนักงานศาล/.test(title) };
   }
   async function ledgerFile() {
     const kind = IM.kind;
@@ -593,7 +639,7 @@
         '<p class="tiny muted" style="margin:8px 2px 0">ส่งเข้าระบบเฉพาะ เลขดำ · ผู้รับ · ' + (kind === 'PAY' ? 'วันที่จ่าย · ใบเสร็จ · ' : 'ชนิดหมาย · ตำบล · ผล · ') + 'ราคา · ผู้ส่ง (ไม่ส่งโจทก์/จำเลย/ผู้วางเงิน)</p>';
       if (!IM.ledgerOk) { $('#imPrev').innerHTML = ''; return; }
       $('#imPrev').innerHTML = '<div class="clay panel"><span class="spin"></span> <span class="muted">กำลังจับคู่กับหมายในระบบ…</span></div>';
-      const r = await api('ledger_import', { kind: kind, rows: p.rows, file: IM.file, sheet: IM.sheet });
+      const r = await api('ledger_import', { kind: kind, rows: p.rows, file: IM.file, sheet: IM.sheet, period_from: p.period_from, period_to: p.period_to });
       drawLedgerPreview(r);
     } catch (e) { $('#fInfo').innerHTML = '<p class="note r">' + esc(e.message) + '</p>'; }
   }
@@ -613,7 +659,8 @@
     $('#lgOk').addEventListener('click', async (e) => {
       const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังนำเข้า…';
       try {
-        const x = await api('ledger_import', { kind: IM.kind, rows: IM.ledger.rows, file: IM.file, sheet: IM.sheet, commit: true });
+        const x = await api('ledger_import', { kind: IM.kind, rows: IM.ledger.rows, file: IM.file, sheet: IM.sheet, commit: true, period_from: IM.ledger.period_from, period_to: IM.ledger.period_to });
+        try { IM.meta = await api('import_templates'); paintKinds(); } catch (e2) { /* แสดงสถานะครั้งหน้า */ }
         toast('นำเข้าแล้ว ' + num(x.imported) + ' รายการ' + (x.skipped_locked ? ' · ข้ามวันที่ตั้งรอบแล้ว ' + num(x.skipped_locked) : ''));
         $('#imPrev').innerHTML = '<div class="clay panel"><p class="note g" style="margin:0"><b>นำเข้าเรียบร้อย</b> ชุด ' + esc(x.batch_id) + ' · ' + num(x.imported) + ' รายการ' + (x.skipped_locked ? ' · ข้ามวันที่ตั้งรอบแล้ว ' + num(x.skipped_locked) : '') +
           ' — ไปที่ <a href="#" id="lgGo">รอบเบิก / วันจ่าย 60:40</a> เพื่อตั้งรอบ</p></div>';
@@ -769,7 +816,7 @@
     const b = $('#doCommit'); b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังบันทึก…';
     try {
       const r = await api('import_commit', importBody());
-      IM.meta = await api('import_templates');
+      IM.meta = await api('import_templates'); paintKinds();
       $('#imPrev').innerHTML = '<div class="clay panel"><h3>นำเข้าเรียบร้อย</h3><p class="note g" style="margin:0 0 12px">เลขชุด ' + esc(r.batch_id) +
         ' · เพิ่มใหม่ ' + num(r.inserted) + ' · ปรับปรุง ' + num(r.updated) + ' · รออนุมัติแก้ ' + num(r.held_changes) + ' · แถวรอตรวจสอบ ' + num(r.review_rows) + '</p>' +
         (r.calc ? (r.calc.error ? '<p class="note r" style="margin:0 0 12px">คำนวณค่าหมายไม่สำเร็จ: ' + esc(r.calc.error) + '</p>'
@@ -972,6 +1019,7 @@
   const RTYPE_TH = { FREE: 'หมายศาล (หมายฟรี)', PAID: 'หมายเงิน (หมายมีเงิน)' };
   const rChip = (t) => t === 'PAID' ? typeChip('PAID') : (t === 'FREE' ? typeChip('BUDGET') : '');
   const oName = (names, id) => (names[id] || {}).name || String(id || '').replace(/^\?/, '') || '—';
+  const oFull = (names, id) => (names[id] || {}).full_name || oName(names, id);   // เอกสารพิมพ์ใช้ชื่อ–สกุลเต็ม
   const oDot = (names, id) => '<span class="odot" style="background:' + esc((names[id] || {}).color || '#bbb') + '"></span>';
 
   RENDER.payout = async (m, sub) => {
@@ -1242,7 +1290,7 @@
     loadSarabun();
     const r = d.round, names = d.officers, free = r.round_type === 'FREE';
     const amtOf = (l) => free ? l.budget : (r.round_type === 'PAID' ? l.paid : l.total);
-    const rows = d.lines.map((l, i) => '<tr><td class="c">' + (i + 1) + '</td><td>' + esc(oName(names, l.officer_id)) + '</td><td class="n">' + baht2(amtOf(l)) +
+    const rows = d.lines.map((l, i) => '<tr><td class="c">' + (i + 1) + '</td><td>' + esc(oFull(names, l.officer_id)) + '</td><td class="n">' + baht2(amtOf(l)) +
       '</td><td class="n">' + baht2(l.c60) + '</td><td class="n"><b>' + baht2(l.c40) + '</b></td><td class="c">☐</td></tr>').join('');
     await printArea('<div class="pr-head"><img src="court-seal.webp" alt=""><div class="pr-court">ศาลจังหวัดลพบุรี</div>' +
       '<div class="pr-title">ใบแบ่งยอดค่าหมาย ๖๐ : ๔๐ วันที่ ' + esc(dLong(r.pay_date)) + ' (' + esc(free ? 'หมายศาล' : 'หมายเงิน') + ')</div>' +
@@ -1266,9 +1314,9 @@
     let i = 0, grand = 0;
     const body = Object.keys(by).sort().map((id) => {
       const L = by[id], s = L.reduce((a, x) => a + x.amount_c, 0); grand += s;
-      return '<tr class="pr-grp"><td colspan="5"><b>' + esc(oName(names, id)) + '</b> · ' + num(L.length) + ' เรื่อง</td></tr>' +
+      return '<tr class="pr-grp"><td colspan="5"><b>' + esc(oFull(names, id)) + '</b> · ' + num(L.length) + ' เรื่อง</td></tr>' +
         L.map((it) => '<tr><td class="c">' + (++i) + '</td><td>' + esc(it.case_list) + '</td><td>' + esc(it.notice_kind || '') + (it.tambon ? ' · ต.' + esc(it.tambon) : '') + '</td><td>' + esc(thDate(it.report_date)) + '</td><td class="n">' + cb(it.amount_c) + '</td></tr>').join('') +
-        '<tr class="pr-sum"><td></td><td colspan="3">รวม ' + esc(oName(names, id)) + '</td><td class="n"><b>' + cb(s) + '</b></td></tr>';
+        '<tr class="pr-sum"><td></td><td colspan="3">รวม ' + esc(oFull(names, id)) + '</td><td class="n"><b>' + cb(s) + '</b></td></tr>';
     }).join('');
     await printArea('<div class="pr-head"><img src="court-seal.webp" alt=""><div class="pr-court">ศาลจังหวัดลพบุรี</div>' +
       '<div class="pr-title">บัญชีหมายฟรีที่ขอเบิก วันที่ ' + esc(dLong(d.pay_date)) + (draft ? ' (ร่าง)' : '') + '</div>' +
