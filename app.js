@@ -14,6 +14,36 @@
   const esc = (v) => String(v === null || v === undefined ? '' : v)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   const num = (n) => Number(n || 0).toLocaleString('th-TH');
+  /* ตารางจัดลำดับได้: หัวคอลัมน์ th[data-sort] มีปุ่มเล็ก ▲ (น้อย→มาก) ▼ (มาก→น้อย) · กดซ้ำ = กลับลำดับเดิม · แถวรวม (tr.sum) อยู่ท้ายเสมอ */
+  function sortable(tbl) {
+    if (!tbl) return;
+    tbl.querySelectorAll('thead th[data-sort]').forEach((th) => {
+      if (th.querySelector('.srt')) return;
+      const lab = th.textContent.trim();
+      th.insertAdjacentHTML('beforeend', '<span class="srt"><button type="button" data-d="asc" aria-label="เรียง' + esc(lab) + ' จากน้อยไปมาก" aria-pressed="false">▲</button>' +
+        '<button type="button" data-d="desc" aria-label="เรียง' + esc(lab) + ' จากมากไปน้อย" aria-pressed="false">▼</button></span>');
+      th.querySelectorAll('.srt button').forEach((b) => b.addEventListener('click', () => {
+        const col = String(th.cellIndex), d = b.dataset.d;
+        if (tbl.dataset.sc === col && tbl.dataset.sd === d) { delete tbl.dataset.sc; delete tbl.dataset.sd; } else { tbl.dataset.sc = col; tbl.dataset.sd = d; }
+        resort(tbl);
+      }));
+    });
+    resort(tbl);
+  }
+  function resort(tbl) {
+    const tb = tbl && tbl.tBodies[0]; if (!tb) return;
+    const rows = Array.from(tb.rows);
+    rows.forEach((r, i) => { if (r.dataset.o === undefined) r.dataset.o = String(i); });
+    const sum = rows.filter((r) => r.classList.contains('sum')), body = rows.filter((r) => !r.classList.contains('sum'));
+    const col = tbl.dataset.sc, d = tbl.dataset.sd;
+    const val = (r) => { const c = r.cells[+col]; if (!c) return 0; const v = c.dataset.v !== undefined ? c.dataset.v : c.textContent; return Number(String(v).replace(/[^0-9.\-]/g, '')) || 0; };
+    body.sort(col === undefined ? (a, b) => a.dataset.o - b.dataset.o : (a, b) => (d === 'asc' ? 1 : -1) * (val(a) - val(b)) || a.dataset.o - b.dataset.o);
+    body.concat(sum).forEach((r) => tb.appendChild(r));
+    tbl.querySelectorAll('thead th[data-sort] .srt button').forEach((b) => {
+      const on = String(b.closest('th').cellIndex) === col && b.dataset.d === d;
+      b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
+    });
+  }
   const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   function thDate(iso, withTime) {
     const s = String(iso || ''); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
@@ -255,7 +285,7 @@
     S.pin = ''; drawDots(); pinMsg('แตะตัวเลข ระบบตรวจทันทีเมื่อครบ 4 หลัก');
     if (n === 2) {
       $('#whoAv').textContent = S.pick.name.charAt(0); $('#whoAv').className = 'avatar av' + (S.pickAv || 0);
-      $('#whoName').textContent = S.pick.name; $('#whoDept').textContent = S.pick.dept || '';
+      $('#whoName').innerHTML = String(S.pick.name || '').trim().split(/\s+/).map((w) => '<span class="nw">' + esc(w) + '</span>').join(' '); $('#whoDept').textContent = S.pick.dept || '';
       $('#keypad button').focus();
     } else $('#q').focus();
   }
@@ -274,14 +304,14 @@
     if (S.pin.length === 4) doLogin();
   }
   async function doLogin() {
-    S.busy = true; pinMsg('กำลังตรวจสอบกับบัญชีปริ้นฮับ…');
+    S.busy = true; pinMsg('กำลังตรวจสอบ…');
     try {
       const d = await api('login', { code: S.pick.code, pin: S.pin });
       S.token = d.token; S.user = d.user;
       pinMsg('เข้าสู่ระบบสำเร็จ', 'ok');
       setTimeout(enterApp, 250);
     } catch (e) {
-      S.pin = ''; drawDots(); pinMsg(e.message, 'err');
+      S.pin = ''; drawDots(); pinMsg(String(e.message || '').replace(/\s*(ที่|ใน|กับ)?(บัญชี)?ปริ้นฮับ/g, ''), 'err');
       const dots = $('#dots'); dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake');
     } finally { S.busy = false; }
   }
@@ -477,7 +507,7 @@
       shortcut +
       '<div style="grid-area:al;display:flex;flex-direction:column;gap:10px">' + (notes.length ? notes.join('') : '<div class="note g">ไม่มีรายการค้างตรวจ</div>') + '</div>' +
       '<div class="clay panel" style="grid-area:off;min-width:0"><div class="row" style="justify-content:space-between;align-items:center;margin:0 0 6px"><h3 style="margin:0">' + (d.scope_officer ? 'หมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><span id="dnFilter"></span></div><div class="tbl-wrap"><table id="offTbl"><thead><tr><th>ผู้ส่งหมาย</th>' +
-      '<th class="n">มีเงิน รอผล</th><th class="n">มีเงิน ส่งแล้ว</th><th class="n">ฟรี รอผล</th><th class="n">ฟรี ส่งแล้ว</th><th class="n">รวม</th><th style="min-width:150px">ยอดเงินตามสถานะ</th><th>6 สัปดาห์</th></tr></thead><tbody>' +
+      '<th class="n" data-sort>มีเงิน รอผล</th><th class="n" data-sort>มีเงิน ส่งแล้ว</th><th class="n" data-sort>ฟรี รอผล</th><th class="n" data-sort>ฟรี ส่งแล้ว</th><th class="n" data-sort>รวม</th><th style="min-width:150px;white-space:nowrap" data-sort>ยอดเงินตามสถานะ</th><th>6 สัปดาห์</th></tr></thead><tbody>' +
       offRows(d.officers, null) + '</tbody></table></div>' +
       '<div class="stlegend">' + ST.map((x) => '<span><i style="background:' + x.c + '"></i>' + esc(x.th) + '</span>').join('') +
       '<span class="muted">· กราฟเส้น = จำนวนหมายที่ส่งแล้วรายสัปดาห์</span></div></div>' +
@@ -495,11 +525,13 @@
       mark();
       const x = sel && ST_BY[sel];
       $('#offTbl tbody').innerHTML = offRows(d.officers, sel);
+      resort($('#offTbl'));
       $('#dnFilter').innerHTML = x ? '<button type="button" class="stchip" style="--c:' + x.c + ';cursor:pointer" id="dnClr">กรอง: ' + esc(x.th) + ' ✕</button>' : '';
       if ($('#dnClr')) $('#dnClr').addEventListener('click', () => apply(sel));
     };
     const bind = () => m.querySelectorAll('#mvBox [data-k]').forEach((b2) => b2.addEventListener('click', () => apply(b2.dataset.k)));
     bind();
+    sortable($('#offTbl'));
     $('#mvBtn').addEventListener('click', () => {
       view = view === 'tiles' ? 'bar' : 'tiles';
       try { localStorage.setItem('np_money_view', view); } catch (e) { /* ไม่เป็นไร */ }
@@ -516,10 +548,10 @@
     if (sel) L = L.filter((o) => (o.money || {})[sel] > 0).sort((a, b) => b.money[sel] - a.money[sel]);
     if (!L.length) return '<tr><td colspan="8" class="muted small">ยังไม่มีผู้ส่งที่มียอดในสถานะนี้</td></tr>';
     const lbl = sel ? ST_BY[sel].th : 'พร้อมเบิก', key = sel || 'ready';
-    return L.map((o) => '<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) + '</td>' +
+    return L.map((o) => '<tr><td class="onm"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) + '</td>' +
       '<td class="n">' + num(o.paid_issued) + '</td><td class="n">' + num(o.paid_delivered) + '</td><td class="n">' + num(o.free_issued) + '</td><td class="n">' + num(o.free_delivered) +
       '</td><td class="n"><b>' + num(o.paid_issued + o.paid_delivered + o.free_issued + o.free_delivered) + '</b></td>' +
-      '<td>' + stBar(o.money || {}) + '<span class="tiny muted">' + esc(lbl) + ' ' + baht((o.money || {})[key]) + ' ฿</span></td><td>' + spark(o.weeks) + '</td></tr>').join('');
+      '<td data-v="' + Number((o.money || {})[key] || 0) + '">' + stBar(o.money || {}) + '<span class="tiny muted">' + esc(lbl) + ' ' + baht((o.money || {})[key]) + ' ฿</span></td><td>' + spark(o.weeks) + '</td></tr>').join('');
   }
 
   /* ---------------------------------------------------------------- ค้นหาหมาย */
@@ -965,9 +997,9 @@
         kpi('ข้อควรตรวจ', num(d.warnings.length + t.review + (t.date_wait || 0)), [(t.adj_up || t.adj_dn) ? '<span class="nb">คิดตามอัตราตำบล</span> ' + (t.adj_up ? '<span class="nb flag-up">▲ ' + num(t.adj_up) + '</span> ' : '') + (t.adj_dn ? '<span class="nb flag-r">▼ ' + num(t.adj_dn) + '</span>' : '') : '', t.date_wait ? '<span class="nb">วันที่จ่ายไม่แน่ชัด ' + num(t.date_wait) + '</span>' : ''].filter(Boolean).join(' · ')) +
       '</div>' +
       (t.date_wait ? '<p class="note r" style="margin:0 6px 12px"><b>' + num(t.date_wait) + ' หมาย อาจจ่ายเดือน ก.ย. · รอยืนยันวันที่จ่าย</b> (ไฟล์ 50 คร่อม 1 ต.ค. และยังไม่พบในไฟล์ 42) — ยังไม่รวมในยอดด้านบน · ดูและยืนยันได้ที่ "รายการรอยืนยัน" ด้านล่าง</p>' : '') +
-      '<div class="clay panel"><h3>' + (d.scope_officer ? 'ค่าหมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่งหมาย</th>' +
-      '<th class="n">มีเงิน (ฉบับ)</th><th class="n">มีเงิน (บาท)</th><th class="n">ฟรี (ฉบับ)</th><th class="n">หน่วยเบิก</th><th class="n">ฟรี (บาท)</th><th class="n">ฟรี รอวันส่ง</th><th class="n">รวม (บาท)</th><th></th></tr></thead><tbody>' +
-      d.officers.map((o) => '<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) +
+      '<div class="clay panel"><h3>' + (d.scope_officer ? 'ค่าหมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><div class="tbl-wrap"><table id="calcOff"><thead><tr><th>ผู้ส่งหมาย</th>' +
+      '<th class="n" data-sort>มีเงิน (ฉบับ)</th><th class="n" data-sort>มีเงิน (บาท)</th><th class="n" data-sort>ฟรี (ฉบับ)</th><th class="n" data-sort>หน่วยเบิก</th><th class="n" data-sort>ฟรี (บาท)</th><th class="n" data-sort>ฟรี รอวันส่ง</th><th class="n" data-sort>รวม (บาท)</th><th></th></tr></thead><tbody>' +
+      d.officers.map((o) => '<tr><td class="onm"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) +
         (o.adj_up ? '<br><span class="tiny flag-up">▲ เกินอัตรา ' + num(o.adj_up) + ' ฉบับ ' + num(o.adj_up_baht) + '&nbsp;฿</span>' : '') +
         (o.adj_dn ? '<br><span class="tiny flag-r">▼ ต่ำกว่าอัตรา ' + num(o.adj_dn) + ' ฉบับ ' + num(o.adj_dn_baht) + '&nbsp;฿</span>' : '') + '</td>' +
         '<td class="n">' + num(o.paid_n) + '</td><td class="n">' + baht(o.paid_amount) + '</td><td class="n">' + num(o.free_n) + '</td><td class="n">' + num(o.free_units) +
@@ -989,6 +1021,7 @@
       catch (er) { b.disabled = false; b.textContent = 'คำนวณใหม่'; toast(er.message); }
     });
     m.querySelectorAll('.ou').forEach((b) => b.addEventListener('click', () => drawUnits(b.dataset.o, b.dataset.n)));
+    sortable($('#calcOff'));
     if (d.scope_officer && d.officers[0] && d.officers[0].free_n) drawUnits(d.officers[0].officer_id, d.officers[0].name);
   };
   /* รายการรอยืนยัน: ยอดเงินไม่ตรงอัตราตำบล · วันที่จ่ายไม่แน่ชัด (ไฟล์ 50 คร่อม 1 ต.ค.) */

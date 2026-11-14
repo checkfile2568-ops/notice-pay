@@ -75,8 +75,9 @@ h1,h2,h3{margin:0;line-height:1.3}
 .av2{background:radial-gradient(circle at 35% 30%,#FFF2C4,#E9C35E);color:#5C4310}.av3{background:radial-gradient(circle at 35% 30%,#DCE9F7,#9DBBE0);color:#1E3A5C}
 .pick .nm{display:flex;flex-direction:column;flex:1;min-width:0}.pick .nm b{font-size:16px}.pick .nm span{font-size:13px;color:var(--muted)}
 mark{background:var(--gold-bg);color:var(--ink);border-radius:4px;padding:0 2px}
-.who{display:flex;align-items:center;gap:12px;padding:12px 12px 12px 14px}
-.who .avatar{width:46px;height:46px;font-size:18px}
+.who{display:flex;align-items:center;gap:10px;padding:12px 10px 12px 12px}
+.who .avatar{display:none}
+.who .nw,.pick .nw{white-space:nowrap}
 .dots{display:flex;gap:20px;justify-content:center;padding:2px 0}
 .dot{width:20px;height:20px;border-radius:50%;background:#E3EEE6;box-shadow:inset 2px 2px 4px rgba(60,100,75,.22),inset -2px -2px 4px rgba(255,255,255,.95)}
 .dot.on{background:radial-gradient(circle at 35% 30%,#7CC196,var(--g));box-shadow:2px 3px 6px rgba(35,90,62,.35),inset 1px 1px 2px rgba(255,255,255,.45)}
@@ -381,3 +382,14 @@ td.n,th.n{white-space:nowrap}
 .pr-grp td{background:#f3f3f3;border-top:1pt solid #000}
 @media (max-width:640px){.pit .pdt{padding-left:0}.ptin .inp{width:110px}}
 .pdet>summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--muted);padding:6px 4px}
+
+/* 0.6.6 · ชื่อผู้ส่งบรรทัดเดียว + ปุ่มจัดลำดับ ▲▼ ที่หัวคอลัมน์ */
+td.onm{white-space:nowrap}
+th[data-sort]{white-space:nowrap;vertical-align:bottom}
+.srt{display:flex;justify-content:flex-end;gap:3px;margin-top:5px}
+th:not(.n) .srt{justify-content:flex-start}
+.srt button{width:22px;height:22px;padding:0;border:none;border-radius:7px;font-size:10px;line-height:22px;color:var(--muted);
+  background:linear-gradient(160deg,#fff,#E6F0EA);box-shadow:1px 2px 4px rgba(52,92,68,.18),inset 1px 1px 1px rgba(255,255,255,.8);cursor:pointer}
+.srt button:hover{color:var(--ink)}
+.srt button.on{color:#fff;background:linear-gradient(160deg,var(--g2),var(--g))}
+@media print{.srt{display:none}}
