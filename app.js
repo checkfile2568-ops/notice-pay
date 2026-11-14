@@ -71,8 +71,8 @@
   }
   /** สีสถานะเดียวกันทุกหน้าจอ: เทา รอผล · ส้ม พร้อมเบิก/รอวันจ่าย · ฟ้า เบิกแล้วรอจ่าย · เขียว จ่ายแล้ว · แดง รอตรวจ */
   const ST = [
-    { k: 'wait', th: 'รอผล / ยังไม่ส่ง', c: '#B4B2A9' }, { k: 'ready', th: 'พร้อมเบิก / รอวันจ่าย', c: '#EF9F27' },
-    { k: 'claim', th: 'เบิกแล้ว รอจ่าย', c: '#378ADD' }, { k: 'paid', th: 'เข้ารอบแล้ว / ตรวจหลักฐานจ่าย', c: '#639922' }, { k: 'check', th: 'รอตรวจ', c: '#E24B4A' }];
+    { k: 'wait', th: 'ยังไม่มีข้อมูลผลส่ง', c: '#B4B2A9' }, { k: 'ready', th: 'มีผลส่งแล้ว รอตรวจเข้ารอบ', c: '#EF9F27' },
+    { k: 'claim', th: 'มีสถานะการเบิกเดิม', c: '#378ADD' }, { k: 'paid', th: 'บันทึกรอบเบิกแล้ว', c: '#639922' }, { k: 'check', th: 'รอตรวจสอบข้อมูล', c: '#E24B4A' }];
   const ST_BY = Object.fromEntries(ST.map((x) => [x.k, x]));
   function stBar(m) {
     const tot = ST.reduce((a, x) => a + (Number(m[x.k]) || 0), 0);
@@ -376,11 +376,13 @@
   function navMoreSync(toActive) {
     const n=$('#nav'),b=$('#navMore');if(!n||!b)return;
     const mobile=window.matchMedia('(max-width:860px)').matches;
-    b.classList.toggle('hide',!mobile);n.classList.remove('fade');
-    if(mobile&&toActive&&n.querySelector('.nav-secondary.on'))n.classList.add('expanded');
-    b.textContent=n.classList.contains('expanded')?'ย่อเมนู':'เมนูเพิ่มเติม';b.setAttribute('aria-expanded',String(n.classList.contains('expanded')));
+    n.classList.remove('expanded');
+    if(mobile&&toActive){const active=n.querySelector('[aria-current="page"]');if(active)n.scrollTo({left:Math.max(0,active.offsetLeft-8),behavior:reduceMotion()?'auto':'smooth'});}
+    const overflow=n.scrollWidth>n.clientWidth+2,atEnd=n.scrollLeft+n.clientWidth>=n.scrollWidth-3;
+    b.classList.toggle('hide',!mobile||!overflow);n.classList.toggle('fade',mobile&&overflow&&!atEnd);
+    b.textContent=atEnd?'‹ เมนูแรก':'เมนูถัดไป ›';b.setAttribute('aria-label',atEnd?'เลื่อนกลับเมนูแรก':'เลื่อนดูเมนูถัดไป');b.removeAttribute('aria-expanded');
   }
-  function initNavMore(){const b=$('#navMore');if(!b||b.dataset.on)return;b.dataset.on='1';b.onclick=()=>{$('#nav').classList.toggle('expanded');navMoreSync(false);};window.addEventListener('resize',()=>navMoreSync(false));}
+  function initNavMore(){const b=$('#navMore'),n=$('#nav');if(!b||b.dataset.on)return;b.dataset.on='1';b.onclick=()=>{const end=n.scrollLeft+n.clientWidth>=n.scrollWidth-3;n.scrollTo({left:end?0:n.scrollLeft+Math.max(120,n.clientWidth*.8),behavior:reduceMotion()?'auto':'smooth'});};n.addEventListener('scroll',()=>navMoreSync(false),{passive:true});window.addEventListener('resize',()=>navMoreSync(false));}
   const RENDER = {};
   function go(p) {
     if (p === 'search') p = 'tracking';
@@ -480,6 +482,16 @@
     else if (e.key === 'Escape') closeQuickSearch();
   });
   /* ---------------------------------------------------------------- หน้าแรก */
+  function fileDateShort(iso) {
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(iso||'')))return '';
+    const [y,mo,d]=iso.split('-').map(Number),months=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    return d+' '+months[mo-1]+' '+String((y+543)%100).padStart(2,'0');
+  }
+  function coverageHtml(period) {
+    if(!period||!period.to)return '<small class="data-coverage muted">ยังไม่ระบุวันสิ้นสุดข้อมูลในไฟล์</small>';
+    return '<small class="data-coverage">ข้อมูล '+esc(fileDateShort(period.from))+' ถึง <strong>'+esc(fileDateShort(period.to))+'</strong></small>'+
+      (period.result_to&&period.result_to!==period.to?'<small class="data-coverage muted">ผลส่งถึง '+esc(fileDateShort(period.result_to))+'</small>':'');
+  }
   RENDER.home = async (m) => {
     const d = await api('dashboard', { fy: S.fy });
     S.fy = d.fy;
@@ -498,8 +510,8 @@
     const mTot = ST.reduce((a2, x) => a2 + (Number(money[x.k]) || 0), 0);
     const IC = { all: '<path d="M4 6h16M4 12h16M4 18h10"/>', paid: '<rect x="3" y="6" width="18" height="12" rx="3"/><circle cx="12" cy="12" r="2.5"/>',
       free: '<path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/>', wait: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', done: '<path d="M4 12l5 5L20 6"/>' };
-    const tile = (area, cls, ic, lbl, v, sub) => '<div class="kpi clay kt ' + cls + '" style="grid-area:' + area + '"><span class="kt-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' + IC[ic] + '</svg></span>' +
-      '<span>' + esc(lbl) + '</span><b data-count="' + Number(v || 0) + '">' + num(v) + '</b><small>' + sub + '</small></div>';
+    const tile = (area, cls, ic, lbl, v, sub, extra) => '<div class="kpi clay kt ' + cls + '" style="grid-area:' + area + '"><span class="kt-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' + IC[ic] + '</svg></span>' +
+      '<span>' + esc(lbl) + '</span><b data-count="' + Number(v || 0) + '">' + num(v) + '</b><small>' + sub + '</small>'+(extra||'')+'</div>';
     const share = (v) => tot ? 'ฉบับ · ' + pctOf(v, tot) + ' ของทั้งหมด' : 'ฉบับ';
     let view = 'bar'; try { view = localStorage.getItem('np_money_view') === 'tiles' ? 'tiles' : 'bar'; } catch (e) { /* ใช้ค่าเริ่มต้น */ }
     const canImport = has('NOTICE', 'FINANCE', 'ADMIN');
@@ -509,15 +521,15 @@
     m.innerHTML = top('หน้าแรก', fySel) +
       '<div class="bento"><div class="bn">' +
       '<section class="clay panel hero rv-b" style="grid-area:hero" data-onview="bars" aria-labelledby="heroH">' +
-        '<div class="hero-h"><h3 id="heroH">ยอดเงินตามสถานะ</h3><button type="button" class="btn btn-sm" id="mvBtn" aria-pressed="' + (view === 'tiles') + '">' + (view === 'tiles' ? 'แถบสถานะ' : 'กราฟแยกสถานะ') + '</button></div>' +
-        '<div class="hero-t"><b data-count="' + mTot + '" data-money="1" data-suffix="&nbsp;฿">' + baht(mTot) + '&nbsp;฿</b><span>รวมทั้งหมด ก่อนแบ่ง 60:40</span></div>' +
+        '<div class="hero-h"><h3 id="heroH">สรุปยอดเงินในทะเบียนหมาย</h3><button type="button" class="btn btn-sm" id="mvBtn" aria-pressed="' + (view === 'tiles') + '">' + (view === 'tiles' ? 'แถบสถานะ' : 'กราฟแยกสถานะ') + '</button></div>' +
+        '<div class="hero-t"><b data-count="' + mTot + '" data-money="1" data-suffix="&nbsp;฿">' + baht(mTot) + '&nbsp;฿</b><span>ยอดรวมตามข้อมูลในระบบ ก่อนแบ่ง 60/40</span></div>' +
         '<div id="mvBox">' + (view === 'tiles' ? moneyTilesHtml(money) : moneyBarHtml(money)) + '</div>' +
-        '<p class="tiny muted" style="margin:10px 2px 0">กดที่สีเพื่อกรองตารางผู้ส่งหมาย · สีเขียว = อยู่ในรอบยืนยันแล้ว · ตรวจวันที่และหลักฐานจ่ายจริงที่เมนูตรวจเบิกจ่าย</p></section>' +
-      tile('k1', 'k-all', 'all', 'หมายทั้งหมด', t.total, 'ฉบับ · ปีงบ ' + esc(d.fy)) +
+        '<p class="tiny muted" style="margin:10px 2px 0">แตะสถานะเพื่อกรองรายผู้ส่งหมาย · <strong class="flag-a">การบันทึกรอบยังไม่ยืนยันการจ่ายเงินจริง</strong> ตรวจหลักฐานได้ที่ “ตรวจสอบการเบิกจ่าย”</p><p class="tiny muted" style="margin:6px 2px 0">ยอดนี้อาจรวมยอดคำนวณอ้างอิง ตรวจยอดบัญชีที่ใช้แบ่ง 60/40 ที่ “รอบเบิกและจ่ายเงิน”</p></section>' +
+      tile('k1', 'k-all', 'all', 'หมายทั้งหมด', t.total, 'ฉบับ · ปีงบ ' + esc(d.fy), coverageHtml(d.data_period)) +
       tile('k2', 'k-paid', 'paid', 'หมายมีเงิน', t.paid, share(t.paid)) +
       tile('k3', 'k-free', 'free', 'หมายฟรี', t.free, share(t.free)) +
-      tile('k4', 'k-wait', 'wait', 'จ่ายหมายแล้ว รอผล', t.issued, share(t.issued)) +
-      tile('k5', 'k-done', 'done', 'ส่งแล้ว', t.delivered, share(t.delivered)) +
+      tile('k4', 'k-wait', 'wait', 'ยังไม่มีข้อมูลผลส่ง', t.issued, share(t.issued)) +
+      tile('k5', 'k-done', 'done', 'มีข้อมูลผลส่งแล้ว', t.delivered, share(t.delivered)) +
       shortcut +
       '<div style="grid-area:al;display:flex;flex-direction:column;gap:10px">' + (notes.length ? notes.join('') : '<div class="note g">ไม่มีรายการค้างตรวจ</div>') + '</div>' +
       '<div class="clay panel" style="grid-area:off;min-width:0"><div class="row" style="justify-content:space-between;align-items:center;margin:0 0 6px"><h3 style="margin:0">' + (d.scope_officer ? 'หมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><span id="dnFilter"></span></div><div class="tbl-wrap"><table id="offTbl"><thead><tr><th>ผู้ส่งหมาย</th>' +
@@ -1167,12 +1179,12 @@
       '</tbody><tfoot><tr><td><b>รวม</b></td>' + (one ? '<td class="n"><b>' + cb(sp.total_c) + '</b></td>' : '<td class="n"><b>' + cb(sp.paid_c) + '</b></td><td class="n"><b>' + cb(sp.budget_c) + '</b></td><td class="n"><b>' + cb(sp.total_c) + '</b></td>') +
       '<td class="n"><b>' + cb(sp.c60) + '</b></td><td class="n"><b>' + cb(sp.pool40_c) + '</b></td></tr></tfoot></table></div>' +
       '<div class="pool">' +
-        '<div><span>กองกลาง 40%</span><b>' + cb(sp.pool40_c) + '</b></div>' +
-        '<div><span>เศษยกมาจากรอบก่อน</span><b>' + cb(sp.carry_in_c) + '</b></div>' +
-        '<div><span>รวมกองกลาง</span><b>' + cb(sp.pool_c) + '</b></div>' +
+        '<div><span>กองกลาง 40%</span><b class="money40">' + cb(sp.pool40_c) + '</b></div>' +
+        '<div><span>เศษยกมาจากรอบก่อน</span><b class="carry-value">' + cb(sp.carry_in_c) + '</b></div>' +
+        '<div><span>รวมกองกลาง</span><b class="money40">' + cb(sp.pool_c) + '</b></div>' +
         '<div class="ps"><span>คนนั่งงาน ' + num(sp.seats) + ' คน ได้คนละ</span><b>' + cb(sp.per_seat_c) + '&nbsp;฿</b></div>' +
         (sp.extra_one_c ? '<div><span>เศษให้ 1 คน</span><b>' + cb(sp.extra_one_c) + '</b></div>' : '') +
-        '<div><span>เศษยกไปรอบหน้า</span><b' + (sp.carry_out_c < 0 ? ' class="flag-r"' : '') + '>' + cb(sp.carry_out_c) + '</b></div>' +
+        '<div><span>เศษยกไปรอบหน้า</span><b class="' + (sp.carry_out_c < 0 ? 'flag-r' : 'carry-value') + '"' + '>' + cb(sp.carry_out_c) + '</b></div>' +
       '</div>' + (opts.policyTh ? '<p class="tiny muted" style="margin:8px 2px 0">วิธีปัดเศษ: ' + esc(opts.policyTh) + ' · บัญชี 60:40 เป็นบัญชีคำนวณภายใน แยกจากเอกสารเบิกจ่ายทางราชการ</p>' : '');
   }
 
@@ -1577,7 +1589,7 @@
   RENDER.search = RENDER.tracking;
   RENDER.reports = async(m)=>{
     m.innerHTML=top('รายงานการเบิกจ่าย')+'<form class="clay panel row" id="repForm"><label>ปีงบประมาณ<input id="repFy" class="inp year-input" inputmode="numeric" value="'+esc(S.fy)+'" placeholder="ทั้งหมด"></label><label>ประเภท<select id="repType" class="sel"><option value="BUDGET">หมายฟรี</option><option value="PAID">หมายมีเงิน</option><option value="">ทั้งหมด</option></select></label><button class="btn btn-g">แสดงรายงาน</button></form><div id="repBody"></div>';
-    const run=async()=>{const d=await api('reports',{fy:$('#repFy').value,pay_type:$('#repType').value}),box=$('#repBody');box.innerHTML=latestHtml(d.last_imports)+'<div class="clay panel"><h3>สรุปรายผู้ส่งตามตัวกรอง</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่ง</th><th class="n">รายการ</th><th class="n">ยอดที่ใช้</th><th class="n">ขาด</th><th class="n">เกิน</th></tr></thead><tbody>'+d.per_officer.map(r=>'<tr><td>'+esc(r.officer)+'</td><td class="n">'+num(r.count)+'</td><td class="n">'+baht2(r.amount)+'</td><td class="n flag-r">'+baht2(r.shortage)+'</td><td class="n flag-up">'+baht2(r.excess)+'</td></tr>').join('')+'</tbody></table></div><div class="row" style="margin-top:14px"><button class="btn btn-sm" id="repCsv">ดาวน์โหลด CSV</button><button class="btn btn-sm" id="repPrint">พิมพ์รายงาน</button></div></div>'+
+    const run=async()=>{const d=await api('reports',{fy:$('#repFy').value,pay_type:$('#repType').value}),box=$('#repBody');box.innerHTML=latestHtml(d.last_imports)+'<div class="clay panel"><h3>สรุปรายผู้ส่งตามตัวกรอง</h3><p class="tiny muted">ส่วนต่างเทียบยอดอ้างอิง อาจเกิดจากการรวมหน่วยเบิก ให้ตรวจรายละเอียดก่อนสรุปว่าเงินขาดหรือจ่ายเกิน</p><div class="tbl-wrap"><table class="report-officers"><thead><tr><th>ผู้ส่ง</th><th class="n">รายการ</th><th class="n">ยอดที่ใช้</th><th class="n">ขาดจากยอดอ้างอิง</th><th class="n">เกินยอดอ้างอิง</th></tr></thead><tbody>'+d.per_officer.map(r=>'<tr><td class="onm">'+esc(r.officer)+'</td><td class="n">'+num(r.count)+'</td><td class="n">'+baht2(r.amount)+'</td><td class="n '+(r.shortage?'flag-r':'muted')+'">'+baht2(r.shortage)+'</td><td class="n '+(r.excess?'flag-up':'muted')+'">'+baht2(r.excess)+'</td></tr>').join('')+'</tbody></table></div><div class="row" style="margin-top:14px"><button class="btn btn-sm" id="repCsv">ดาวน์โหลด CSV</button><button class="btn btn-sm" id="repPrint">พิมพ์รายงาน</button></div></div>'+
       '<div class="clay panel"><h3>จำนวนตามสถานะ</h3>'+Object.keys(d.totals.statuses).map(k=>'<p>'+esc(d.statuses[k])+' <b>'+num(d.totals.statuses[k])+'</b> รายการ</p>').join('')+'<p class="tiny muted">สรุปจากหมายที่มีในทะเบียนตามตัวกรอง ส่วนยอดบัญชีและรอบด้านล่างใช้เป็นข้อมูลควบคุมแยกกัน</p></div>'+ledgerControlHtml(d);
       $('#repCsv').onclick=()=>{const rows=[['ผู้ส่ง','รายการ','ยอดที่ใช้','ขาด','เกิน']].concat(d.per_officer.map(r=>[r.officer,r.count,r.amount,r.shortage,r.excess]));const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v).replace(/^[=+@-]/,"'$&").replace(/"/g,'""')+'"').join(',')).join('\r\n');const u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=u;a.download='notice-pay-report.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
       $('#repPrint').onclick=()=>{loadSarabun();printArea('<div class="pr-head"><div class="pr-court">ศาลจังหวัดลพบุรี</div><div class="pr-title">รายงานการเบิกจ่าย · ปีงบ '+esc($('#repFy').value||'ทั้งหมด')+'</div><div>'+esc($('#repType').selectedOptions[0].textContent)+'</div></div>'+box.querySelector('.tbl-wrap').innerHTML+'<p>ขาดรวม '+baht2(d.totals.shortage)+' · เกินรวม '+baht2(d.totals.excess)+' บาท</p>');};

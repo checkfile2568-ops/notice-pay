@@ -400,4 +400,21 @@ th:not(.n) .srt{justify-content:flex-start}
 #trackForm .row{align-items:flex-end}#trackDetail:empty{display:none}
 @media(max-width:640px){#trackForm .row{display:grid;grid-template-columns:1fr 1fr}#trackForm label{min-width:0}#trackForm .inp,#trackForm .sel{max-width:100%;width:100%}.section-tabs{gap:6px}.section-tabs .btn{flex:1;white-space:normal}}
 
-@media(max-width:860px){.nav{flex-wrap:wrap;overflow:visible}.nav .qs-btn{display:none}.nav .nav-secondary{display:none}.nav.expanded .nav-secondary{display:block}.nav button{flex:1;min-width:92px;font-size:13px}.nav-row{align-items:flex-start}.nav-more{flex:none;white-space:normal;max-width:90px}}
+/* 0.7.1: horizontal mobile navigation; monetary calculations are unchanged. */
+.data-coverage{display:block!important;margin-top:6px!important;font-size:12px!important;font-weight:500!important;line-height:1.55;color:var(--ink2)}
+.data-coverage strong{color:var(--g-ink);font-size:inherit!important;font-weight:700}
+.dn-lg[data-k="ready"] b{color:var(--amber)}.dn-lg[data-k="claim"] b{color:var(--blue)}.dn-lg[data-k="paid"] b{color:var(--g-ink)}.dn-lg[data-k="check"] b{color:var(--red)}
+.money40,.carry-value{color:var(--blue)!important;font-weight:700}.pool .ps b{color:var(--g-ink)}
+.ptbl tbody td:nth-last-child(2),.ptbl tfoot td:nth-last-child(2){color:var(--g-ink)}.ptbl tbody td:last-child,.ptbl tfoot td:last-child{color:var(--blue)}
+.report-officers td.onm{white-space:nowrap;min-width:110px}.report-officers th{white-space:nowrap}
+.nav button:focus-visible,.nav-more:focus-visible,.dn-lg:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+@media(max-width:860px){
+ .nav-row{align-items:center;gap:8px}.nav{position:relative;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;padding:4px 2px 8px}
+ .nav button,.nav .nav-secondary,.nav.expanded .nav-secondary{display:flex;flex:0 0 auto;min-width:0;min-height:46px;white-space:nowrap;font-size:14px;padding:0 14px}
+ .nav .qs-btn{display:flex}.nav-more{flex:0 0 auto;white-space:nowrap;font-size:13px;min-height:46px;padding:0 10px;max-width:none}
+ .hero-h{flex-wrap:wrap;gap:10px}.hero-h h3{min-width:0}.hero-h .btn{flex:none}
+ .mleg .dn-lg{grid-template-columns:12px minmax(0,1fr) auto;gap:8px}.mleg .dn-lg em{grid-column:2;font-size:12px}.mleg .dn-lg b{grid-column:3;grid-row:1 / span 2;white-space:nowrap}.mleg .dn-lg span{min-width:0}
+}
+@media(prefers-reduced-motion:reduce){.nav{scroll-behavior:auto}}
+@media print{.money40,.carry-value,.pool .ps b,.dn-lg b{color:#000!important}}
+
