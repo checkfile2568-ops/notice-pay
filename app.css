@@ -393,3 +393,11 @@ th:not(.n) .srt{justify-content:flex-start}
 .srt button:hover{color:var(--ink)}
 .srt button.on{color:#fff;background:linear-gradient(160deg,var(--g2),var(--g))}
 @media print{.srt{display:none}}
+
+/* 0.7.0: workflow labels share the existing clay theme. */
+.section-tabs{margin:0 0 14px;gap:8px;flex-wrap:wrap}.page-body{min-width:0}.year-input{width:110px}.nb{display:inline-block}
+#trackForm label,#repForm label,#payEvidence label{display:flex;flex-direction:column;gap:5px;font-size:13px;flex:1;min-width:130px}
+#trackForm .row{align-items:flex-end}#trackDetail:empty{display:none}
+@media(max-width:640px){#trackForm .row{display:grid;grid-template-columns:1fr 1fr}#trackForm label{min-width:0}#trackForm .inp,#trackForm .sel{max-width:100%;width:100%}.section-tabs{gap:6px}.section-tabs .btn{flex:1;white-space:normal}}
+
+@media(max-width:860px){.nav{flex-wrap:wrap;overflow:visible}.nav .qs-btn{display:none}.nav .nav-secondary{display:none}.nav.expanded .nav-secondary{display:block}.nav button{flex:1;min-width:92px;font-size:13px}.nav-row{align-items:flex-start}.nav-more{flex:none;white-space:normal;max-width:90px}}

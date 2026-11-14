@@ -7,6 +7,8 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
+  let navEpoch = 0;
+  const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
   const S = { token: '', user: null, page: 'home', pick: null, pin: '', busy: false, fy: '' };
 
@@ -70,7 +72,7 @@
   /** สีสถานะเดียวกันทุกหน้าจอ: เทา รอผล · ส้ม พร้อมเบิก/รอวันจ่าย · ฟ้า เบิกแล้วรอจ่าย · เขียว จ่ายแล้ว · แดง รอตรวจ */
   const ST = [
     { k: 'wait', th: 'รอผล / ยังไม่ส่ง', c: '#B4B2A9' }, { k: 'ready', th: 'พร้อมเบิก / รอวันจ่าย', c: '#EF9F27' },
-    { k: 'claim', th: 'เบิกแล้ว รอจ่าย', c: '#378ADD' }, { k: 'paid', th: 'จ่ายแล้ว', c: '#639922' }, { k: 'check', th: 'รอตรวจ', c: '#E24B4A' }];
+    { k: 'claim', th: 'เบิกแล้ว รอจ่าย', c: '#378ADD' }, { k: 'paid', th: 'เข้ารอบแล้ว / ตรวจหลักฐานจ่าย', c: '#639922' }, { k: 'check', th: 'รอตรวจ', c: '#E24B4A' }];
   const ST_BY = Object.fromEntries(ST.map((x) => [x.k, x]));
   function stBar(m) {
     const tot = ST.reduce((a, x) => a + (Number(m[x.k]) || 0), 0);
@@ -203,9 +205,9 @@
     .map((x) => '<span class="tiny ' + (FLAGS_RED.indexOf(x) >= 0 ? 'flag-r' : 'flag-a') + '">' + esc(x) + '</span>').join('<br>');
   /** สัญลักษณ์ "เคยยอดไม่ตรง" — ยอดที่ยืนยันแล้วไม่แสดงสีแดง แต่คงเครื่องหมายไว้ถาวร */
   const okMark = (ok) => '<span class="tiny flag-ok" title="ยืนยันโดย ' + esc(ok.by) + ' ' + esc(thDate(ok.at, true)) + '">◆ เคยยอดไม่ตรง · ยืนยันแล้ว</span>';
-  /** ราคาไม่เท่าอัตราตำบล → คิดตามอัตราตำบล: ▲ เกิน (ส่วนเกินไม่นำมาคิด) · ▼ ต่ำกว่า (อักษรสีแดง) */
+  /** ราคาไม่เท่าอัตราตำบล → คิดตามอัตราตำบล: ▲ เกิน (ยอดคำนวณตามอัตรา · ยอดจ่ายตรวจจากบัญชี) · ▼ ต่ำกว่า (อักษรสีแดง) */
   const adjMark = (a, long) => !a ? '' : (a.dir === 'UP'
-    ? '<span class="tiny flag-up" title="ราคาไฟล์ ' + num(a.src) + ' · คิดตามอัตราตำบล ' + num(a.rate) + '">▲ เกินอัตราตำบล ' + num(a.diff) + '&nbsp;฿' + (long ? ' (ไฟล์ ' + num(a.src) + ' · คิด ' + num(a.rate) + ') ส่วนเกินไม่นำมาคิด' : '') + '</span>'
+    ? '<span class="tiny flag-up" title="ราคาไฟล์ ' + num(a.src) + ' · คิดตามอัตราตำบล ' + num(a.rate) + '">▲ เกินอัตราตำบล ' + num(a.diff) + '&nbsp;฿' + (long ? ' (ไฟล์ ' + num(a.src) + ' · คิด ' + num(a.rate) + ') ยอดคำนวณตามอัตรา · ยอดจ่ายตรวจจากบัญชี' : '') + '</span>'
     : '<span class="tiny flag-r" title="ราคาไฟล์ ' + num(a.src) + ' · คิดตามอัตราตำบล ' + num(a.rate) + '">▼ ต่ำกว่าอัตราตำบล ' + num(a.diff) + '&nbsp;฿' + (long ? ' (ไฟล์ ' + num(a.src) + ' · คิด ' + num(a.rate) + ')' : '') + '</span>');
   const flagsOf = (r) => {
     const rest = String(r.flags || '').split(';').filter((x) => x && !(r.adj && x === FLAGS_RED[0])).join(';');
@@ -215,11 +217,16 @@
   /* ---------------------------------------------------------------- API */
   async function api(action, body) {
     if (!C.API_URL || /วางลิงก์/.test(C.API_URL)) throw Object.assign(new Error('ยังไม่ได้ตั้งค่า API_URL ใน config.js'), { code: 'CONFIG' });
-    let res;
+    const epoch = navEpoch;
+    const payload = Object.assign({}, body || {});
+    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment'].includes(action) || (action === 'ledger_import' && payload.commit);
+    const retryKey = writing ? action + ':' + JSON.stringify(payload) : '';
+    if (writing && !payload.request_id) { if (!requestKeys.has(retryKey)) requestKeys.set(retryKey, crypto.randomUUID()); payload.request_id = requestKeys.get(retryKey); }
+    let res; const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 90000);
     try {
-      res = await fetch(C.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action: action, token: S.token }, body || {})) });
-    } catch (e) { throw Object.assign(new Error('เชื่อมต่อระบบไม่ได้ ตรวจสอบอินเทอร์เน็ต'), { code: 'NETWORK' }); }
+      res = await fetch(C.API_URL, { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action: action, token: S.token, client_version:C.VERSION }, payload)) });
+    } catch (e) { throw Object.assign(new Error('เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่ ระบบจะตรวจคำขอเดิมก่อนบันทึกซ้ำ'), { code: 'NETWORK' }); } finally { clearTimeout(timer); }
     let j;
     try { j = await res.json(); } catch (e) { throw Object.assign(new Error('ระบบตอบกลับไม่ถูกต้อง'), { code: 'BAD_RESPONSE' }); }
     if (!j.ok) {
@@ -227,6 +234,8 @@
       if (S.token && /SESSION_EXPIRED|SESSION_REVOKED|NO_ACCESS/.test(j.code)) { toast(err.message); backToLogin(); }
       throw err;
     }
+    if (writing) requestKeys.delete(retryKey);
+    if (epoch !== navEpoch && !['login','logout','ping','operation_resume'].includes(action)) throw Object.assign(new Error('เปลี่ยนหน้าแล้ว'), { code: 'VIEW_CHANGED' });
     return j.data;
   }
 
@@ -316,6 +325,8 @@
     } finally { S.busy = false; }
   }
   function backToLogin() {
+    navEpoch++; closeQuickSearch(); ['qs','printArea'].forEach((id) => { const e = document.getElementById(id); if (e) e.remove(); });
+    resetImport(); delete IM.meta; requestKeys.clear(); S.fy = ''; S.pin = ''; S.busy = false;
     S.token = ''; S.user = null; S.pick = null;
     $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
     $('#q').value = ''; $('#picks').innerHTML = ''; showStep(1);
@@ -325,21 +336,25 @@
   const has = (...r) => S.user && S.user.roles.some((x) => r.indexOf(x) >= 0);
   /** บัญชีดูสถิติรวม (ไอดีเดียวของเจ้าหน้าที่ส่งหมาย) — ดูยอดทุกคน ไม่เห็นชื่อผู้รับ/รายละเอียดคดี */
   const viewerOnly = () => S.user && S.user.roles.length > 0 && S.user.roles.every((x) => x === 'VIEWER');
+  function navGroup(p) { return ['tracking','search','calc'].includes(p) ? 'tracking' : ['import','history','review'].includes(p) ? 'import' : ['settings','officers','users'].includes(p) ? 'settings' : p; }
   function pages() {
     return [
-      { id: 'home', th: 'หน้าแรก', show: true },
-      { id: 'search', th: 'ค้นหาหมาย', show: !viewerOnly() },
-      { id: 'import', th: 'นำเข้าข้อมูล', show: has('NOTICE', 'FINANCE', 'ADMIN') },
-      { id: 'history', th: 'ประวัติการนำเข้า', show: has('NOTICE', 'FINANCE', 'ADMIN') },
-      { id: 'review', th: 'แถวรอตรวจ', show: has('NOTICE', 'FINANCE', 'ADMIN') },
-      { id: 'calc', th: 'คำนวณค่าหมาย', show: true },
-      { id: 'officers', th: 'ผู้ส่งหมายและอัตรา', show: true },
-      { id: 'users', th: 'ผู้ใช้และสิทธิ์', show: has('ADMIN') },
-      { id: 'payout', th: 'รอบเบิก / วันจ่าย 60:40', show: true },
-      { id: '_s', sec: 'กำลังพัฒนา' },
-      { id: 'soon-status', th: 'สถานะการเบิกจ่าย', soon: 'ระยะ 5', show: true },
-      { id: 'soon-report', th: 'รายงาน / ปิดปีงบ', soon: 'ระยะ 5', show: has('FINANCE', 'ADMIN') }
+      {id:'home',th:'หน้าแรก',show:true},
+      {id:'tracking',th:has('COURIER') && !has('NOTICE','FINANCE','ADMIN','CASE') ? 'ตรวจเบิกจ่ายของฉัน' : 'ตรวจสอบการเบิกจ่าย',show:!viewerOnly()},
+      {id:'import',th:'นำเข้าข้อมูล',show:has('NOTICE','FINANCE','ADMIN')},
+      {id:'payout',th:'รอบเบิกและจ่ายเงิน',show:true},
+      {id:'reports',th:'รายงาน',show:true},
+      {id:'settings',th:'ตั้งค่าและข้อมูลอ้างอิง',show:true}
     ];
+  }
+  function sectionTabs(p) {
+    const g = navGroup(p); let links = [];
+    if (g === 'import') links = [['import','นำเข้าไฟล์ 4 แบบ'],['review','รายการรอตรวจ'],['history','ประวัติการนำเข้า']];
+    if (g === 'tracking') links = [['tracking','ตรวจเบิกจ่าย'],['calc','ยอดคำนวณและใบสรุป']];
+    if (g === 'settings') links = [['settings','ข้อมูลอ้างอิง'],['officers','ผู้ส่งหมายและอัตรา']].concat(has('ADMIN') ? [['users','ผู้ใช้และสิทธิ์']] : []);
+    if (!links.length) return null;
+    const el = document.createElement('div'); el.className = 'row section-tabs';
+    links.forEach(([id,label]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-sm' + (id === p ? ' btn-g' : ''); b.textContent = label; b.onclick = () => go(id); el.appendChild(b); }); return el;
   }
   function enterApp() {
     $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
@@ -351,7 +366,7 @@
   function drawNav() {
     $('#nav').innerHTML = (viewerOnly() ? '' : '<button type="button" class="qs-btn" id="qsOpen" aria-label="ค้นเลขคดีดูสถานะ"><span class="qs-long">ค้นเลขคดีดูสถานะ</span><span class="qs-short" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg> ค้นคดี</span> <kbd>Ctrl K</kbd></button>') + pages().filter((p) => p.sec || p.show).map((p) => p.sec
       ? '<div class="nav-sec">' + esc(p.sec) + '</div>'
-      : '<button type="button" data-p="' + p.id + '"' + (p.soon ? ' disabled' : '') + (S.page === p.id ? ' class="on" aria-current="page"' : '') + '>' +
+      : '<button type="button" data-p="' + p.id + '"' + (p.soon ? ' disabled' : '') + (' class="' + (navGroup(S.page) === p.id ? 'on ' : '') + (!['home','tracking','payout'].includes(p.id) ? 'nav-secondary' : '') + '"' + (navGroup(S.page) === p.id ? ' aria-current="page"' : '')) + '>' +
         esc(p.th) + (p.soon ? '<span class="soon">' + esc(p.soon) + '</span>' : '') + '</button>').join('');
     $('#nav').querySelectorAll('button[data-p]:not([disabled])').forEach((b) => b.addEventListener('click', () => { S.payoutSub = 'list'; go(b.dataset.p); }));
     if ($('#qsOpen')) $('#qsOpen').addEventListener('click', openQuickSearch);
@@ -359,35 +374,34 @@
   }
   /* มือถือ: เมนูเลื่อนซ้าย-ขวา · ปุ่ม "เมนู ›" เลื่อนไปเมนูถัดไป ถึงท้ายแล้วเป็น "‹ เมนู" กลับต้นแถว */
   function navMoreSync(toActive) {
-    const n = $('#nav'), b = $('#navMore');
-    if (!n || !b) return;
-    if (toActive) {             // เมนูที่เลือกอยู่นอกจอ → เลื่อนมาให้เห็น (เมนูต้นแถวคงตำแหน่งเดิม ปุ่มค้นคดีไม่ถูกตัด)
-      n.scrollLeft = 0;
-      const on = n.querySelector('button.on');
-      if (on) { const rel = on.getBoundingClientRect().left - n.getBoundingClientRect().left; if (rel + on.offsetWidth > n.clientWidth - 12) n.scrollLeft = rel - 56; }
-    }
-    const can = n.scrollWidth > n.clientWidth + 4, end = n.scrollLeft + n.clientWidth >= n.scrollWidth - 4;
-    b.classList.toggle('hide', !can); n.classList.toggle('fade', can && !end);
-    b.innerHTML = end ? '<span aria-hidden="true">‹</span> เมนู' : 'เมนู <span aria-hidden="true">›</span>';
-    b.setAttribute('aria-label', end ? 'เลื่อนกลับไปเมนูแรก' : 'เลื่อนดูเมนูถัดไป');
+    const n=$('#nav'),b=$('#navMore');if(!n||!b)return;
+    const mobile=window.matchMedia('(max-width:860px)').matches;
+    b.classList.toggle('hide',!mobile);n.classList.remove('fade');
+    if(mobile&&toActive&&n.querySelector('.nav-secondary.on'))n.classList.add('expanded');
+    b.textContent=n.classList.contains('expanded')?'ย่อเมนู':'เมนูเพิ่มเติม';b.setAttribute('aria-expanded',String(n.classList.contains('expanded')));
   }
-  function initNavMore() {
-    const n = $('#nav'), b = $('#navMore');
-    if (!n || !b || b.dataset.on) return; b.dataset.on = '1';
-    b.addEventListener('click', () => {
-      const end = n.scrollLeft + n.clientWidth >= n.scrollWidth - 4;
-      n.scrollTo({ left: end ? 0 : n.scrollLeft + Math.round(n.clientWidth * 0.9), behavior: reduceMotion() ? 'auto' : 'smooth' });
-    });
-    n.addEventListener('scroll', () => navMoreSync(false), { passive: true });
-    window.addEventListener('resize', () => navMoreSync(false));
-  }
+  function initNavMore(){const b=$('#navMore');if(!b||b.dataset.on)return;b.dataset.on='1';b.onclick=()=>{$('#nav').classList.toggle('expanded');navMoreSync(false);};window.addEventListener('resize',()=>navMoreSync(false));}
   const RENDER = {};
   function go(p) {
-    S.page = p; drawNav();
-    const m = $('#main');
+    if (p === 'search') p = 'tracking';
+    if (!RENDER[p]) return;
+    const ticket = ++navEpoch; S.page = p; drawNav();
+    const main = $('#main'); main.innerHTML = '';
+    const tabs = sectionTabs(p); if (tabs) main.appendChild(tabs);
+    const m = document.createElement('div'); m.className = 'page-body'; main.appendChild(m);
     m.innerHTML = '<div class="clay panel"><span class="spin"></span> <span class="muted">กำลังโหลด…</span></div>';
-    Promise.resolve(RENDER[p](m)).then(() => { glueThai(m); reveal(m); }).catch((e) => { m.innerHTML = '<div class="clay panel"><p class="note r" style="margin:0">' + esc(e.message) + '</p></div>'; });
-    m.focus({ preventScroll: true }); window.scrollTo(0, 0);
+    Promise.resolve().then(() => RENDER[p](m)).then(() => { if (ticket === navEpoch) { glueThai(m); reveal(m); } }).catch((e) => {
+      if (ticket !== navEpoch || e.code === 'VIEW_CHANGED') return;
+      m.innerHTML = '<div class="clay panel"><p class="note r">' + esc(e.message) + '</p>' + (e.code === 'RECOVERY_REQUIRED' ? '<button class="btn btn-g" id="recoverWork">ตรวจและกู้คืนงานบันทึก</button>' : '') + '</div>';
+      if ($('#recoverWork')) $('#recoverWork').onclick = recoverWork;
+    });
+    main.focus({preventScroll:true}); window.scrollTo(0,0);
+  }
+  async function recoverWork() {
+    try { const d = await api('operation_status'); if (!d.pending) { go('home'); return; } if (!d.pending.can_resume) return toast('กรุณาให้เจ้าของรายการหรือผู้ดูแลกู้คืนงานนี้');
+      if (!(await askBox('ตรวจและกู้คืนงานบันทึกค้างวันที่ ' + thDate(d.pending.at,true) + ' โดยไม่สร้างรายการซ้ำ?'))) return;
+      await api('operation_resume',{request_id:d.pending.request_id}); toast('กู้คืนงานเรียบร้อย'); go('home');
+    } catch(e) { toast(e.message); }
   }
   function top(title, extra) { return '<div class="top clay"><h2>' + esc(title) + '</h2>' + (extra || '') + '</div>'; }
 
@@ -498,7 +512,7 @@
         '<div class="hero-h"><h3 id="heroH">ยอดเงินตามสถานะ</h3><button type="button" class="btn btn-sm" id="mvBtn" aria-pressed="' + (view === 'tiles') + '">' + (view === 'tiles' ? 'แถบสถานะ' : 'กราฟแยกสถานะ') + '</button></div>' +
         '<div class="hero-t"><b data-count="' + mTot + '" data-money="1" data-suffix="&nbsp;฿">' + baht(mTot) + '&nbsp;฿</b><span>รวมทั้งหมด ก่อนแบ่ง 60:40</span></div>' +
         '<div id="mvBox">' + (view === 'tiles' ? moneyTilesHtml(money) : moneyBarHtml(money)) + '</div>' +
-        '<p class="tiny muted" style="margin:10px 2px 0">กดที่สีเพื่อกรองตารางผู้ส่งหมาย · สีเขียว = เข้ารอบเบิก/วันจ่ายแล้ว · สีฟ้า (เบิกแล้ว รอจ่าย) เริ่มใช้ในระยะ 5</p></section>' +
+        '<p class="tiny muted" style="margin:10px 2px 0">กดที่สีเพื่อกรองตารางผู้ส่งหมาย · สีเขียว = อยู่ในรอบยืนยันแล้ว · ตรวจวันที่และหลักฐานจ่ายจริงที่เมนูตรวจเบิกจ่าย</p></section>' +
       tile('k1', 'k-all', 'all', 'หมายทั้งหมด', t.total, 'ฉบับ · ปีงบ ' + esc(d.fy)) +
       tile('k2', 'k-paid', 'paid', 'หมายมีเงิน', t.paid, share(t.paid)) +
       tile('k3', 'k-free', 'free', 'หมายฟรี', t.free, share(t.free)) +
@@ -580,7 +594,8 @@
 
   /* ---------------------------------------------------------------- นำเข้าข้อมูล */
   const IM = {};
-  function resetImport() { Object.keys(IM).forEach((k) => { if (k !== 'meta') delete IM[k]; }); }
+  let importEpoch = 0;
+  function resetImport() { importEpoch++; Object.keys(IM).forEach((k) => { if (k !== 'meta') delete IM[k]; }); }
   const normH = (s) => String(s || '').replace(/[๐-๙]/g, (c) => String(c.charCodeAt(0) - 0x0E50)).replace(/\s+/g, '').toLowerCase();
 
   RENDER.import = async (m) => {
@@ -640,26 +655,34 @@
     if (!window.XLSX) { toast('กำลังโหลดตัวอ่าน Excel กรุณาลองอีกครั้ง'); return; }
     $('#fInfo').innerHTML = '<p class="small"><span class="spin"></span> กำลังอ่านไฟล์…</p>';
     try {
+      const fileEpoch = ++importEpoch;
+      $('#imPrev').innerHTML = '';
       const buf = await f.arrayBuffer();
+      if (fileEpoch !== importEpoch) return;
       const dig = await crypto.subtle.digest('SHA-256', buf);
+      if (fileEpoch !== importEpoch) return;
       IM.file = { name: f.name, size: f.size, checksum: Array.from(new Uint8Array(dig)).map((b) => b.toString(16).padStart(2, '0')).join('') };
       IM.wb = XLSX.read(buf, { type: 'array', cellDates: true });
       IM.sheet = IM.wb.SheetNames[0];
-      if (IM.kind === 'PAY' || IM.kind === 'FREE18') return ledgerFile();
+      if (IM.kind === 'PAY' || IM.kind === 'FREE18') return ledgerFile(fileEpoch);
       loadSheet();
     } catch (e) { $('#fInfo').innerHTML = '<p class="note r">อ่านไฟล์ไม่ได้: ' + esc(e.message) + '</p>'; }
   }
 
   /* ---------- นำเข้าบัญชีการเงิน: บัญชีการจ่ายเงินให้เจ้าพนักงานศาล (PAY) · บัญชีจ่ายหมาย หมายฟรี ประเภท 18 (FREE18) ---------- */
   const TH_MON = { 'ม.ค.': 1, 'ก.พ.': 2, 'มี.ค.': 3, 'เม.ย.': 4, 'พ.ค.': 5, 'มิ.ย.': 6, 'ก.ค.': 7, 'ส.ค.': 8, 'ก.ย.': 9, 'ต.ค.': 10, 'พ.ย.': 11, 'ธ.ค.': 12 };
+  const digits = (v) => String(v === null || v === undefined ? '' : v).replace(/[๐-๙]/g, c => String(c.charCodeAt(0)-0x0E50));
   function thIso(v) {
     if (v instanceof Date) return cellVal(v);
-    const s = String(v || '').replace(/[๐-๙]/g, (c) => String(c.charCodeAt(0) - 0x0E50)).replace(/\s+/g, '');
-    let m = s.match(/^(\d{1,2})-(.+?)-(\d{2,4})$/);
-    if (m && TH_MON[m[2]]) { let y = Number(m[3]); if (y < 100) y += 2500; if (y > 2400) y -= 543; return y + '-' + String(TH_MON[m[2]]).padStart(2, '0') + '-' + m[1].padStart(2, '0'); }
-    m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : '';
+    const s = digits(v).trim(); if (!s) return '';
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/), y, mo, day;
+    if (m) { y=+m[1]; mo=+m[2]; day=+m[3]; }
+    else { m=s.match(/^(\d{1,2})[\s/.-]+(\d{1,2}|[ก-๙.]+)[\s/.-]+(\d{2,4})$/); if(!m)return ''; day=+m[1]; mo=+m[2] || TH_MON[m[2]] || TH_ML.indexOf(m[2])+1; y=+m[3]; }
+    if(y<100)y+=2500; if(y>2400)y-=543;
+    const dt=new Date(Date.UTC(y,mo-1,day)); if(!mo||dt.getUTCFullYear()!==y||dt.getUTCMonth()!==mo-1||dt.getUTCDate()!==day)return '';
+    return y+'-'+String(mo).padStart(2,'0')+'-'+String(day).padStart(2,'0');
   }
-  const amtOf = (v) => Number(String(v || '').replace(/[^\d.]/g, '')) || 0;
+  const amtOf = (v) => { const t=digits(v).trim().replace(/,/g,''); if(!/^\d+(?:\.\d{1,2})?$/.test(t)) throw new Error('จำนวนเงินไม่ถูกต้อง: '+String(v)); const n=Number(t); if(!Number.isFinite(n))throw new Error('จำนวนเงินไม่ถูกต้อง'); return n; };
   const firstLine = (v) => String(v || '').split(/\r?\n/)[0].trim();
   function parseLedger(kind, aoa) {
     const text = (r) => r.map((c) => String(cellVal(c))).join(' ').replace(/\s+/g, ' ').trim();
@@ -678,7 +701,7 @@
         const k = t.match(/=?\s*(\d[\d,]*)\s*(?:เรื่อง|หมาย)/); if (k) footerN = amtOf(k[1]);
         return;
       }
-      if (seq < 0 || !/^\d+$/.test(String(r[seq]).trim())) return;
+      if (seq < 0 || !/^\d+$/.test(digits(r[seq]).trim())) return;
       if (kind === 'PAY') rows.push({ pay_date: thIso(r[col('วันที่จ่าย')]), case_no: firstLine(r[col('เลขดำที่')]), recipient: String(r[col('ส่งหมายถึงใคร')] || '').trim(),
         received_date: thIso(r[col('วันที่รับเงิน')]), receipt_no: String(r[col('เลขที่ใบเสร็จ')] || '').trim(), amount: amtOf(r[col('ราคา')]), officer: officer });
       else rows.push({ case_no: firstLine(r[col('เลขดำที่')]), notice_kind: String(r[col('หมายอะไร')] || '').trim(), recipient: String(r[col('หมายถึงใคร')] || '').trim(),
@@ -692,8 +715,8 @@
     return { rows: rows, sum: sum, footer: footer, footerN: footerN, groups: groups, grpBad: grpBad, badDate: badDate,
              title: title, period: period[1] ? period[1] + ' – ' + period[2] : '', period_from: period[1] || '', period_to: period[2] || '', wrongKind: kind === 'PAY' ? /หมายฟรี/.test(title) && !/จ่ายเงินให้เจ้าพนักงานศาล/.test(title) : /บัญชีการจ่ายเงินให้เจ้าพนักงานศาล/.test(title) };
   }
-  async function ledgerFile() {
-    const kind = IM.kind;
+  async function ledgerFile(revision) {
+    const kind = IM.kind; revision = revision || importEpoch;
     try {
       const aoa = XLSX.utils.sheet_to_json(IM.wb.Sheets[IM.sheet], { header: 1, raw: false, defval: '' });
       const p = IM.ledger = parseLedger(kind, aoa);
@@ -710,6 +733,8 @@
       if (!IM.ledgerOk) { $('#imPrev').innerHTML = ''; return; }
       $('#imPrev').innerHTML = '<div class="clay panel"><span class="spin"></span> <span class="muted">กำลังจับคู่กับหมายในระบบ…</span></div>';
       const r = await api('ledger_import', { kind: kind, rows: p.rows, file: IM.file, sheet: IM.sheet, period_from: p.period_from, period_to: p.period_to });
+      if (revision !== importEpoch) return;
+      IM.ledgerBody = {kind:kind, rows:p.rows, file:IM.file, sheet:IM.sheet, commit:true, period_from:p.period_from, period_to:p.period_to, preview_token:r.preview_token};
       drawLedgerPreview(r);
     } catch (e) { $('#fInfo').innerHTML = '<p class="note r">' + esc(e.message) + '</p>'; }
   }
@@ -725,11 +750,11 @@
         : '<p class="small" style="margin:12px 0 0">เทียบกับยอดที่ระบบคำนวณ: ตรง ' + num(r.compare.same) + ' · ศาลคิดมากกว่า ' + num(r.compare.court_more) + ' · ศาลคิดน้อยกว่า ' + num(r.compare.court_less) + ' เรื่อง' +
           (r.compare.locked ? ' · เข้ารอบเบิกแล้ว (ไม่แก้) ' + num(r.compare.locked) : '') + '<br><span class="tiny muted">หมายฟรีในระบบ ' + num(r.compare.system_free) + ' เรื่อง · ไม่อยู่ในไฟล์ ' + num(r.compare.system_not_in_file) + ' (ใช้ยอดที่ระบบคำนวณ) · ศาลรวมหมายตามข้อ 7 แล้ว ฉบับที่รวมได้ราคา 0</span></p>') +
       (none ? '<h3 style="margin-top:16px">ไม่พบในระบบ (แสดง ' + num((r.samples_none || []).length) + ' แถวแรก)</h3><div class="tbl-wrap"><table><thead><tr><th>วันที่จ่าย</th><th>เลขดำ</th><th>ผู้รับ</th><th></th><th class="n">บาท</th><th></th></tr></thead><tbody>' + none + '</tbody></table></div>' : '') +
-      '<div class="row" style="margin-top:14px;gap:8px"><button type="button" class="btn btn-g" id="lgOk">ยืนยันนำเข้า</button><span class="small muted">' + (r.kind === 'PAY' ? 'วันที่จ่ายที่ตั้งรอบแล้วจะไม่ถูกแก้ · วันที่ยังไม่ตั้งรอบแทนที่ด้วยไฟล์นี้' : 'ราคาศาลใช้แทนยอดระบบในรอบหมายฟรี · หมายที่เบิกแล้วไม่ถูกแก้') + '</span></div></div>';
+      '<div class="row" style="margin-top:14px;gap:8px"><button type="button" class="btn btn-g" id="lgOk">ยืนยันนำเข้า</button><span class="small muted">' + (r.kind === 'PAY' ? 'วันที่จ่ายที่ตั้งรอบแล้วจะไม่ถูกแก้ · วันที่ยังไม่ตั้งรอบเพิ่มหรือปรับตามใบเสร็จ โดยเก็บรายการที่ไม่อยู่ในไฟล์ไว้' : 'ราคาศาลใช้แทนยอดระบบในรอบหมายฟรี · หมายที่เบิกแล้วไม่ถูกแก้') + '</span></div></div>';
     $('#lgOk').addEventListener('click', async (e) => {
       const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังนำเข้า…';
       try {
-        const x = await api('ledger_import', { kind: IM.kind, rows: IM.ledger.rows, file: IM.file, sheet: IM.sheet, commit: true, period_from: IM.ledger.period_from, period_to: IM.ledger.period_to });
+        const x = await api('ledger_import', IM.ledgerBody);
         try { IM.meta = await api('import_templates'); paintKinds(); } catch (e2) { /* แสดงสถานะครั้งหน้า */ }
         toast('นำเข้าแล้ว ' + num(x.imported) + ' รายการ' + (x.skipped_locked ? ' · ข้ามวันที่ตั้งรอบแล้ว ' + num(x.skipped_locked) : ''));
         $('#imPrev').innerHTML = '<div class="clay panel"><p class="note g" style="margin:0"><b>นำเข้าเรียบร้อย</b> ชุด ' + esc(x.batch_id) + ' · ' + num(x.imported) + ' รายการ' + (x.skipped_locked ? ' · ข้ามวันที่ตั้งรอบแล้ว ' + num(x.skipped_locked) : '') +
@@ -769,7 +794,7 @@
     IM.rows = []; IM.rowNos = []; IM.skipped = 0;
     aoa.slice(best + 1).forEach((r, k) => {
       if (!r.some((c) => String(c).trim() !== '')) return;
-      if (seq >= 0 ? !/^\d+$/.test(String(r[seq]).trim()) : r.filter((c) => String(c).trim() !== '').length < 3) { IM.skipped++; return; }
+      if (seq >= 0 ? !/^\d+$/.test(digits(r[seq]).trim()) : r.filter((c) => String(c).trim() !== '').length < 3) { IM.skipped++; return; }
       const o = {}; IM.headers.forEach((h, i) => { o[h] = cellVal(r[i]); });
       IM.rows.push(o); IM.rowNos.push(best + k + 2);
     });
@@ -843,13 +868,17 @@
   }
 
   async function doPreview() {
+    const revision = importEpoch;
     const b = $('#doPrev'); b.disabled = true;
     $('#imPrev').innerHTML = '<div class="clay panel"><span class="spin"></span> กำลังตรวจ ' + num(IM.rows.length) + ' แถว…</div>';
     try {
-      IM.preview = await api('import_preview', importBody());
+      const body = importBody(), fingerprint = JSON.stringify(body);
+      const result = await api('import_preview', body);
+      if (revision !== importEpoch || JSON.stringify(importBody()) !== fingerprint) return;
+      IM.preview = result; IM.previewBody = body; IM.previewFingerprint = fingerprint;
       IM.cls = ['NEW', 'CHANGED', 'HELD', 'AMBIGUOUS', 'ERROR', 'SAME', 'OUTSIDE'].find((c) => IM.preview.counts[c]) || 'NEW';
       drawPreview();
-    } catch (e) { $('#imPrev').innerHTML = '<div class="clay panel"><p class="note r" style="margin:0">' + esc(e.message) + '</p></div>'; }
+    } catch (e) { if (revision !== importEpoch) return; $('#imPrev').innerHTML = '<div class="clay panel"><p class="note r" style="margin:0">' + esc(e.message) + '</p></div>'; }
     finally { b.disabled = false; }
   }
 
@@ -885,8 +914,9 @@
   async function doCommit() {
     const b = $('#doCommit'); b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังบันทึก…';
     try {
-      const r = await api('import_commit', importBody());
-      IM.meta = await api('import_templates'); paintKinds();
+      if (!IM.preview || IM.previewFingerprint !== JSON.stringify(importBody())) throw new Error('ข้อมูลเปลี่ยน กรุณาตรวจสอบก่อนนำเข้าใหม่');
+      const r = await api('import_commit', Object.assign({}, IM.previewBody, {preview_token:IM.preview.preview_token}));
+      api('import_templates').then((x) => { IM.meta=x; paintKinds(); }).catch(() => {});
       $('#imPrev').innerHTML = '<div class="clay panel"><h3>นำเข้าเรียบร้อย</h3><p class="note g" style="margin:0 0 12px">เลขชุด ' + esc(r.batch_id) +
         ' · เพิ่มใหม่ ' + num(r.inserted) + ' · ปรับปรุง ' + num(r.updated) + ' · รออนุมัติแก้ ' + num(r.held_changes) + ' · แถวรอตรวจสอบ ' + num(r.review_rows) + (r.review_auto_resolved ? ' · ระบบจับคู่แถวที่ค้างให้แล้ว ' + num(r.review_auto_resolved) + ' แถว' : '') + '</p>' +
         (r.calc ? (r.calc.error ? '<p class="note r" style="margin:0 0 12px">คำนวณค่าหมายไม่สำเร็จ: ' + esc(r.calc.error) + '</p>'
@@ -1007,7 +1037,7 @@
         '<td><button type="button" class="btn btn-s ou" data-o="' + esc(o.officer_id) + '" data-n="' + esc(o.name) + '"' + (o.free_n ? '' : ' disabled') + '>หมายฟรี</button></td></tr>').join('') +
       '<tr class="sum"><td><b>รวม</b></td><td class="n"><b>' + num(t.paid_n) + '</b></td><td class="n"><b>' + baht(t.paid_amount) + '</b></td><td class="n"><b>' + num(t.free_n) + '</b></td><td class="n"><b>' + num(t.free_units) +
         '</b></td><td class="n"><b>' + baht(t.free_amount) + '</b></td><td class="n"><b>' + num(t.free_wait) + '</b></td><td class="n"><b>' + baht(t.paid_amount + t.free_amount) + '</b></td><td></td></tr>' +
-      '</tbody></table></div><p class="tiny muted" style="margin:10px 0 0">หมายมีเงิน = ราคาตามบัญชีจ่ายหมาย ถ้าไม่เท่าอัตราตำบลคิดตามอัตราตำบล (▲ ส่วนเกินไม่นำมาคิด · ▼ ปรับขึ้นเป็นอัตรา) · หมายฟรี = อ.เมืองลพบุรี 300 บาท อำเภออื่นตามอัตราตำบล รวมหมายตาม "คราวเดียวกัน" (ผู้ส่ง + วันที่ส่ง + ตำบล + หมู่/หน่วยงาน/ถนน) · ยอดนี้ยังไม่แบ่ง 60:40 (ดูเมนูรอบเบิก / วันจ่าย 60:40)</p></div>' +
+      '</tbody></table></div><p class="tiny muted" style="margin:10px 0 0">หมายมีเงิน = ราคาตามบัญชีจ่ายหมาย ถ้าไม่เท่าอัตราตำบลคิดตามอัตราตำบล (▲ ยอดคำนวณตามอัตรา · ยอดจ่ายตรวจจากบัญชี · ▼ ปรับขึ้นเป็นอัตรา) · หมายฟรี = อ.เมืองลพบุรี 300 บาท อำเภออื่นตามอัตราตำบล รวมหมายตาม "คราวเดียวกัน" (ผู้ส่ง + วันที่ส่ง + ตำบล + หมู่/หน่วยงาน/ถนน) · ยอดนี้ยังไม่แบ่ง 60:40 (ดูเมนูรอบเบิก / วันจ่าย 60:40)</p></div>' +
       (d.warnings.length ? '<div class="clay panel"><h3>ข้อควรตรวจ</h3><div class="tbl-wrap"><table><thead><tr><th>วันที่ส่ง</th><th>ผู้ส่ง</th><th>รายละเอียด</th><th class="n">ฉบับ</th><th>หน่วยเบิก</th></tr></thead><tbody>' +
         d.warnings.map((w) => '<tr><td>' + esc(thDate(w.date)) + '</td><td class="small">' + esc(w.officer) + '</td><td class="small">' + esc(w.text) + (w.place_key && !/^X:/.test(w.place_key) ? ' · ' + esc(w.place_key) : '') +
           '</td><td class="n">' + num(w.count) + '</td><td class="tiny">' + esc(w.unit_id) + '</td></tr>').join('') + '</tbody></table></div></div>' : '') +
@@ -1029,6 +1059,7 @@
     const box = $('#chkBox'); if (!box || viewerOnly()) return;
     let d;
     try { d = await api('notice_checks', { fy: S.fy }); } catch (e) { box.innerHTML = ''; return; }
+    if (!box.isConnected) return;
     if (!d.amount.length && !d.date.length) { box.innerHTML = ''; return; }
     const caseCell = (x) => '<b>' + esc(x.case_no) + '</b>' + (x.case_ref ? '<br><span class="tiny muted">' + esc(x.case_ref) + '</span>' : '') + '<br><span class="tiny muted">' + esc(x.kind) + '</span>';
     const waitN = d.date.filter((x) => !x.date_ok).length;
@@ -1036,13 +1067,13 @@
     const sumD = (L) => L.reduce((a, x) => a + Number(x.adj.diff), 0);
     let h = '';
     if (d.amount.length) h += '<div class="clay panel"><h3>ราคาไม่เท่าอัตราตำบล · คิดตามอัตราตำบลแล้ว ' + num(d.amount.length) + ' ฉบับ</h3>' +
-      '<p class="small" style="margin:0 0 10px">' + (upL.length ? '<span class="flag-up">▲ เกินอัตรา ' + num(upL.length) + ' ฉบับ รวม ' + num(sumD(upL)) + ' บาท — ส่วนเกินไม่นำมาคิดและแบ่ง 60:40</span>' : '') +
+      '<p class="small" style="margin:0 0 10px">' + (upL.length ? '<span class="flag-up">▲ เกินอัตรา ' + num(upL.length) + ' ฉบับ รวม ' + num(sumD(upL)) + ' บาท — ส่วนต่างเทียบอัตรา · รอบจ่ายใช้ยอดบัญชีจ่ายจริง</span>' : '') +
         (upL.length && dnL.length ? ' · ' : '') + (dnL.length ? '<span class="flag-r">▼ ต่ำกว่าอัตรา ' + num(dnL.length) + ' ฉบับ รวม ' + num(sumD(dnL)) + ' บาท — ปรับขึ้นเป็นอัตราตำบล</span>' : '') + '</p>' +
-      '<p class="tiny muted" style="margin:0 0 10px">ระบบคิดเงินตามอัตราตำบลให้อัตโนมัติ ไม่ต้องกดยืนยัน · ราคาตามไฟล์เก็บไว้ตามเดิมเพื่อตรวจย้อนหลัง</p>' +
+      '<p class="tiny muted" style="margin:0 0 10px">ยอดคำนวณใช้อัตราตำบล · รอบจ่ายใช้บัญชีจ่ายจริง · เก็บราคาต้นทางเพื่อเทียบขาด/เกิน</p>' +
       '<div class="tbl-wrap"><table><thead><tr><th>เลขคดี</th><th>ผู้ส่ง</th><th>ผู้รับ / พื้นที่</th><th class="n">ราคาไฟล์</th><th class="n">อัตราตำบล (คิดเงิน)</th><th>ส่วนต่าง</th></tr></thead><tbody>' +
       d.amount.map((x) => '<tr><td>' + caseCell(x) + '</td><td class="small">' + esc(x.officer) + '</td><td class="small">' + esc(x.recipient) + '<br><span class="tiny muted">' + esc(x.place) + '</span></td>' +
         '<td class="n">' + num(x.amount) + '</td><td class="n"><b>' + num(x.rate) + '</b></td>' +
-        '<td class="small">' + (x.adj ? adjMark(x.adj) + (x.adj.dir === 'UP' ? '<br><span class="tiny muted">ส่วนเกินไม่นำมาคิด</span>' : '<br><span class="tiny muted">ปรับขึ้นเป็นอัตราตำบล</span>') : '<span class="tiny muted">—</span>') +
+        '<td class="small">' + (x.adj ? adjMark(x.adj) + (x.adj.dir === 'UP' ? '<br><span class="tiny muted">ยอดคำนวณตามอัตรา · ยอดจ่ายตรวจจากบัญชี</span>' : '<br><span class="tiny muted">ปรับขึ้นเป็นอัตราตำบล</span>') : '<span class="tiny muted">—</span>') +
         (x.ok ? '<br><span class="tiny muted" title="ประวัติก่อนเปลี่ยนกฎ">เคยยืนยันยอดไฟล์ ' + num(x.ok.value) + ' · ' + esc(x.ok.by) + ' · ' + esc(thDate(x.ok.at, true)) + '</span>' : '') + '</td></tr>').join('') +
       '</tbody></table></div></div>';
     if (d.date.length) h += '<div class="clay panel"><h3>วันที่จ่ายไม่แน่ชัด · รอยืนยัน ' + num(waitN) + ' · ยืนยันแล้ว ' + num(d.date.length - waitN) + '</h3>' +
@@ -1161,7 +1192,7 @@
     const names = d.officers, bl = d.backlog;
     const T = bl.reduce((a, b) => ({ pn: a.pn + b.paid_n, p: a.p + b.paid, bn: a.bn + b.budget_n, b: a.b + b.budget, h: a.h + b.held_n }), { pn: 0, p: 0, bn: 0, b: 0, h: 0 });
     const bk = d.blocked || {}, lf = d.last_free;
-    m.innerHTML = top('รอบเบิก / วันจ่าย 60:40', d.can_create ? '<div class="row" style="gap:8px"><button type="button" class="btn btn-g" id="pNewF">+ รอบหมายฟรี</button><button type="button" class="btn btn-g" id="pNewP">+ รอบหมายเงิน</button></div>' : '') +
+    m.innerHTML = top('รอบเบิกและจ่ายเงิน', d.can_create ? '<div class="row" style="gap:8px"><button type="button" class="btn btn-g" id="pNewF">+ รอบหมายฟรี</button><button type="button" class="btn btn-g" id="pNewP">+ รอบหมายเงิน</button></div>' : '') +
       '<div class="clay panel pinfo">' +
         '<div class="pinfo-r"><span class="pchip pf">ฟรี</span><div><b>' + (lf ? 'เบิกหมายฟรีล่าสุด ' + esc(thDate(lf.pay_date)) : 'ยังไม่เคยเบิกหมายฟรีในระบบ') + '</b>' +
           (lf ? '<span class="small muted"> · ลงข้อมูลถึง ' + esc(thDate(lf.cutoff)) + ' · ' + baht2(lf.total) + '&nbsp;฿</span>' : '') +
@@ -1169,7 +1200,7 @@
         '<div class="pinfo-r"><span class="pchip pm">มีเงิน</span><div><b>บัญชีจ่ายเงินที่รอตั้งรอบ</b>' +
           (d.pending_dates.length ? '<div class="pdates">' + d.pending_dates.map((x) => '<button type="button" class="btn btn-sm pdate" data-pd="' + esc(x.pay_date) + '"' + (d.can_create ? '' : ' disabled') + '>' + esc(thDate(x.pay_date)) + ' · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + '&nbsp;฿' + (x.none ? ' <span class="flag-r">ไม่พบ ' + num(x.none) + '</span>' : '') + '</button>').join('') + '</div>'
             : '<div class="small muted">ไม่มี — ดาวน์โหลดไฟล์ ' + esc(d.sources.PAY) + ' แล้วนำเข้าที่ "นำเข้าข้อมูล › บัญชีจ่ายเงินหมายมีเงิน"</div>') + '</div></div></div>' +
-      '<div class="clay panel"><div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">กล่อง "ยังไม่ได้เบิก"</h3>' +
+      '<div class="clay panel"><div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">รายการยังไม่เข้ารอบในระบบ</h3>' +
       '<span class="small muted">ส่งแล้ว ยังไม่เข้ารอบใด · รวม <b>' + baht2(T.p + T.b) + ' ฿</b>' + (d.can_detail ? ' <button type="button" class="btn btn-sm" id="pBl">ดูรายเรื่อง</button>' : '') + '</span></div>' +
       '<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>ผู้ส่งหมาย</th><th class="n">หมายเงิน (เรื่อง)</th><th class="n">บาท</th><th class="n">หมายฟรี (เรื่อง)</th><th class="n">บาท</th><th class="n">เคยเลื่อน</th><th class="n">ค้างนานสุด</th></tr></thead><tbody>' +
       (bl.length ? bl.map((b) => '<tr><td>' + oDot(names, b.officer_id) + esc(oName(names, b.officer_id)) + '</td><td class="n">' + num(b.paid_n) + '</td><td class="n">' + baht2(b.paid) +
@@ -1231,6 +1262,7 @@
     return best[T];
   }
 
+  function matchLabel(m) { return ({OK:'จับคู่ครบ',NONE:'ยังไม่พบหมายต้นทาง',TYPE:'ประเภทหรือผู้ส่งไม่ตรง',AMBIGUOUS:'จับคู่กำกวม',PARTIAL:'จับคู่ได้บางส่วน'})[m] || 'ข้อมูลสถานะไม่ครบ'; }
   function drawPicker(box, d) {
     const names = d.officers, off = new Set(), free = d.round_type === 'FREE', targets = {};
     const byOff = {};
@@ -1258,8 +1290,8 @@
       '<section class="clay panel poff" data-o="' + esc(id) + '"><div class="poff-h"><label class="ck">' + (free ? '<input type="checkbox" checked data-all="' + esc(id) + '"> ' : '') + oDot(names, id) + '<b>' + esc(oName(names, id)) + '</b></label>' +
       '<span class="small muted" data-sum="' + esc(id) + '"></span>' +
       (free ? '<span class="ptin"><input type="text" inputmode="decimal" class="inp" placeholder="ยอดใบแบ่งยอด" data-tg="' + esc(id) + '"><span class="tiny" data-tst="' + esc(id) + '"></span></span>' : '') + '</div>' +
-      (free ? byOff[id].map(row).join('') : '<details class="pdet"><summary>ดูรายเรื่อง (' + num(byOff[id].length) + ')' + (byOff[id].some((x) => x.match !== 'OK') ? ' · <span class="flag-r">ไม่พบในระบบ ' + num(byOff[id].filter((x) => x.match !== 'OK').length) + '</span>' : '') + '</summary>' + byOff[id].map(row).join('') + '</details>') + '</section>').join('') +
-      (!free && unpaid.length ? '<section class="clay panel"><h3>ส่งแล้วแต่ไม่อยู่ในบัญชีจ่ายวันนี้ (' + num(unpaid.length) + ')</h3><p class="tiny muted" style="margin:0 0 8px">ลงข้อมูลก่อนวันที่จ่ายนี้ แต่ศาลยังไม่จ่าย — ค้างในกล่อง "ยังไม่ได้เบิก" ไปรอบหน้า</p><details class="pdet"><summary>ดูรายเรื่อง</summary>' +
+      (free ? byOff[id].map(row).join('') : '<details class="pdet"><summary>ดูรายเรื่อง (' + num(byOff[id].length) + ')' + (byOff[id].some((x) => x.match !== 'OK') ? ' · <span class="flag-r">ต้องตรวจการเชื่อมโยง ' + num(byOff[id].filter((x) => x.match !== 'OK').length) + '</span>' : '') + '</summary>' + byOff[id].map(row).join('') + '</details>') + '</section>').join('') +
+      (!free && unpaid.length ? '<section class="clay panel"><h3>ส่งแล้วแต่ไม่อยู่ในบัญชีจ่ายวันนี้ (' + num(unpaid.length) + ')</h3><p class="tiny muted" style="margin:0 0 8px">ลงข้อมูลก่อนวันที่จ่ายนี้ แต่ศาลยังไม่จ่าย — ค้างในรายการยังไม่เข้ารอบในระบบ ไปรอบหน้า</p><details class="pdet"><summary>ดูรายเรื่อง</summary>' +
         unpaid.map((u) => '<div class="pit out-i">' + oDot(names, u.officer_id) + '<span class="pcase">' + esc(u.case_no) + ' <span class="tiny muted">' + esc(u.notice_kind) + '</span></span><span class="tiny muted pdt">' + esc(oName(names, u.officer_id)) + ' · ลงข้อมูล ' + esc(thDate(u.report_date)) + '</span><b class="pamt">' + cb(u.amount_c) + '</b></div>').join('') + '</details></section>' : '') +
       '</div><aside class="clay panel psum"><h3>สรุปรอบ ' + esc(RTYPE_TH[d.round_type]) + ' · ' + esc(thDate(d.pay_date)) + '</h3><div id="pSplit"></div>' +
       '<label class="pseat">จำนวนคนนั่งงาน (N)<input type="number" class="inp" id="pSeats" min="1" max="1000" value="' + esc(d.seats) + '"><span class="tiny muted">ค่าล่าสุดที่ใช้ · แก้ได้ รอบเก่าไม่เปลี่ยน</span></label>' +
@@ -1299,7 +1331,7 @@
       });
       if ($('#pSugAll')) $('#pSugAll').disabled = !anySug;
       box.querySelectorAll('[data-sg]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); applySug([b.dataset.sg]); }));
-      $('#pOk').disabled = !inc.some((it) => it.amount_c > 0) || !(Number($('#pSeats').value) >= 1) || !d.order_ok;
+      $('#pOk').disabled = !inc.some((it) => it.amount_c > 0) || !(Number.isInteger(Number($('#pSeats').value)) && Number($('#pSeats').value) >= 1 && Number($('#pSeats').value) <= 1000) || !d.order_ok;
       $('#pOk').textContent = 'ยืนยันรอบ · ' + cb(sp.total_c) + ' ฿';
     };
     const setOff = (it, out) => {
@@ -1329,10 +1361,10 @@
       const b = $('#pOk'); b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังบันทึก…';
       try {
         const r = await api('payout_confirm', { round_type: d.round_type, pay_date: d.pay_date, cutoff: d.cutoff, seats: Number($('#pSeats').value),
-          excluded: Array.from(off), expect_count: d.items.length, note: $('#pNote').value,
+          excluded: Array.from(off), expect_count: d.items.length, expect_snapshot: d.snapshot, note: $('#pNote').value,
           carry_in: Number($('#pCarry').value || 0), carry_note: $('#pCarryNote').value });
         toast('ยืนยันรอบแล้ว'); S.payoutSub = 'round:' + r.round.round_id; go('payout');
-      } catch (x) { toast(x.message); b.disabled = false; recalc(); }
+      } catch (x) { toast(x.message); if(x.code === 'STALE') { const fresh = await api('payout_candidates',{round_type:d.round_type,pay_date:d.pay_date,cutoff:d.cutoff}); drawPicker(box,fresh); toast('ดึงยอดล่าสุดแล้ว กรุณาตรวจขาด/เกินและยืนยันอีกครั้ง'); } else { b.disabled = false; recalc(); } }
     });
     recalc();
   }
@@ -1379,6 +1411,7 @@
     m.innerHTML = top('รอบ' + (RTYPE_TH[r.round_type] || '') + ' วันที่ ' + thDate(r.pay_date), '<div class="row" style="gap:8px"><button type="button" class="btn btn-sm" id="pBack">← รายการรอบ</button><button type="button" class="btn btn-g btn-sm" id="pPrint">พิมพ์ใบแบ่งยอด 60:40</button>' +
       (free && inc.length ? '<button type="button" class="btn btn-sm" id="pClaim">พิมพ์บัญชีหมายฟรีที่เบิก</button>' : '') +
       (d.can_cancel ? '<button type="button" class="btn btn-sm" id="pCancel">ยกเลิกรอบ</button>' : '') + '</div>') +
+      (r.payment_status === 'PAID' ? '<div class="note g">จ่ายจริง '+esc(thDate(r.payment_date))+' · หลักฐาน '+esc(r.payment_ref)+'</div>' : '<div class="note">อยู่ในรอบยืนยันแล้ว · รอบเก่าคงยอดเดิม · ยังไม่มีหลักฐานจ่ายจริงในช่องบันทึกนี้</div>') +
       (r.status === 'CANCELLED' ? '<div class="note r">รอบนี้ถูกยกเลิกโดย ' + esc(r.cancelled_by) + ' เมื่อ ' + esc(thDate(r.cancelled_at, true)) + ' · เหตุผล: ' + esc(r.cancel_reason) + '</div>' : '') +
       '<div class="bn4"><div class="kpi clay kt k-all"><span>ยอดรวม' + esc(free ? 'หมายฟรี' : 'หมายเงิน') + '</span><b>' + baht2(r.total) + '&nbsp;฿</b><small>' + num(d.lines.length) + ' คน · ' + num(inc.length) + ' เรื่อง</small></div>' +
       '<div class="kpi clay kt k-paid"><span>ผู้ส่งหมาย 60%</span><b>' + baht2(r.courier60) + '&nbsp;฿</b><small>กองกลาง 40% ' + baht2(r.pool40) + '</small></div>' +
@@ -1390,8 +1423,9 @@
       (d.items.length ? '<div class="clay panel"><h3>รายการที่เบิกในรอบนี้ (' + num(inc.length) + ')</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่งหมาย</th><th>เลขคดี</th><th>วันที่</th><th class="n">บาท</th></tr></thead><tbody>' + itemRows(inc) + '</tbody></table></div></div>' +
         (exc.length ? '<div class="clay panel"><h3>ยังไม่เสนอเบิกจ่าย (' + num(exc.length) + ') — ยกไปรอบหน้า</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่งหมาย</th><th>เลขคดี</th><th>วันที่</th><th class="n">บาท</th></tr></thead><tbody>' + itemRows(exc) + '</tbody></table></div></div>' : '') : '');
     $('#pBack').addEventListener('click', () => { S.payoutSub = 'list'; go('payout'); });
+    if (d.can_payment) { const pay = document.createElement('button'); pay.className='btn btn-sm'; pay.type='button'; pay.textContent='บันทึกหลักฐานจ่ายจริง'; $('.top .row',m).appendChild(pay); pay.onclick=()=>paymentForm(m,r); }
     $('#pPrint').addEventListener('click', () => printPayout(d));
-    if ($('#pClaim')) $('#pClaim').addEventListener('click', () => printClaim(inc.map((it) => ({ officer_id: it.officer_id, case_list: it.case_list, report_date: it.delivered_date, amount_c: Math.round(it.amount * 100) })), names, { pay_date: r.pay_date, cutoff: r.cutoff_date, source: r.source_label, round_id: r.round_id }, false));
+    if ($('#pClaim')) $('#pClaim').addEventListener('click', () => printClaim(inc.map((it) => ({ officer_id: it.officer_id, case_list: it.case_list, notice_kind:it.notice_kind, tambon:it.tambon, report_date: it.reported_date || '', amount_c: Math.round(it.amount * 100) })), names, { pay_date: r.pay_date, cutoff: r.cutoff_date, source: r.source_label, round_id: r.round_id }, false));
     if ($('#pCancel')) $('#pCancel').addEventListener('click', async () => {
       const reason = await askBox('เหตุผลที่ยกเลิกรอบนี้ (หมายในรอบจะกลับเป็นพร้อมเบิก)', { input: 'ระบุเหตุผล' }); if (!reason) return;
       try { await api('payout_cancel', { round_id: rid, reason: reason }); toast('ยกเลิกรอบแล้ว'); S.payoutSub = 'round:' + rid; go('payout'); } catch (x) { toast(x.message); }
@@ -1503,6 +1537,55 @@
       } catch (e) { toast(e.message); } finally { b.disabled = false; }
     }));
   };
+
+  /* 0.7.0: workflow navigation and tracing, using the original clay cards and colors. */
+  const differenceHtml = (v) => v === null ? '<span class="tiny muted">ยังไม่มียอดอ้างอิง</span>' : v > 0 ? '<span class="flag-up">เกิน '+baht2(v)+' ฿</span>' : v < 0 ? '<span class="flag-r">ขาด '+baht2(-v)+' ฿</span>' : '<span class="flag-ok">ยอดตรงกัน</span>';
+  const statusHtml = (r) => '<span class="pill '+(r.status==='PAID'?'g':r.status==='REVIEW'?'r':'a')+'">'+esc(r.status_th)+'</span>';
+  const latestHtml = (last) => '<div class="note small">'+[['ISSUE','50 ทะเบียนหมาย'],['RESULT','42 ผลส่ง'],['FREE18','18 ราคาหมายฟรี'],['PAY','30 บัญชีจ่ายเงิน']].map(([k,lab])=>{const x=last[k];return '<span class="nb">'+lab+': '+esc(x?thDate(x.at,true):'ยังไม่พบการนำเข้า')+'</span>';}).join(' · ')+'</div>';
+  RENDER.tracking = async (m) => {
+    const own=has('COURIER')&&!has('NOTICE','FINANCE','ADMIN','CASE');
+    m.innerHTML=top(own?'ตรวจเบิกจ่ายของฉัน':'ตรวจสอบการเบิกจ่าย')+
+      '<form class="clay panel" id="trackForm"><div class="row">'+
+      '<label>ประเภท<select class="sel" id="trType"><option value="BUDGET">หมายฟรี</option><option value="PAID">หมายมีเงิน</option><option value="">ทั้งหมด</option></select></label>'+
+      '<label>เลขคดี / ผู้รับ<input class="inp" id="trQ" placeholder="พิมพ์เลขคดีหรือชื่อผู้รับ"></label>'+
+      '<label>ปีงบประมาณ<input class="inp year-input" id="trFy" inputmode="numeric" placeholder="ทั้งหมด" value="'+esc(S.fy)+'"></label>'+
+      '<label>ผู้ส่ง<select class="sel" id="trOfficer"><option value="">'+(own?'ของฉัน':'ทุกคน')+'</option></select></label>'+
+      '<label>สถานะ<select class="sel" id="trStatus"><option value="">ทุกสถานะ</option></select></label>'+
+      '<label>ตั้งแต่<input type="date" class="inp" id="trFrom"></label><label>ถึง<input type="date" class="inp" id="trTo"></label>'+
+      '<button class="btn btn-g">ค้นหา</button></div></form><div id="trackResult"></div><div id="trackDetail"></div>';
+    let page=1,unit='',busy=false,seq=0,seeded=false;
+    const run=async()=>{
+      const ticket=++seq;busy=true;const box=$('#trackResult');box.innerHTML='<div class="clay panel"><span class="spin"></span> กำลังตรวจข้อมูล…</div>';
+      try {
+        const d=await api('tracking',{q:$('#trQ').value,fy:$('#trFy').value,pay_type:$('#trType').value,officer_id:$('#trOfficer').value,status:$('#trStatus').value,from:$('#trFrom').value,to:$('#trTo').value,page:page,unit_id:unit});
+        if(ticket!==seq)return;
+        if(!seeded){seeded=true;Object.keys(d.officers).filter(id=>!d.scope_officer||id===d.scope_officer).forEach(id=>$('#trOfficer').insertAdjacentHTML('beforeend','<option value="'+esc(id)+'">'+esc(d.officers[id].name)+'</option>'));Object.keys(d.statuses).forEach(k=>$('#trStatus').insertAdjacentHTML('beforeend','<option value="'+k+'">'+esc(d.statuses[k])+'</option>'));}
+        box.innerHTML=latestHtml(d.last_imports)+'<div class="chips"><span class="chip">พบ '+num(d.total_rows)+' รายการ</span><span class="chip">ยอดที่แสดง '+baht2(d.totals.amount)+' ฿</span><span class="chip flag-r">ขาด '+baht2(d.totals.shortage)+' ฿ · '+num(d.totals.shortage_n)+' รายการ</span><span class="chip flag-up">เกิน '+baht2(d.totals.excess)+' ฿ · '+num(d.totals.excess_n)+' รายการ</span></div>'+
+        '<div class="clay panel"><div class="tbl-wrap"><table><thead><tr><th>เลขคดี / หมาย</th><th>ผู้ส่ง</th><th>วันที่ส่ง / รายงาน</th><th class="n">ยอดอ้างอิงระบบ</th><th class="n">ยอดบัญชี / ยอดที่ใช้</th><th>ขาด / เกิน</th><th>สถานะ</th><th>รอบ / หลักฐาน</th><th></th></tr></thead><tbody>'+
+        (d.rows.length?d.rows.map((r,i)=>'<tr><td><b>'+esc(r.case_no)+'</b><br><span class="tiny">'+esc(r.notice_kind)+'</span></td><td class="onm">'+esc(r.officer)+'</td><td class="small">'+esc(thDate(r.delivered_date)||'รอผล')+'<br>'+esc(thDate(r.reported_date)||'—')+'</td><td class="n">'+(r.reference===null?'—':baht2(r.reference))+'</td><td class="n"><b>'+baht2(r.amount)+'</b><br><span class="tiny">'+esc(r.source)+'</span></td><td>'+differenceHtml(r.difference)+'</td><td>'+statusHtml(r)+'</td><td class="small">'+esc(r.round_id||'ยังไม่พบประวัติรอบ')+'<br>'+esc(r.payment_date?thDate(r.payment_date)+' · '+r.payment_ref: r.round_id?'ยังไม่มีหลักฐานจ่ายจริงในช่องบันทึกนี้':'')+'</td><td><button class="btn btn-sm" data-tr="'+i+'">รายละเอียด</button></td></tr>').join(''):'<tr><td colspan="9">ไม่พบรายการตามตัวกรอง</td></tr>')+'</tbody></table></div>'+
+        '<div class="row" style="margin-top:12px"><button class="btn btn-sm" id="trPrev" '+(page<=1?'disabled':'')+'>← ก่อนหน้า</button><span>หน้า '+num(page)+'</span><button class="btn btn-sm" id="trNext" '+(page*100>=d.total_rows?'disabled':'')+'>ถัดไป →</button>'+(unit?'<button class="btn btn-sm" id="trClearUnit">กลับทุกรายการ</button>':'')+'</div><p class="tiny muted">ยังไม่พบประวัติในระบบไม่ได้แปลว่าไม่เคยเบิก · ยอดศูนย์อาจรวมในหมายอื่น · ประวัติรอบเก่าคงยอดเดิม</p></div>';
+        $('#trPrev').onclick=()=>{page--;run();};$('#trNext').onclick=()=>{page++;run();};if($('#trClearUnit'))$('#trClearUnit').onclick=()=>{unit='';page=1;run();};
+        box.querySelectorAll('[data-tr]').forEach(b=>b.onclick=()=>{
+          const r=d.rows[+b.dataset.tr],detail=$('#trackDetail');detail.innerHTML='<div class="clay panel"><h3>'+esc(r.case_no)+' · '+esc(r.notice_kind)+'</h3><p>'+esc(r.recipient)+' · '+esc(r.officer)+' · ต.'+esc(r.tambon)+'</p><p>'+statusHtml(r)+' · '+differenceHtml(r.difference)+'</p><p class="small">หน่วยเบิก '+esc(r.unit_id||'แยกฉบับ')+' · '+num(r.grouped_count)+' ฉบับ'+(r.amount===0&&r.grouped_count>1?' · ยอดอาจรวมอยู่ในหมายอื่น':'')+'</p>'+ (r.unit_id?'<button class="btn btn-sm" id="trGroup">ดูหมายในหน่วยเดียวกัน</button>':'')+'<h3 style="margin-top:14px">ประวัติรอบที่พบ</h3>'+(r.history.length?r.history.map(h=>'<p class="small">'+esc(h.round_id)+' · '+esc(thDate(h.pay_date))+' · '+baht2(h.amount)+' ฿ · '+esc(h.payment_date?'จ่ายจริง '+thDate(h.payment_date)+' '+h.payment_ref:'อยู่ในรอบยืนยันแล้ว')+'</p>').join(''):'<p>ยังไม่พบประวัติรอบในระบบ</p>')+(r.round_id?'<button class="btn btn-g btn-sm" id="trRound">เปิดรอบ / พิมพ์</button>':'')+'</div>';
+          if($('#trGroup'))$('#trGroup').onclick=()=>{unit=r.unit_id;$('#trQ').value='';page=1;run();};if($('#trRound'))$('#trRound').onclick=()=>{S.payoutSub='round:'+r.round_id;go('payout');};detail.scrollIntoView({behavior:'smooth',block:'start'});
+        });
+      }catch(e){if(ticket!==seq)return;box.innerHTML='<div class="note r">'+esc(e.message)+'</div>';if(e.code==='RECOVERY_REQUIRED'){const b=document.createElement('button');b.className='btn';b.textContent='ตรวจและกู้คืนงานบันทึก';b.onclick=recoverWork;box.appendChild(b);}}
+      finally{busy=false;}
+    };
+    $('#trackForm').onsubmit=e=>{e.preventDefault();unit='';page=1;run();};await run();
+  };
+  RENDER.search = RENDER.tracking;
+  RENDER.reports = async(m)=>{
+    m.innerHTML=top('รายงานการเบิกจ่าย')+'<form class="clay panel row" id="repForm"><label>ปีงบประมาณ<input id="repFy" class="inp year-input" inputmode="numeric" value="'+esc(S.fy)+'" placeholder="ทั้งหมด"></label><label>ประเภท<select id="repType" class="sel"><option value="BUDGET">หมายฟรี</option><option value="PAID">หมายมีเงิน</option><option value="">ทั้งหมด</option></select></label><button class="btn btn-g">แสดงรายงาน</button></form><div id="repBody"></div>';
+    const run=async()=>{const d=await api('reports',{fy:$('#repFy').value,pay_type:$('#repType').value}),box=$('#repBody');box.innerHTML=latestHtml(d.last_imports)+'<div class="clay panel"><h3>สรุปรายผู้ส่งตามตัวกรอง</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่ง</th><th class="n">รายการ</th><th class="n">ยอดที่ใช้</th><th class="n">ขาด</th><th class="n">เกิน</th></tr></thead><tbody>'+d.per_officer.map(r=>'<tr><td>'+esc(r.officer)+'</td><td class="n">'+num(r.count)+'</td><td class="n">'+baht2(r.amount)+'</td><td class="n flag-r">'+baht2(r.shortage)+'</td><td class="n flag-up">'+baht2(r.excess)+'</td></tr>').join('')+'</tbody></table></div><div class="row" style="margin-top:14px"><button class="btn btn-sm" id="repCsv">ดาวน์โหลด CSV</button><button class="btn btn-sm" id="repPrint">พิมพ์รายงาน</button></div></div>'+
+      '<div class="clay panel"><h3>จำนวนตามสถานะ</h3>'+Object.keys(d.totals.statuses).map(k=>'<p>'+esc(d.statuses[k])+' <b>'+num(d.totals.statuses[k])+'</b> รายการ</p>').join('')+'<p class="tiny muted">สรุปจากหมายที่มีในทะเบียนตามตัวกรอง ส่วนยอดบัญชีและรอบด้านล่างใช้เป็นข้อมูลควบคุมแยกกัน</p></div>'+ledgerControlHtml(d);
+      $('#repCsv').onclick=()=>{const rows=[['ผู้ส่ง','รายการ','ยอดที่ใช้','ขาด','เกิน']].concat(d.per_officer.map(r=>[r.officer,r.count,r.amount,r.shortage,r.excess]));const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v).replace(/^[=+@-]/,"'$&").replace(/"/g,'""')+'"').join(',')).join('\r\n');const u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=u;a.download='notice-pay-report.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
+      $('#repPrint').onclick=()=>{loadSarabun();printArea('<div class="pr-head"><div class="pr-court">ศาลจังหวัดลพบุรี</div><div class="pr-title">รายงานการเบิกจ่าย · ปีงบ '+esc($('#repFy').value||'ทั้งหมด')+'</div><div>'+esc($('#repType').selectedOptions[0].textContent)+'</div></div>'+box.querySelector('.tbl-wrap').innerHTML+'<p>ขาดรวม '+baht2(d.totals.shortage)+' · เกินรวม '+baht2(d.totals.excess)+' บาท</p>');};
+    };$('#repForm').onsubmit=e=>{e.preventDefault();run().catch(e=>toast(e.message));};await run();
+  };
+  function ledgerControlHtml(d){const l=d.ledger_summary||{},r=d.round_summary||{};return '<div class="clay panel"><h3>ยอดควบคุมจากบัญชีและรอบ</h3><p>บัญชีจ่ายเงินหมายมีเงิน '+num(l.count||0)+' รายการ · '+baht2(l.amount||0)+' บาท</p><p>ยังเชื่อมหมายไม่ครบ '+num(l.unmatched_n||0)+' รายการ · '+baht2(l.unmatched_amount||0)+' บาท</p><p>รอบยืนยันตามตัวกรอง '+num(r.count||0)+' รอบ · '+baht2(r.amount||0)+' บาท</p><p class="tiny muted">ยอดบัญชีที่ยังจับคู่ไม่ได้ยังคงอยู่ในยอดควบคุม ไม่ถูกลบออกจากบัญชีจ่าย</p></div>';}
+  RENDER.settings=(m)=>{m.innerHTML=top('ตั้งค่าและข้อมูลอ้างอิง')+'<div class="clay panel"><h3>ข้อมูลประกอบการตรวจ</h3><div class="row"><button class="btn btn-g" id="setRates">ผู้ส่งหมายและอัตรา</button>'+(has('ADMIN')?'<button class="btn" id="setUsers">ผู้ใช้และสิทธิ์</button><button class="btn" id="setRecovery">ตรวจงานบันทึกค้าง</button>':'')+'</div><p class="small muted" style="margin-top:12px">อัตราและหลักการคำนวณใช้ค่าที่ตั้งไว้เดิม การปรับสิทธิ์ทำได้เฉพาะผู้ดูแลระบบ</p></div>';$('#setRates').onclick=()=>go('officers');if($('#setUsers'))$('#setUsers').onclick=()=>go('users');if($('#setRecovery'))$('#setRecovery').onclick=recoverWork;};
+  function paymentForm(m,r){let box=$('#paymentBox');if(!box){box=document.createElement('div');box.id='paymentBox';m.appendChild(box);}box.innerHTML='<form class="clay panel" id="payEvidence"><h3>บันทึกหลักฐานจ่ายเงินจริง</h3><p class="small">รอบ '+esc(r.round_id)+' · ยอด '+baht2(r.total)+' บาท</p><div class="row"><label>วันที่จ่ายจริง<input type="date" class="inp" id="actualDate" required></label><label>เลขที่หลักฐาน / เอกสาร<input class="inp" id="actualRef" maxlength="200" required></label><button class="btn btn-g">บันทึกหลักฐานจ่าย</button></div><p class="tiny muted">ใช้เมื่อจ่ายเงินจริงแล้ว การบันทึกนี้ไม่เปลี่ยนยอดและเศษของรอบ</p></form>';$('#payEvidence').onsubmit=async e=>{e.preventDefault();const b=$('button',e.currentTarget);if(!(await askBox('ยืนยันว่าจ่ายเงินจริงแล้วสำหรับรอบ '+r.round_id+' จำนวน '+baht2(r.total)+' บาท?')))return;b.disabled=true;try{await api('round_payment',{round_id:r.round_id,payment_date:$('#actualDate').value,payment_ref:$('#actualRef').value});toast('บันทึกหลักฐานแล้ว');S.payoutSub='round:'+r.round_id;go('payout');}catch(x){toast(x.message);b.disabled=false;}};box.scrollIntoView({behavior:'smooth'});}
 
   // ข้อความที่เติมทีหลัง (ผลค้น รายการรอยืนยัน หน่วยเบิก ตัวเลขวิ่ง) ก็จัดตัดบรรทัดด้วย
   document.addEventListener('DOMContentLoaded', () => {
