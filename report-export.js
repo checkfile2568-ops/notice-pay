@@ -1,6 +1,8 @@
 /* Colour PNG generated from complete report data, independent of mobile scroll position. */
 (function(root) {
   'use strict';
+  const urls=[];
+  function clear(){urls.splice(0).forEach(u=>URL.revokeObjectURL(u));}
   function wrap(ctx, value, width) {
     const out = [], text = String(value == null ? '' : value).replace(/\u00a0/g, ' ');
     for (const paragraph of text.split('\n')) {
@@ -21,6 +23,7 @@
     return out;
   }
   async function png(spec) {
+    clear();
     if (document.fonts) await document.fonts.ready;
     const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('เบราว์เซอร์นี้ไม่รองรับการสร้างภาพ PNG');
@@ -47,7 +50,7 @@
       const draw=(lines, values, rowH, head)=>{
         ctx.fillStyle=head?'#2e6b4f':(values.sum?'#dceee2':'#ffffff');ctx.fillRect(32,y,width-64,rowH);
         let x=32;ctx.font=head?'bold '+font:font;
-        lines.forEach((ls,i)=>{const v=values[i];ctx.fillStyle=head?'#ffffff':((v&&v.color)||'#1d3a2c');ls.forEach((l,j)=>ctx.fillText(l,x+12,y+12+j*lineH));x+=widths[i];});
+        lines.forEach((ls,i)=>{const v=values[i];ls.forEach((l,j)=>{ctx.fillStyle=head?'#ffffff':/^เกินอัตรา/.test(l)?'#a8620a':/^ต่ำกว่าอัตรา/.test(l)?'#b4232a':((v&&v.color)||'#1d3a2c');ctx.fillText(l,x+12,y+12+j*lineH);});x+=widths[i];});
         ctx.strokeStyle='#dce8df';ctx.beginPath();ctx.moveTo(32,y+rowH);ctx.lineTo(width-32,y+rowH);ctx.stroke();y+=rowH;
       };
       draw(headers,spec.headers,headerH,true);part.forEach(r=>draw(r.lines,r.values,r.height,false));
@@ -56,12 +59,12 @@
       ctx.fillText('หน้า '+(page+1)+' / '+chunks.length+' · ศาลจังหวัดลพบุรี',32,h-32);
       const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
       if(!blob)throw new Error('สร้าง PNG ไม่สำเร็จ กรุณาลองอีกครั้ง');
-      const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=spec.filename+(chunks.length>1?'-'+(page+1):'')+'.png';a.textContent='ดาวน์โหลด PNG'+(chunks.length>1?' หน้า '+(page+1):'');a.className='btn btn-sm';
+      const u=URL.createObjectURL(blob),a=document.createElement('a');urls.push(u);a.href=u;a.download=spec.filename+(chunks.length>1?'-'+(page+1):'')+'.png';a.textContent='ดาวน์โหลด PNG'+(chunks.length>1?' หน้า '+(page+1):'');a.className='btn btn-sm';
       // Keep visible links for browsers which allow only one automatic download.
       if(spec.links)spec.links.appendChild(a);a.click();results.push({url:u,name:a.download});
     }
     return results;
   }
-  root.NP_EXPORT={png:png,wrap:wrap};
+  root.NP_EXPORT={png:png,wrap:wrap,clear:clear};
   if(typeof module!=='undefined')module.exports={wrap:wrap};
 })(typeof window==='undefined'?this:window);

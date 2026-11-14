@@ -324,6 +324,7 @@
     } finally { S.busy = false; }
   }
   function backToLogin() {
+    if(window.NP_EXPORT)window.NP_EXPORT.clear();
     navEpoch++; closeQuickSearch(); ['qs','printArea'].forEach((id) => { const e = document.getElementById(id); if (e) e.remove(); });
     resetImport(); delete IM.meta; requestKeys.clear(); S.fy = ''; S.pin = ''; S.busy = false;
     S.token = ''; S.user = null; S.pick = null;
