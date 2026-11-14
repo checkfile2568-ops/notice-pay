@@ -437,6 +437,14 @@ th:not(.n) .srt{justify-content:flex-start}
 .export-links:empty{display:none}.export-links{margin-bottom:12px}
 .clay.panel.data-panel{opacity:1;transform:none;transition:none}
 th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
+#closeOfficers tbody tr{cursor:pointer}
+#closeOfficers tbody tr:hover td{background:#edf6ef}
+#closeOfficers .close-selected td{background:#dceee2}
+#closeOfficers .close-selected td:first-child{box-shadow:inset 4px 0 var(--g)}
+.close-person{display:inline-block;min-height:44px;padding:8px 4px;border:0;background:transparent;color:var(--g-ink);font:inherit;font-weight:700;white-space:nowrap;cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:4px}
+.close-person[aria-pressed="true"]{color:var(--g)}
+.close-detail{display:flex;flex-direction:column;gap:12px;scroll-margin-top:14px}
+#closeOfficers tfoot td{background:#edf6ef;font-weight:700;border-top:2px solid var(--g)}
 @media(max-width:640px){#closeForm{display:grid;grid-template-columns:1fr}#closeForm .year-input{width:130px}#closeForm label .inp:not(.year-input){width:100%}.close-actions{gap:10px}.close-actions label{width:100%}}
 @page closeout{size:A4 landscape;margin:12mm}
 @media print{#printArea:has(.closeout-print){page:closeout}.closeout-print .close-table{min-width:0;table-layout:fixed;font-size:11pt}.closeout-print .close-table th{position:static;font-size:11pt;white-space:normal}.closeout-print .close-table td{font-size:11pt;white-space:normal;word-break:normal;overflow-wrap:anywhere}.closeout-print .close-table td.onm{white-space:normal}.closeout-print tr{break-inside:avoid}.closeout-print thead{display:table-header-group}.closeout-print .note{padding:6pt;font-size:12pt;color:#000;background:none;border:1pt solid #777}}
