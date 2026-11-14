@@ -418,3 +418,25 @@ th:not(.n) .srt{justify-content:flex-start}
 @media(prefers-reduced-motion:reduce){.nav{scroll-behavior:auto}}
 @media print{.money40,.carry-value,.pool .ps b,.dn-lg b{color:#000!important}}
 
+/* 0.7.2: Thai prose wraps at word boundaries; complete tables scroll within cards. */
+.panel,.page-body,.pinfo-r>div,.plist,.poff{min-width:0;max-width:100%}
+.panel h3,.panel p,.note,.note .nb,.panel .flag-r,.panel .flag-up,.panel .flag-ok{white-space:normal;word-break:normal;line-break:auto;overflow-wrap:break-word}
+.panel p,.note,.panel h3{text-wrap:pretty}
+.tbl-wrap{min-width:0;max-width:100%;width:100%;overscroll-behavior-x:contain}
+.pinfo{grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}
+.pinfo-r{min-width:0}.pinfo-r>.pchip{flex:none}
+.pdates .pdate{max-width:100%;height:auto;min-height:40px;padding-top:8px;padding-bottom:8px;white-space:normal;flex-wrap:wrap;text-align:left;justify-content:flex-start}
+.panel .btn:not(.nav button){white-space:normal;height:auto;padding-top:9px;padding-bottom:9px}
+.closeout{display:flex;flex-direction:column;gap:14px}
+.closeout p{margin:0}.closeout h3{margin:0}
+#closeForm{align-items:flex-end}#closeForm label,.close-actions label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:14px}
+#closeForm .inp{max-width:100%}#closeBody{display:flex;flex-direction:column;gap:14px}
+.close-kpis{margin-top:4px}.close-kpis .kpi b{font-size:22px;white-space:normal}
+.close-actions{align-items:flex-end;margin-top:8px}.close-table{min-width:1150px}
+.close-table td:nth-child(5){overflow-wrap:anywhere;max-width:180px}
+.export-links:empty{display:none}.export-links{margin-bottom:12px}
+@media(max-width:640px){#closeForm{display:grid;grid-template-columns:1fr}#closeForm .year-input{width:130px}#closeForm label .inp:not(.year-input){width:100%}.close-actions{gap:10px}.close-actions label{width:100%}}
+@page closeout{size:A4 landscape;margin:12mm}
+@media print{#printArea:has(.closeout-print){page:closeout}.closeout-print .close-table{min-width:0;table-layout:fixed;font-size:11pt}.closeout-print .close-table th{position:static;font-size:11pt;white-space:normal}.closeout-print .close-table td{font-size:11pt;white-space:normal;word-break:normal;overflow-wrap:anywhere}.closeout-print .close-table td.onm{white-space:normal}.closeout-print tr{break-inside:avoid}.closeout-print thead{display:table-header-group}.closeout-print .note{padding:6pt;font-size:12pt;color:#000;background:none;border:1pt solid #777}}
+
+
