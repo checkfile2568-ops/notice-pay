@@ -435,6 +435,8 @@ th:not(.n) .srt{justify-content:flex-start}
 .close-actions{align-items:flex-end;margin-top:8px}.close-table{min-width:1150px}
 .close-table td:nth-child(5){overflow-wrap:anywhere;max-width:180px}
 .export-links:empty{display:none}.export-links{margin-bottom:12px}
+.clay.panel.data-panel{opacity:1;transform:none;transition:none}
+th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 @media(max-width:640px){#closeForm{display:grid;grid-template-columns:1fr}#closeForm .year-input{width:130px}#closeForm label .inp:not(.year-input){width:100%}.close-actions{gap:10px}.close-actions label{width:100%}}
 @page closeout{size:A4 landscape;margin:12mm}
 @media print{#printArea:has(.closeout-print){page:closeout}.closeout-print .close-table{min-width:0;table-layout:fixed;font-size:11pt}.closeout-print .close-table th{position:static;font-size:11pt;white-space:normal}.closeout-print .close-table td{font-size:11pt;white-space:normal;word-break:normal;overflow-wrap:anywhere}.closeout-print .close-table td.onm{white-space:normal}.closeout-print tr{break-inside:avoid}.closeout-print thead{display:table-header-group}.closeout-print .note{padding:6pt;font-size:12pt;color:#000;background:none;border:1pt solid #777}}
