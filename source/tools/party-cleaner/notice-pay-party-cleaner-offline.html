@@ -108,7 +108,7 @@ var NoticePartyCleaner=(function(){
     payer:['ผู้วางเงิน','ชื่อผู้วางเงิน','ผู้ชำระเงิน','ผู้ชำระ','payer'],
     party:['โจทก์','ชื่อโจทก์','จำเลย','ชื่อจำเลย','คู่ความ','ชื่อคู่ความ','plaintiff','defendant']
   };
-  function kind(v){var h=header(v);return Object.keys(aliases).find(k=>aliases[k].some(a=>header(a)===h))||(/โจทก์|จำเลย|คู่ความ|plaintiff|defendant/i.test(h)?'party':'');}
+  function kind(v){var h=header(v);if(/^(ฐานะ|สถานะ|ประเภท)/.test(h))return '';return Object.keys(aliases).find(k=>aliases[k].some(a=>header(a)===h))||(/โจทก์|จำเลย|คู่ความ|plaintiff|defendant/i.test(h)?'party':'');}
   function col(c){return c.getAttribute('r').replace(/\d/g,'');}
   function value(c,strings){if(!c)return '';var t=c.getAttribute('t');if(t==='s'){var v=nodes(c,'v')[0];return strings[Number(v&&v.textContent)]||'';}if(t==='inlineStr')return nodes(c,'t').map(x=>x.textContent).join('');return (nodes(c,'v')[0]||{}).textContent||'';}
   function write(c,v){Array.from(c.childNodes).forEach(x=>c.removeChild(x));c.setAttribute('t','inlineStr');var is=c.ownerDocument.createElementNS(NS,'is'),t=c.ownerDocument.createElementNS(NS,'t');t.setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');t.textContent=v;is.appendChild(t);c.appendChild(is);}
