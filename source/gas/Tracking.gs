@@ -173,7 +173,7 @@ function closeoutData_(notices, rounds, payoutItems, names, fy, today, budgetUni
   totals.ready_amount /= 100;
   const officers = Object.keys(per).map(function(id) { per[id].ready_amount /= 100; return per[id]; }).sort(function(a,b) { return a.officer.localeCompare(b.officer, 'th'); });
   rows.sort(function(a,b) { return String(a.officer).localeCompare(String(b.officer), 'th') || String(a.case_no).localeCompare(String(b.case_no), 'th') || String(a.notice_uid).localeCompare(String(b.notice_uid)); });
-  return { report_mode: 'closeout', report_version: '0.7.6', fy: fy, from: from, to: to, fiscal_end: end, checked_at: now_(), today: today, expired: expired,
+  return { report_mode: 'closeout', report_version: '0.7.7', fy: fy, from: from, to: to, fiscal_end: end, checked_at: now_(), today: today, expired: expired,
     rows: rows, per_officer: officers, totals: totals, last_imports: lastImports_(), data_period: dashboardPeriod_(readTable_('IMPORT_BATCHES').rows, fy) };
 }
 

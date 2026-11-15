@@ -267,7 +267,7 @@ function toRecord_(row, mapping, opts, offIdx, areaIdx) {
   if (opts.privacy_mode) {
     rec.recipient = NoticeImportFormat.recipient(rec.case_no, g('recipient'));
     rec.recipient_disp = rec.recipient;
-    rec.payer = rec.payer ? 'มีผู้วางเงิน' : '';
+    rec.payer = '';
   }
   rec.officer_id = opts.file_officer_id || resolveOfficer_(rec.officer_raw, offIdx);
   rec.area_id = resolveArea_(rec.amphoe, rec.tambon, areaIdx);
@@ -279,7 +279,7 @@ function toRecord_(row, mapping, opts, offIdx, areaIdx) {
     if (rec.pay_type === 'BUDGET' && Number(amt) > 0) issues.push('ระบุเป็นหมายฟรี แต่มีราคา ' + amt + ' บาท');
     if (rec.pay_type === 'PAID' && Number(amt) <= 0) issues.push('ระบุเป็นหมายมีเงิน แต่ราคา 0');
   }
-  if (mapping.payer && rec.pay_type) {
+  if (!opts.privacy_mode && mapping.payer && rec.pay_type) {
     if (rec.pay_type === 'PAID' && !rec.payer) issues.push('หมายมีเงินแต่ไม่มีผู้วางเงิน');
     if (rec.pay_type === 'BUDGET' && rec.payer) issues.push('หมายฟรีแต่มีผู้วางเงิน');
   }

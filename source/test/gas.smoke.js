@@ -124,7 +124,8 @@ ok('อ่านวันที่/ที่อยู่/เลขดำแบ�
     Object.assign({}, base, { 'เลขดำที่': 'ต9002/2569', 'ราคา': '700.00' }),                                   // เงินไม่เท่าอัตรา → สีแดง นำเข้าได้
     Object.assign({}, base, { 'เลขดำที่': 'ต9003/2569', 'ราคา': '0.00', 'ผู้วางเงิน': '', 'ที่อยู่': 'สำนักงานอัยการจังหวัดลพบุรี ศาลากลา ม. - ซ. - ถ. -', 'ตำบล': 'ทะเลชุบศร' }),
     Object.assign({}, base, { 'เลขดำที่': 'ต9004/2569', 'ตำบล': 'บางขันหมาก', 'อำเภอ': 'หนองม่วง' }),                // ตำบลไม่อยู่ในอำเภอ → กำกวม
-    Object.assign({}, base, { 'เลขดำที่': 'ต9005/2569', 'ราคา': '0.00' })];                                     // ฟรีแต่มีผู้วางเงิน → กำกวม
+    Object.assign({}, base, { 'เลขดำที่': 'ต9005/2569', 'ประเภท': 'ฟรี' })];                                   // ระบุฟรีแต่ราคามากกว่า 0 → กำกวม
+  m.pay_type='ประเภท';
   const r = call('import_preview', { token: adminTok, kind: 'ISSUE', mapping: m, key_fields: ['case_no', 'recipient', 'officer', 'notice_kind', 'house_no', 'moo'],
     rows: rowsX, options: { period_from: '1 พฤศจิกายน 2569', period_to: '12 พฤศจิกายน 2569' }, file: { name: 'บัญชีจ่ายหมาย.xls' } });
   assert.ok(r.ok, JSON.stringify(r));
@@ -137,7 +138,7 @@ ok('อ่านวันที่/ที่อยู่/เลขดำแบ�
   assert.strictEqual(s[0].case_no, 'ต9002/2569'); assert.strictEqual(s[0].flags, 'เงินไม่เท่ากับอัตราของตำบล');
   assert.strictEqual(s[1].case_no, 'ต9001/2569'); assert.strictEqual(s[1].case_ref, 'พE1/2569'); assert.strictEqual(s[1].flags, '');
   assert.strictEqual(s[2].pay_type, 'BUDGET'); assert.strictEqual(s[2].addr_type, 'หน่วยงานราชการ');
-  assert.match(r.data.samples.AMBIGUOUS[0].reason, /ไม่อยู่ในอำเภอ/); assert.match(r.data.samples.AMBIGUOUS[1].reason, /หมายฟรีแต่มีผู้วางเงิน/);
+  assert.match(r.data.samples.AMBIGUOUS[0].reason, /ไม่อยู่ในอำเภอ/); assert.match(r.data.samples.AMBIGUOUS[1].reason, /ระบุเป็นหมายฟรี แต่มีราคา/);
 });
 ok('เริ่มประมวลผลตามปีงบประมาณ: หมายที่จ่ายก่อน 1 ต.ค. ของปีงบเริ่มระบบ ไม่นำเข้า', () => {
   const t = call('import_templates', { token: adminTok }); assert.strictEqual(t.data.start_fy, '2570');

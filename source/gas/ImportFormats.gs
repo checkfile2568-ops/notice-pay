@@ -68,7 +68,7 @@ var NoticeImportFormat = (function () {
     Object.keys(mapping).forEach(function(f){
       var col=mapping[f]; if(!col) return; var v=row[col];
       if(f==='recipient')v=recipient(cs,v);
-      else if(f==='payer')v=text(v)?'มีผู้วางเงิน':'';
+      else if(f==='payer')v='';
       else if(/^(issued|delivered|reported)_date$/.test(f)){
         var n=date(v,date1904); if(n===null)throw new Error('วันที่ไม่ถูกต้องในคอลัมน์ '+col+' กรุณาใช้ วัน/เดือน/ปี 4 หลัก'); v=n;
       }

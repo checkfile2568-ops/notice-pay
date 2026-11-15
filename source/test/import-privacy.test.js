@@ -31,8 +31,9 @@ const req={kind:'ISSUE',mapping,key_fields:['case_no','recipient','officer','not
 t('ตัดชื่อและคอลัมน์ส่วนเกินก่อนส่งและก่อนบันทึก journal',()=>{
  const outgoing=F.mapped(row,mapping);const json=JSON.stringify(outgoing);
  for(const s of ['ผู้รับสมมติ','โจทก์ชื่อสมมติ','ชื่อโจทก์ไม่ส่ง','ชื่อจำเลยไม่ส่ง'])assert.ok(!json.includes(s));
- assert.equal(outgoing.issued,'2026-11-01');assert.equal(outgoing.payer,'มีผู้วางเงิน');
+ assert.equal(outgoing.issued,'2026-11-01');assert.equal(outgoing.payer,'');
  C('import_commit',req);assert.equal(g.readTable_('NOTICES').rows.length,1);
+ assert.equal(g.readTable_('NOTICES').rows[0].payer,'');assert.equal(g.readTable_('IMPORT_REVIEW').rows.length,0);
  for(const name of ['NOTICES','IMPORT_REVIEW','OPERATIONS','OP_SNAPSHOTS']){
   const text=JSON.stringify(g.readTable_(name).rows);assert.ok(!text.includes('ผู้รับสมมติ'),name);assert.ok(!text.includes('โจทก์ชื่อสมมติ'),name);
  }

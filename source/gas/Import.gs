@@ -130,7 +130,7 @@ function classifyAll_(req, existingMap) {
   Object.keys(existingMap).forEach(function(uid) {
     const e = existingMap[uid], o = e.obj || {}, match = storedMatchRec_(o);
     match.recipient = NoticeImportFormat.recipient(o.case_no, o.recipient);
-    const obj = Object.assign({}, o, {recipient: match.recipient, payer: o.payer ? 'มีผู้วางเงิน' : ''});
+    const obj = Object.assign({}, o, {recipient: match.recipient, payer: ''});
     const normalized = Object.assign({}, obj, match);
     privateMap[uid] = Object.assign({}, e, {obj: obj, row_hash: hashOf_(normalized, ISSUE_HASH_FIELDS), canonical_uid: uid});
   });
