@@ -17,17 +17,17 @@
   const esc = (v) => String(v === null || v === undefined ? '' : partyText(v))
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   const num = (n) => Number(n || 0).toLocaleString('th-TH');
-  /* ตารางจัดลำดับได้: หัวคอลัมน์ th[data-sort] มีปุ่มเล็ก ▲ (น้อย→มาก) ▼ (มาก→น้อย) · กดซ้ำ = กลับลำดับเดิม · แถวรวม (tr.sum) อยู่ท้ายเสมอ */
+  /* ตารางจัดลำดับได้: หัวคอลัมน์ th[data-sort] มีปุ่มเล็ก ▲ (มาก→น้อย) ▼ (น้อย→มาก) · แถวรวม (tr.sum) อยู่ท้ายเสมอ */
   function sortable(tbl) {
     if (!tbl) return;
     tbl.querySelectorAll('thead th[data-sort]').forEach((th) => {
       if (th.querySelector('.srt')) return;
       const lab = th.textContent.trim();
-      th.insertAdjacentHTML('beforeend', '<span class="srt"><button type="button" data-d="asc" aria-label="เรียง' + esc(lab) + ' จากน้อยไปมาก" aria-pressed="false">▲</button>' +
-        '<button type="button" data-d="desc" aria-label="เรียง' + esc(lab) + ' จากมากไปน้อย" aria-pressed="false">▼</button></span>');
+      th.insertAdjacentHTML('beforeend', '<span class="srt"><button type="button" data-d="desc" aria-label="เรียง' + esc(lab) + ' จากมากไปน้อย" aria-pressed="false">▲</button>' +
+        '<button type="button" data-d="asc" aria-label="เรียง' + esc(lab) + ' จากน้อยไปมาก" aria-pressed="false">▼</button></span>');
       th.querySelectorAll('.srt button').forEach((b) => b.addEventListener('click', () => {
         const col = String(th.cellIndex), d = b.dataset.d;
-        if (tbl.dataset.sc === col && tbl.dataset.sd === d) { delete tbl.dataset.sc; delete tbl.dataset.sd; } else { tbl.dataset.sc = col; tbl.dataset.sd = d; }
+        tbl.dataset.sc = col; tbl.dataset.sd = d;
         resort(tbl);
       }));
     });
@@ -332,7 +332,7 @@
   function backToLogin() {
     if(window.NP_EXPORT)window.NP_EXPORT.clear();
     navEpoch++; closeQuickSearch(); ['qs','printArea'].forEach((id) => { const e = document.getElementById(id); if (e) e.remove(); });
-    resetImport(); delete IM.meta; requestKeys.clear(); S.fy = ''; S.pin = ''; S.busy = false;
+    resetImport(); delete IM.meta; requestKeys.clear(); S.fy = ''; S.calcMode = 'ALL'; S.pin = ''; S.busy = false;
     S.token = ''; S.user = null; S.pick = null;
     $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
     $('#q').value = ''; $('#picks').innerHTML = ''; showStep(1);
@@ -840,13 +840,15 @@
   function drawMap() {
     $('#imPrev').innerHTML = '';
     const RES_F = ['case_no', 'notice_no', 'notice_kind', 'recipient', 'officer', 'issued_date', 'delivered_date', 'reported_date', 'result'];
-    const fields = IM.meta.fields.filter((fd) => IM.kind === 'ISSUE' ? ['reported_date'].indexOf(fd.f) < 0 : RES_F.indexOf(fd.f) >= 0);
+    const fields = IM.meta.fields.filter((fd) => !['recipient','payer'].includes(fd.f) && (IM.kind === 'ISSUE' ? fd.f !== 'reported_date' : RES_F.includes(fd.f)));
     const isRes = IM.kind === 'RESULT';
-    const opt = (sel) => '<option value="">— ไม่มีในไฟล์ —</option>' + IM.headers.map((h) => '<option' + (h === sel ? ' selected' : '') + '>' + esc(h) + '</option>').join('');
+    const visibleHeaders = IM.headers.filter(h => !/โจทก์|จำเลย|คู่ความ|plaintiff|defendant/i.test(h) && ![IM.mapping.recipient,IM.mapping.payer].includes(h));
+    fields.forEach(fd=>{if(IM.mapping[fd.f]&&!visibleHeaders.includes(IM.mapping[fd.f]))IM.mapping[fd.f]='';});
+    const opt = (sel) => '<option value="">— ไม่มีในไฟล์ —</option>' + visibleHeaders.map((h) => '<option' + (h === sel ? ' selected' : '') + '>' + esc(h) + '</option>').join('');
     const sample = IM.rows.slice(0, 2);
     $('#imMap').innerHTML = '<div class="clay panel"><h3>3 · จับคู่คอลัมน์</h3>' +
       '<p class="small muted" style="margin:0 0 12px">ระบบเดาให้จากชื่อหัวคอลัมน์และครั้งก่อน ตรวจแล้วแก้ได้ · ระบบจำการจับคู่ไว้ใช้ครั้งต่อไป · ' +
-        (isRes ? 'ไฟล์ผลหมายจับคู่กับหมายเดิมด้วย <b>เลขคดี + ผู้รับ + ผู้ส่ง</b> (ไฟล์ผลไม่มีที่อยู่)' : '✓ = ใช้เป็นคีย์ไม่ซ้ำ (ไฟล์ของศาลไม่มีเลขหมาย ใช้ เลขคดี + ผู้รับ + ผู้ส่ง + ชนิดหมาย + บ้านเลขที่ + หมู่)') +
+        (isRes ? 'ไฟล์ผลหมายจับคู่กับหมายเดิมด้วย <b>เลขคดี + รหัสจับคู่ + ผู้ส่ง</b> (ไฟล์ผลไม่มีที่อยู่)' : '✓ = ใช้เป็นคีย์ไม่ซ้ำ (ไฟล์ของศาลไม่มีเลขหมาย ใช้ เลขคดี + รหัสจับคู่ + ผู้ส่ง + ชนิดหมาย + บ้านเลขที่ + หมู่)') +
         ' · <b>ตัดชื่อโจทก์/จำเลย/ผู้รับหมายก่อนส่ง ใช้รหัสจับคู่แทนชื่อ</b> · ราคา 0.00 = หมายฟรี (เงินงบประมาณ)</p>' +
       '<div class="tbl-wrap"><table class="map"><thead><tr><th>คีย์</th><th>ข้อมูลในระบบ</th><th>คอลัมน์ในไฟล์</th><th>ตัวอย่าง</th></tr></thead><tbody>' +
       fields.map((fd) => '<tr><td>' + (isRes ? (['case_no', 'recipient', 'officer'].indexOf(fd.f) >= 0 ? '✓' : '') : '<input type="checkbox" class="kchk" data-f="' + fd.f + '"' + (IM.keys.indexOf(fd.f) >= 0 ? ' checked' : '') + ' aria-label="ใช้ ' + esc(fd.th) + ' เป็นคีย์">') + '</td>' +
@@ -863,7 +865,8 @@
       $('#imMap .mval[data-f="' + s.dataset.f + '"]').innerHTML = IM.rows.slice(0, 2).map((r) => esc(s.value ? r[s.value] : '')).join(' · ');
     }));
     $('#imMap').querySelectorAll('.kchk').forEach((c) => c.addEventListener('change', () => {
-      IM.keys = Array.from($('#imMap').querySelectorAll('.kchk:checked')).map((x) => x.dataset.f); IM.preview = null; $('#imPrev').innerHTML = '';
+      const identity = IM.keys.filter(k => ['recipient','payer'].includes(k));
+      IM.keys = identity.concat(Array.from($('#imMap').querySelectorAll('.kchk:checked')).map((x) => x.dataset.f)); IM.preview = null; $('#imPrev').innerHTML = '';
     }));
     if ($('#fOff')) $('#fOff').addEventListener('change', (e) => { IM.opts.file_officer_id = e.target.value; IM.preview = null; $('#imPrev').innerHTML = ''; });
     if ($('#fPay')) $('#fPay').addEventListener('change', (e) => { IM.opts.default_pay_type = e.target.value; IM.preview = null; $('#imPrev').innerHTML = ''; });
@@ -1025,6 +1028,40 @@
   /* ---------------------------------------------------------------- ผู้ส่งหมายและอัตรา */
   /* ---------------------------------------------------------------- คำนวณค่าหมาย (ระยะ 3) */
   const baht = (v) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  function calcOfficerModel(d, mode) {
+    const sets = {
+      ALL: {label:'รวมหมายมีเงินและหมายฟรี',columns:[['paid_n','มีเงิน (ฉบับ)'],['free_n','ฟรี (ฉบับ)'],['total_amount','รวม (บาท)','money']]},
+      PAID: {label:'หมายมีเงิน',columns:[['paid_n','มีเงิน (ฉบับ)'],['paid_amount','มีเงิน (บาท)','money']]},
+      FREE: {label:'หมายฟรีทั้งหมด',columns:[['free_n','ฟรี (ฉบับ)'],['free_units','หน่วยเบิก'],['free_wait','รอผลส่ง (ฉบับ)'],['free_amount','ฟรี (บาท)','money']]},
+      FREE_PENDING: {label:'หมายฟรีทั้งหมดที่ยังไม่เบิก',columns:[['pending_free_n','ทั้งหมดที่ยังไม่เบิก (ฉบับ)'],['pending_ready_n','พร้อมเสนอ (ฉบับ)'],['pending_wait_review_n','รอผล / รอตรวจ (ฉบับ)'],['pending_noclaim_n','ไม่เบิกจ่าย (ฉบับ)'],['pending_ready_amount','ยอดพร้อมเสนอเบิก (บาท)','money']]}
+    };
+    mode=sets[mode]?mode:'ALL';const spec=sets[mode];
+    const values=o=>{const x=Object.assign({},o,{total_amount:Number(o.paid_amount||0)+Number(o.free_amount||0),pending_wait_review_n:Number(o.pending_wait_n||0)+Number(o.pending_review_n||0)});return spec.columns.map(c=>Number(x[c[0]])||0);};
+    return {mode,label:spec.label,columns:spec.columns,rows:d.officers.map(o=>({officer:o,values:values(o)})),total:values(d.totals),
+      note:mode==='FREE_PENDING'?'รวมหมายฟรีที่ยังไม่เบิกทุกสถานะในปีงบที่เลือก: ส่งแล้ว รอผล รอตรวจ และไม่เบิกจ่าย · ยอดเงินรวมเฉพาะที่พร้อมเสนอเบิก รายการรอผล/รอตรวจยังไม่รวมเงิน':
+        mode==='PAID'?'ยอดหมายมีเงินตามหน้าคำนวณ ใช้อัตราตำบลเมื่อราคาต่างจากอัตรา · ยอดก่อนแบ่ง 60/40':mode==='FREE'?'หมายฟรีทั้งหมดตามปีงบที่เลือก รวมรายการเบิกแล้วและยังไม่เบิก · ยอดก่อนแบ่ง 60/40':'หมายมีเงินและหมายฟรีทั้งหมดตามปีงบที่เลือก · ยอดก่อนแบ่ง 60/40'};
+  }
+  function paintCalcOfficers(d) {
+    const model=calcOfficerModel(d,$('#calcMode').value),old=$('#calcOff'),order=old&&old.dataset.sd;
+    const format=(v,c)=>c[2]==='money'?baht(v):num(v);
+    const name=(o)=>'<span class="onm"><span class="officer-dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;background:'+esc(o.color||'#21503a')+'"></span>'+esc(o.name)+'</span>'+
+      ((model.mode==='ALL'||model.mode==='PAID')&&o.adj_up?'<br><span class="tiny flag-up">▲ เกินอัตรา '+num(o.adj_up)+' ฉบับ '+baht(o.adj_up_baht)+' บาท</span>':'')+
+      ((model.mode==='ALL'||model.mode==='PAID')&&o.adj_dn?'<br><span class="tiny flag-r">▼ ต่ำกว่าอัตรา '+num(o.adj_dn)+' ฉบับ '+baht(o.adj_dn_baht)+' บาท</span>':'')+
+      (!viewerOnly()&&model.mode!=='PAID'&&model.mode!=='FREE_PENDING'&&o.free_n?'<br><button type="button" class="btn btn-s ou" data-o="'+esc(o.officer_id)+'" data-n="'+esc(o.name)+'">ดูหมายฟรี</button>':'');
+    $('#calcOfficerTable').innerHTML='<table id="calcOff"><thead><tr><th class="onm">ผู้ส่งหมาย</th>'+model.columns.map((c,i)=>'<th class="n"'+(i===model.columns.length-1?' data-sort':'')+'>'+esc(c[1])+'</th>').join('')+'</tr></thead><tbody>'+
+      model.rows.map(r=>'<tr data-officer="'+esc(r.officer.officer_id)+'"><td class="onm">'+name(r.officer)+'</td>'+r.values.map((v,i)=>'<td class="n" data-v="'+v+'">'+(i===r.values.length-1?'<b>'+format(v,model.columns[i])+'</b>':format(v,model.columns[i]))+'</td>').join('')+'</tr>').join('')+
+      '<tr class="sum"><td><b>รวมทุกคน</b></td>'+model.total.map((v,i)=>'<td class="n"><b>'+format(v,model.columns[i])+'</b></td>').join('')+'</tr></tbody></table>';
+    $('#calcFilterNote').textContent=model.note+' · ▲ มากไปน้อย · ▼ น้อยไปมาก';
+    const table=$('#calcOff');if(order){table.dataset.sc=String(model.columns.length);table.dataset.sd=order;}
+    sortable(table);table.querySelectorAll('.ou').forEach(b=>b.onclick=()=>drawUnits(b.dataset.o,b.dataset.n));
+  }
+  function calcOfficerPngSpec(d) {
+    const model=calcOfficerModel(d,$('#calcMode').value),byId=new Map(model.rows.map(r=>[r.officer.officer_id,r]));
+    const ordered=Array.from($('#calcOff tbody').querySelectorAll('tr[data-officer]')).map(tr=>byId.get(tr.dataset.officer)).filter(Boolean);
+    const rows=ordered.map(r=>[{text:(r.officer.full_name||r.officer.name)+((model.mode==='ALL'||model.mode==='PAID')&&r.officer.adj_up?'\nเกินอัตรา '+num(r.officer.adj_up)+' ฉบับ '+baht2(r.officer.adj_up_baht)+' บาท':'')+((model.mode==='ALL'||model.mode==='PAID')&&r.officer.adj_dn?'\nต่ำกว่าอัตรา '+num(r.officer.adj_dn)+' ฉบับ '+baht2(r.officer.adj_dn_baht)+' บาท':''),color:r.officer.color||'#21503a'}].concat(r.values.map((v,i)=>model.columns[i][2]==='money'?baht2(v):num(v))));
+    const sum=['รวมทุกคน'].concat(model.total.map((v,i)=>model.columns[i][2]==='money'?baht2(v):num(v)));sum.sum=true;rows.push(sum);
+    return {title:'สรุปค่าหมายรายผู้ส่ง · ปีงบประมาณ '+d.fy,subtitle:model.label+' · คำนวณล่าสุด '+(thDate(d.last_run,true)||'ไม่ระบุ'),headers:['ผู้ส่งหมาย'].concat(model.columns.map(c=>c[1])),widths:[310].concat(model.columns.map(c=>c[2]==='money'?210:155)),rows,note:model.note,filename:'notice-pay-officers-'+model.mode.toLowerCase()+'-'+d.fy,links:$('#calcPngLinks')};
+  }
   RENDER.calc = async (m) => {
     const d = await api('calc_summary', { fy: S.fy });
     S.fy = d.fy;
@@ -1042,17 +1079,7 @@
         kpi('ข้อควรตรวจ', num(d.warnings.length + t.review + (t.date_wait || 0)), [(t.adj_up || t.adj_dn) ? '<span class="nb">คิดตามอัตราตำบล</span> ' + (t.adj_up ? '<span class="nb flag-up">▲ ' + num(t.adj_up) + '</span> ' : '') + (t.adj_dn ? '<span class="nb flag-r">▼ ' + num(t.adj_dn) + '</span>' : '') : '', t.date_wait ? '<span class="nb">วันที่จ่ายไม่แน่ชัด ' + num(t.date_wait) + '</span>' : ''].filter(Boolean).join(' · ')) +
       '</div>' +
       (t.date_wait ? '<p class="note r" style="margin:0 6px 12px"><b>' + num(t.date_wait) + ' หมาย อาจจ่ายเดือน ก.ย. · รอยืนยันวันที่จ่าย</b> (ไฟล์ 50 คร่อม 1 ต.ค. และยังไม่พบในไฟล์ 42) — ยังไม่รวมในยอดด้านบน · ดูและยืนยันได้ที่ "รายการรอยืนยัน" ด้านล่าง</p>' : '') +
-      '<div class="clay panel"><div class="row" style="justify-content:space-between"><h3>' + (d.scope_officer ? 'ค่าหมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><button type="button" class="btn btn-sm" id="calcPng">พิมพ์ / PNG สี</button></div><div id="calcPngLinks" class="row export-links"></div><div class="tbl-wrap"><table id="calcOff"><thead><tr><th class="onm">ผู้ส่งหมาย</th>' +
-      '<th class="n" data-sort>มีเงิน (ฉบับ)</th><th class="n" data-sort>มีเงิน (บาท)</th><th class="n" data-sort>ฟรี (ฉบับ)</th><th class="n" data-sort>หน่วยเบิก</th><th class="n" data-sort>ฟรี (บาท)</th><th class="n" data-sort>ฟรี รอวันส่ง</th><th class="n" data-sort>รวม (บาท)</th><th></th></tr></thead><tbody>' +
-      d.officers.map((o) => '<tr><td class="onm"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) +
-        (o.adj_up ? '<br><span class="tiny flag-up">▲ เกินอัตรา ' + num(o.adj_up) + ' ฉบับ ' + num(o.adj_up_baht) + '&nbsp;฿</span>' : '') +
-        (o.adj_dn ? '<br><span class="tiny flag-r">▼ ต่ำกว่าอัตรา ' + num(o.adj_dn) + ' ฉบับ ' + num(o.adj_dn_baht) + '&nbsp;฿</span>' : '') + '</td>' +
-        '<td class="n">' + num(o.paid_n) + '</td><td class="n">' + baht(o.paid_amount) + '</td><td class="n">' + num(o.free_n) + '</td><td class="n">' + num(o.free_units) +
-        '</td><td class="n">' + baht(o.free_amount) + '</td><td class="n">' + num(o.free_wait) + '</td><td class="n"><b>' + baht(o.paid_amount + o.free_amount) + '</b></td>' +
-        '<td><button type="button" class="btn btn-s ou" data-o="' + esc(o.officer_id) + '" data-n="' + esc(o.name) + '"' + (o.free_n ? '' : ' disabled') + '>หมายฟรี</button></td></tr>').join('') +
-      '<tr class="sum"><td><b>รวม</b></td><td class="n"><b>' + num(t.paid_n) + '</b></td><td class="n"><b>' + baht(t.paid_amount) + '</b></td><td class="n"><b>' + num(t.free_n) + '</b></td><td class="n"><b>' + num(t.free_units) +
-        '</b></td><td class="n"><b>' + baht(t.free_amount) + '</b></td><td class="n"><b>' + num(t.free_wait) + '</b></td><td class="n"><b>' + baht(t.paid_amount + t.free_amount) + '</b></td><td></td></tr>' +
-      '</tbody></table></div><p class="tiny muted" style="margin:10px 0 0">หมายมีเงิน = ราคาตามบัญชีจ่ายหมาย ถ้าไม่เท่าอัตราตำบลคิดตามอัตราตำบล (▲ ยอดคำนวณตามอัตรา · ยอดจ่ายตรวจจากบัญชี · ▼ ปรับขึ้นเป็นอัตรา) · หมายฟรี = อ.เมืองลพบุรี 300 บาท อำเภออื่นตามอัตราตำบล รวมหมายตาม "คราวเดียวกัน" (ผู้ส่ง + วันที่ส่ง + ตำบล + หมู่/หน่วยงาน/ถนน) · ยอดนี้ยังไม่แบ่ง 60:40 (ดูเมนูรอบเบิก / วันจ่าย 60:40)</p></div>' +
+      '<section class="clay panel"><div class="row calc-officer-toolbar" style="justify-content:space-between"><h3>'+(d.scope_officer?'ค่าหมายของฉัน':'แยกรายผู้ส่งหมาย')+'</h3><label>ยอดที่ต้องการดู<select class="sel" id="calcMode"><option value="ALL">รวมหมายมีเงินและหมายฟรี</option><option value="PAID">หมายมีเงิน</option><option value="FREE">หมายฟรีทั้งหมด</option><option value="FREE_PENDING">หมายฟรีทั้งหมดที่ยังไม่เบิก</option></select></label><button type="button" class="btn btn-sm" id="calcPng">พิมพ์ / PNG สี</button></div><div id="calcPngLinks" class="row export-links"></div><div id="calcOfficerTable" class="tbl-wrap"></div><p id="calcFilterNote" class="tiny muted" style="margin-top:10px"></p></section>' +
       (d.warnings.length ? '<div class="clay panel"><h3>ข้อควรตรวจ</h3><div class="tbl-wrap"><table><thead><tr><th>วันที่ส่ง</th><th class="onm">ผู้ส่ง</th><th>รายละเอียด</th><th class="n">ฉบับ</th><th>หน่วยเบิก</th></tr></thead><tbody>' +
         d.warnings.map((w) => '<tr><td>' + esc(thDate(w.date)) + '</td><td class="small onm">' + esc(w.officer) + '</td><td class="small">' + esc(w.text) + (w.place_key && !/^X:/.test(w.place_key) ? ' · ' + esc(w.place_key) : '') +
           '</td><td class="n">' + num(w.count) + '</td><td class="tiny">' + esc(w.unit_id) + '</td></tr>').join('') + '</tbody></table></div></div>' : '') +
@@ -1063,14 +1090,8 @@
     $('#calcPng').onclick = async(e) => {
       const b=e.currentTarget;b.disabled=true;
       try {
-        const n=Number,m=v=>baht2(v),rows=d.officers.map(o=>[
-          {text:(o.full_name||o.name)+(o.adj_up?'\nเกินอัตรา '+num(o.adj_up)+' ฉบับ '+m(o.adj_up_baht)+' บาท':'')+(o.adj_dn?'\nต่ำกว่าอัตรา '+num(o.adj_dn)+' ฉบับ '+m(o.adj_dn_baht)+' บาท':''),color:o.color||'#21503a'},
-          num(o.paid_n),m(o.paid_amount),num(o.free_n),num(o.free_units),m(o.free_amount),num(o.free_wait),{text:m(n(o.paid_amount)+n(o.free_amount)),color:'#21503a'}]);
-        const sum=['รวม',num(t.paid_n),m(t.paid_amount),num(t.free_n),num(t.free_units),m(t.free_amount),num(t.free_wait),m(n(t.paid_amount)+n(t.free_amount))];sum.sum=true;rows.push(sum);
         $('#calcPngLinks').innerHTML='';
-        await window.NP_EXPORT.png({title:'สรุปค่าหมายรายผู้ส่ง · ปีงบประมาณ '+d.fy,subtitle:'ข้อมูลตามหน้าคำนวณ · คำนวณล่าสุด '+(thDate(d.last_run,true)||'ไม่ระบุ'),
-          headers:['ผู้ส่งหมาย / ข้อควรตรวจ','มีเงิน\nฉบับ','มีเงิน\nบาท','ฟรี\nฉบับ','หน่วยเบิก','ฟรี\nบาท','ฟรีรอวันส่ง\nฉบับ','รวม\nบาท'],widths:[330,110,150,100,110,150,140,160],rows:rows,
-          note:'ยอดก่อนแบ่ง 60/40 · ส่วนต่างเทียบอัตราตำบล · รอบจ่ายหมายมีเงินใช้ยอดบัญชีจ่ายจริง',filename:'notice-pay-officers-'+d.fy,links:$('#calcPngLinks')});
+        await window.NP_EXPORT.png(calcOfficerPngSpec(d));
         toast('สร้าง PNG สีครบทุกคนและทุกคอลัมน์แล้ว');
       }catch(x){toast(x.message);}finally{b.disabled=false;}
     };
@@ -1079,8 +1100,9 @@
       try { const r = await api('calc_run'); toast('คำนวณเสร็จ · หน่วยเบิก ' + num(r.units) + ' หน่วย'); go('calc'); }
       catch (er) { b.disabled = false; b.textContent = 'คำนวณใหม่'; toast(er.message); }
     });
-    m.querySelectorAll('.ou').forEach((b) => b.addEventListener('click', () => drawUnits(b.dataset.o, b.dataset.n)));
-    sortable($('#calcOff'));
+    $('#calcMode').value=S.calcMode||'ALL';
+    $('#calcMode').onchange=()=>{S.calcMode=$('#calcMode').value;$('#unitBox').innerHTML='';$('#calcPngLinks').innerHTML='';if(window.NP_EXPORT)window.NP_EXPORT.clear();paintCalcOfficers(d);};
+    paintCalcOfficers(d);
     if (d.scope_officer && d.officers[0] && d.officers[0].free_n) drawUnits(d.officers[0].officer_id, d.officers[0].name);
   };
   /* รายการรอยืนยัน: ยอดเงินไม่ตรงอัตราตำบล · วันที่จ่ายไม่แน่ชัด (ไฟล์ 50 คร่อม 1 ต.ค.) */
@@ -1618,6 +1640,11 @@
     return '<table class="close-table"><thead><tr><th>เลขคดี / เลขหมาย / ชนิด</th><th class="onm">ผู้ส่งหมาย</th><th>ผู้รับ / สถานที่ส่ง</th><th>จ่ายหมาย / ส่ง / รายงาน</th><th>หน่วยเบิก</th><th class="n">ยอดพร้อมเสนอเบิก (บาท)</th><th>ผลตรวจ</th></tr></thead><tbody>'+
       (rows.length?rows.map(r=>'<tr><td><b>'+esc(r.case_no)+'</b><br>'+esc(r.notice_no||'—')+'<br><span class="tiny">'+esc(r.notice_kind)+'</span></td><td class="onm">'+esc(r.officer)+'</td><td>'+esc(r.recipient)+'<br>'+esc(r.place||'ยังไม่ระบุสถานที่')+'</td><td class="small">จ่าย '+esc(thDate(r.issued_date)||'ไม่ระบุ')+'<br>ส่ง '+esc(thDate(r.delivered_date)||'รอผล')+'<br>รายงาน '+esc(thDate(r.report_date)||'ไม่ระบุ')+'</td><td class="tiny">'+esc(r.unit_id)+'</td><td class="n '+(r.status==='READY'?'flag-ok':'muted')+'"><b>'+(r.status==='WAIT'||r.status==='REVIEW'?'รอตรวจ':baht2(r.amount))+'</b></td><td class="small '+(r.status==='NOCLAIM'?'flag-r':r.status==='READY'?'flag-ok':'flag-a')+'">'+esc(r.reason)+(r.status==='READY'?'<br><span class="tiny muted">'+esc(r.source)+'</span>':'')+'</td></tr>').join(''):'<tr><td colspan="7" class="muted">ไม่พบรายการตามผลตรวจที่เลือก</td></tr>')+'</tbody></table>';
   }
+  function closeOfficerTable(people, t) {
+    const cols=[['count','ทั้งหมดที่ยังไม่เบิก (ฉบับ)'],['ready_n','ส่งแล้ว ยังไม่เบิก (ฉบับ)'],['ready_units','หน่วยเบิก'],['wait_n','รอผลส่ง (ฉบับ)'],['review_n','รอตรวจ (ฉบับ)'],['noclaim_n','ไม่เบิกจ่าย (ฉบับ)'],['ready_amount','เงินที่ต้องใช้ (บาท)']];
+    const values=o=>cols.map((c,i)=>'<td class="n" data-v="'+Number(o[c[0]]||0)+'">'+(i===cols.length-1?'<b>'+baht2(o[c[0]])+'</b>':num(o[c[0]]))+'</td>').join('');
+    return '<div class="tbl-wrap"><table id="closeOfficers" class="report-officers"><thead><tr><th class="onm">ผู้ส่งหมาย · แตะเพื่อดู</th>'+cols.map((c,i)=>'<th class="n"'+(i===cols.length-1?' data-sort':'')+'>'+esc(c[1])+'</th>').join('')+'</tr></thead><tbody>'+people.map(r=>'<tr data-close-officer="'+esc(r.officer_id)+'"><td class="onm"><button type="button" class="close-person" aria-pressed="false" aria-controls="closeDetail">'+esc(r.officer)+'</button></td>'+values(r)+'</tr>').join('')+'</tbody><tfoot><tr><td><b>รวมทุกคน</b></td>'+values(t)+'</tr></tfoot></table></div>';
+  }
   function bindCloseout(m) {
     let seq=0, report=null;
     const box=$('#closeBody'),form=$('#closeForm');
@@ -1638,28 +1665,29 @@
         const people=Array.from(byOfficer.values()).sort((a,b)=>String(a.officer).localeCompare(String(b.officer),'th'));
         box.innerHTML='<div class="note g"><b>ตรวจข้อมูล '+esc(thDate(d.from))+' ถึง '+esc(thDate(d.to))+'</b><br>ข้อมูลปัจจุบัน ณ '+esc(thDate(d.checked_at,true))+' · สิ้นปีงบ '+esc(thDate(d.fiscal_end))+'</div>'+latestHtml(d.last_imports)+
           '<p class="tiny muted">ทะเบียนในไฟล์ถึง '+esc(thDate((d.data_period||{}).to)||'ยังไม่ระบุ')+' · ผลส่งในไฟล์ถึง '+esc(thDate((d.data_period||{}).result_to)||'ยังไม่ระบุ')+' · ผลตรวจครอบคลุมเฉพาะข้อมูลที่นำเข้าแล้ว</p>'+
-          '<div class="grid-k close-kpis">'+[['ส่งแล้ว ยังไม่เบิก',num(t.ready_n)+' ฉบับ',num(t.ready_units)+' หน่วยเบิก'],['ยอดที่ต้องใช้',baht2(t.ready_amount)+' บาท','ยอดเต็มก่อนแบ่ง 60/40'],['รอผล / รอตรวจ',num(t.wait_n+t.review_n)+' ฉบับ','ยังไม่รวมในยอดพร้อมเสนอเบิก'],['ไม่เบิกจ่าย',num(t.noclaim_n)+' ฉบับ','ยอดเบิกได้ 0 บาท']].map(a=>'<div class="kpi clay"><span>'+a[0]+'</span><b>'+a[1]+'</b><span>'+a[2]+'</span></div>').join('')+'</div><div id="closeBudget" class="note"></div>'+
-          (d.expired?'<p class="note r">สิ้นปีงบประมาณแล้ว หมายฟรีที่ยังไม่ได้เบิกแสดง “ไม่เบิกจ่าย” ยอด 0 บาทในรายงานนี้ โดยเก็บประวัติและยอดอ้างอิงเดิมไว้</p>':'')+
+          '<div class="grid-k close-kpis">'+[['ส่งแล้ว ยังไม่เบิก',num(t.ready_n)+' ฉบับ',num(t.ready_units)+' หน่วยเบิก'],['ยอดที่ต้องใช้',baht2(t.ready_amount)+' บาท','ยอดเต็มก่อนแบ่ง 60/40'],['รอผล / รอตรวจ',num(t.wait_n+t.review_n)+' ฉบับ','ยังไม่รวมในยอดพร้อมเสนอเบิก'],['ไม่เบิกจ่าย',num(t.noclaim_n)+' ฉบับ','ไม่นำมารวมยอดเสนอเบิก']].map(a=>'<div class="kpi clay"><span>'+a[0]+'</span><b>'+a[1]+'</b><span>'+a[2]+'</span></div>').join('')+'</div><div id="closeBudget" class="note"></div>'+
+          (d.expired?'<p class="note r">สิ้นปีงบประมาณแล้ว หมายฟรีที่ยังไม่ได้เบิกแสดง “ไม่เบิกจ่าย” ไม่นำมารวมยอดเสนอเบิกในรายงานนี้ โดยเก็บประวัติและยอดอ้างอิงเดิมไว้</p>':'')+
           '<p class="tiny muted">ไม่นำรายการที่พบการเบิกแล้ว '+num(t.excluded_claimed)+' ฉบับมาแสดงคงค้าง · กดตรวจสอบใหม่เมื่อมีการนำเข้าหรือยืนยันรอบเพิ่มเติม</p>'+
           '<h3 id="closeOverview">หมายฟรีคงค้าง · รวมทุกคน</h3><p class="small muted">แตะชื่อผู้ส่งหมายเพื่อดูรายการของคนนั้นในตารางด้านล่าง · จำนวนฉบับอาจมากกว่าหน่วยเบิก เพราะรวมหมายตามหลักเกณฑ์เดิม</p>'+
           (roster.unavailable?'<p class="note">โหลดรายชื่อทั้งหมดไม่สำเร็จ ขณะนี้แสดงเฉพาะผู้มีรายการคงค้าง กดตรวจสอบใหม่เพื่อโหลดครบทุกคน</p>':'')+
-          '<div class="tbl-wrap"><table id="closeOfficers" class="report-officers"><thead><tr><th class="onm">ผู้ส่งหมาย · แตะเพื่อดู</th><th class="n">ส่งแล้ว ยังไม่เบิก<br>(ฉบับ)</th><th class="n">หน่วยเบิก</th><th class="n">เงินที่ต้องใช้<br>(บาท)</th><th class="n">รอผลส่ง<br>(ฉบับ)</th><th class="n">รอตรวจ<br>(ฉบับ)</th><th class="n">ไม่เบิกจ่าย<br>(ฉบับ)</th></tr></thead><tbody>'+people.map(r=>'<tr data-close-officer="'+esc(r.officer_id)+'"><td class="onm"><button type="button" class="close-person" aria-pressed="false" aria-controls="closeDetail">'+esc(r.officer)+'</button></td><td class="n">'+num(r.ready_n)+'</td><td class="n">'+num(r.ready_units)+'</td><td class="n flag-ok"><b>'+baht2(r.ready_amount)+'</b></td><td class="n">'+num(r.wait_n)+'</td><td class="n flag-a">'+num(r.review_n)+'</td><td class="n flag-r">'+num(r.noclaim_n)+'</td></tr>').join('')+'</tbody><tfoot><tr><td><b>รวมทุกคน</b></td><td class="n">'+num(t.ready_n)+'</td><td class="n">'+num(t.ready_units)+'</td><td class="n flag-ok"><b>'+baht2(t.ready_amount)+'</b></td><td class="n">'+num(t.wait_n)+'</td><td class="n">'+num(t.review_n)+'</td><td class="n">'+num(t.noclaim_n)+'</td></tr></tfoot></table></div>'+
-          '<section id="closeDetail" class="close-detail" aria-labelledby="closeDetailTitle"><h3 id="closeDetailTitle">รายละเอียดรายฉบับ</h3><p id="closeSelection" class="note" aria-live="polite"></p><div class="row close-actions"><label>รายการที่ต้องการดู<select class="sel" id="closeStatus"><option value="READY">ส่งแล้ว ยังไม่เบิก</option><option value="WAIT">รอผลส่ง</option><option value="REVIEW">รอตรวจข้อมูล</option><option value="NOCLAIM">ไม่เบิกจ่าย (0 บาท)</option><option value="">ทั้งหมดที่ยังไม่เบิก</option></select></label><button type="button" class="btn btn-sm" id="closeAll">ดูรายการทุกคน</button><button class="btn btn-sm" id="closePrint">พิมพ์รายการที่แสดง</button><button class="btn btn-sm" id="closeCsv">ดาวน์โหลด CSV</button></div><div id="closeRows" class="tbl-wrap"></div></section>';
+          closeOfficerTable(people,t)+
+          '<section id="closeDetail" class="close-detail" aria-labelledby="closeDetailTitle"><h3 id="closeDetailTitle">รายละเอียดรายฉบับ</h3><p id="closeSelection" class="note" aria-live="polite"></p><div class="row close-actions"><label>รายการที่ต้องการดู<select class="sel" id="closeStatus"><option value="">ทั้งหมดที่ยังไม่เบิก</option><option value="READY">ส่งแล้ว ยังไม่เบิก</option><option value="WAIT">รอผลส่ง</option><option value="REVIEW">รอตรวจข้อมูล</option><option value="NOCLAIM">ไม่เบิกจ่าย</option></select></label><button type="button" class="btn btn-sm" id="closeAll">ดูรายการทุกคน</button><button class="btn btn-sm" id="closePrint">พิมพ์รายการที่แสดง</button><button class="btn btn-sm" id="closeCsv">ดาวน์โหลด CSV</button></div><div id="closeRows" class="tbl-wrap"></div></section>';
         let officer=null;
         const scopeName=()=>officer===null?'ยังไม่ได้เลือกผู้ส่งหมาย':officer===''?'ทุกคน':(byOfficer.get(officer)||{}).officer||officer;
         const selected=()=>officer===null?[]:d.rows.filter(r=>(!officer||r.officer_id===officer)&&(!$('#closeStatus').value||r.status===$('#closeStatus').value));
         const selectionTotal=()=>selected().reduce((sum,r)=>sum+Math.round(Number(r.amount||0)*100),0)/100;
-        const selectionMoney=()=>['WAIT','REVIEW'].includes($('#closeStatus').value)?'ยังไม่รวมในยอดพร้อมเสนอเบิก':'ยอดพร้อมเสนอเบิกตามตัวกรอง '+baht2(selectionTotal())+' บาท';
+        const selectionMoney=()=>$('#closeStatus').value==='NOCLAIM'?'ไม่เบิกจ่าย':['WAIT','REVIEW'].includes($('#closeStatus').value)?'ยังไม่รวมในยอดพร้อมเสนอเบิก':'ยอดพร้อมเสนอเบิกตามตัวกรอง '+baht2(selectionTotal())+' บาท';
         const paint=()=>{
           const rows=selected(),label=$('#closeStatus').selectedOptions[0].textContent;
           $('#closeRows').innerHTML=officer===null?'':closeTable(rows);
-          $('#closeSelection').textContent=officer===null?'เลือกชื่อผู้ส่งหมายจากตารางรวมด้านบน เพื่อดูรายการของคนนั้น หรือกด “ดูรายการทุกคน”':scopeName()+' · '+label+' · '+num(rows.length)+' ฉบับ'+($('#closeStatus').value==='READY'?' · '+num(new Set(rows.map(r=>r.unit_id)).size)+' หน่วยเบิก · '+baht2(selectionTotal())+' บาท':$('#closeStatus').value==='NOCLAIM'?' · 0.00 บาท':['WAIT','REVIEW'].includes($('#closeStatus').value)?' · ยังไม่รวมในยอดพร้อมเสนอเบิก':' · ยอดพร้อมเสนอเบิกในรายการที่แสดง '+baht2(selectionTotal())+' บาท');
+          $('#closeSelection').textContent=officer===null?'เลือกชื่อผู้ส่งหมายจากตารางรวมด้านบน เพื่อดูรายการของคนนั้น หรือกด “ดูรายการทุกคน”':scopeName()+' · '+label+' · '+num(rows.length)+' ฉบับ'+($('#closeStatus').value==='READY'?' · '+num(new Set(rows.map(r=>r.unit_id)).size)+' หน่วยเบิก · '+baht2(selectionTotal())+' บาท':$('#closeStatus').value==='NOCLAIM'?'':['WAIT','REVIEW'].includes($('#closeStatus').value)?' · ยังไม่รวมในยอดพร้อมเสนอเบิก':' · ยอดพร้อมเสนอเบิกในรายการที่แสดง '+baht2(selectionTotal())+' บาท');
           $('#closePrint').disabled=$('#closeCsv').disabled=officer===null||!rows.length;
           $('#closeOfficers').querySelectorAll('[data-close-officer]').forEach(tr=>{const on=tr.dataset.closeOfficer===officer;tr.classList.toggle('close-selected',on);tr.querySelector('button').setAttribute('aria-pressed',String(on));});
         };
-        $('#closeOfficers').querySelectorAll('[data-close-officer]').forEach(tr=>tr.onclick=()=>{officer=tr.dataset.closeOfficer;$('#closeStatus').value='READY';paint();$('#closeDetail').scrollIntoView({behavior:reduceMotion()?'auto':'smooth',block:'start'});});
+        $('#closeOfficers').querySelectorAll('[data-close-officer]').forEach(tr=>tr.onclick=()=>{officer=tr.dataset.closeOfficer;$('#closeStatus').value='';paint();$('#closeDetail').scrollIntoView({behavior:reduceMotion()?'auto':'smooth',block:'start'});});
+        sortable($('#closeOfficers'));
         $('#closeAll').onclick=()=>{officer='';paint();};$('#closeStatus').onchange=paint;paint();paintBudget();
-        $('#closePrint').onclick=()=>{loadSarabun();printArea('<div class="closeout-print"><div class="pr-head"><div class="pr-court">ศาลจังหวัดลพบุรี</div><div class="pr-title">รายงานตรวจสอบหมายฟรีก่อนปิดงบ · ปีงบ '+esc(d.fy)+'</div><p>ช่วงข้อมูล '+esc(thDate(d.from))+' ถึง '+esc(thDate(d.to))+' · ตรวจ ณ '+esc(thDate(d.checked_at,true))+'</p><p>ผู้ส่งหมาย: '+esc(scopeName())+' · ผลตรวจ: '+esc($('#closeStatus').selectedOptions[0].textContent)+'</p><p>รายการที่พิมพ์ '+num(selected().length)+' ฉบับ · '+esc(selectionMoney())+'</p></div>'+$('#closeBudget').outerHTML+closeTable(selected()).replace('<table class="close-table">','<table class="pr-tbl close-table">')+'<p class="pr-note">ยอดเต็มก่อนแบ่ง 60/40 · ฉบับที่รวมหน่วยอาจมียอด 0 บาท · รอผลและรอตรวจยังไม่รวมยอด · รายงานนี้แสดงข้อมูล ณ เวลาตรวจ ไม่ใช่หลักฐานการจ่ายเงิน</p></div>');};
+        $('#closePrint').onclick=()=>{loadSarabun();printArea('<div class="closeout-print"><div class="pr-head"><div class="pr-court">ศาลจังหวัดลพบุรี</div><div class="pr-title">รายงานตรวจสอบหมายฟรีก่อนปิดงบ · ปีงบ '+esc(d.fy)+'</div><p>ช่วงข้อมูล '+esc(thDate(d.from))+' ถึง '+esc(thDate(d.to))+' · ตรวจ ณ '+esc(thDate(d.checked_at,true))+'</p><p>ผู้ส่งหมาย: '+esc(scopeName())+' · ผลตรวจ: '+esc($('#closeStatus').selectedOptions[0].textContent)+'</p><p>รายการที่พิมพ์ '+num(selected().length)+' ฉบับ · '+esc(selectionMoney())+'</p></div>'+$('#closeBudget').outerHTML+closeTable(selected()).replace('<table class="close-table">','<table class="pr-tbl close-table">')+'<p class="pr-note">ยอดเต็มก่อนแบ่ง 60/40 · ฉบับที่รวมหน่วยไม่นับยอดซ้ำ · รอผลและรอตรวจยังไม่รวมยอด · รายงานนี้แสดงข้อมูล ณ เวลาตรวจ ไม่ใช่หลักฐานการจ่ายเงิน</p></div>');};
         $('#closeCsv').onclick=()=>{const rows=[['ปีงบ','ตรวจ ณ','เลขคดี','เลขหมาย','ชนิด','ผู้ส่ง','ผู้รับ','สถานที่','จ่ายหมาย','ส่ง','รายงาน','หน่วยเบิก','ยอดพร้อมเสนอเบิก','ยอดอ้างอิง','ผลตรวจ']].concat(selected().map(r=>[d.fy,d.checked_at,r.case_no,r.notice_no,r.notice_kind,r.officer,r.recipient,r.place,r.issued_date,r.delivered_date,r.report_date,r.unit_id,r.status==='WAIT'||r.status==='REVIEW'?'รอตรวจ':r.amount,r.reference,r.reason]));const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/^[=+@-]/,"'$&").replace(/"/g,'""')+'"').join(',')).join('\r\n');const u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=u;a.download='free-closeout-'+d.fy+'-'+d.today+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
       }catch(x){if(ticket===seq)box.innerHTML='<p class="note r">'+esc(x.message)+'</p>';}finally{b.disabled=false;}
     };

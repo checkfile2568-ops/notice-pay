@@ -404,6 +404,17 @@ function apiCalcSummary_(ctx, d) {
     if (String(u.fy) !== fy) return;
     const p = per[u.officer_id]; if (p) add(p, 'free_units', 1);
   });
+  // Summary only: all unclaimed free notices, including waiting/review/no-claim.
+  // Reuse closeout eligibility and confirmed-round history without exposing notice rows.
+  const pendingKeys = ['pending_free_n','pending_ready_n','pending_ready_units','pending_ready_amount','pending_wait_n','pending_review_n','pending_noclaim_n'];
+  pendingKeys.forEach(function(k) { tot[k]=0;Object.keys(per).forEach(function(id){per[id][k]=0;}); });
+  const today=Utilities.formatDate(new Date(),'Asia/Bangkok','yyyy-MM-dd');
+  if (fyStartDate_(fy,10)<=today) {
+    const pending=closeoutData_(readTable_('NOTICES').rows,readTable_('PAYOUT_ROUNDS').rows,readTable_('PAYOUT_ITEMS').rows,officerNames_(),fy,today,readTable_('BUDGET_UNITS').rows);
+    const mapping={pending_free_n:'count',pending_ready_n:'ready_n',pending_ready_units:'ready_units',pending_ready_amount:'ready_amount',pending_wait_n:'wait_n',pending_review_n:'review_n',pending_noclaim_n:'noclaim_n'};
+    pending.per_officer.forEach(function(o){const p=per[o.officer_id];if(!p)return;Object.keys(mapping).forEach(function(k){add(p,k,Number(o[mapping[k]])||0);});});
+    tot.pending_ready_amount=Math.round(tot.pending_ready_amount*100)/100;
+  }
   let warnings = [];
   try { warnings = JSON.parse(cfg_('CALC_WARNINGS_JSON', '[]')) || []; } catch (e) { warnings = []; }
   if (scope) warnings = warnings.filter(function (w) { return String(w.officer_id).split(',').indexOf(scope) >= 0; });
@@ -415,6 +426,20 @@ function apiCalcSummary_(ctx, d) {
   return { fy: fy, last_run: cfg_('CALC_LAST_RUN', ''), mode: (readTable_('CALC_RULES').rows.filter(function (r) { return r.rule_code === 'FREE_MULTI_CASE_SAME_MOO'; })[0] || {}).mode || 'HALF',
            officers: Object.keys(per).map(function (k) { return round2(per[k]); }), totals: round2(tot), warnings: warnings,
            can_run: hasRole_(ctx.user, ['NOTICE', 'FINANCE', 'ADMIN']), scope_officer: scope };
+}
+
+/** Owner check, read only. Never import/recalculate or publish live results. */
+function verify076ReadOnly() {
+  const tables=['NOTICES','BUDGET_UNITS','LEDGER','PAYOUT_ROUNDS','PAYOUT_ITEMS','RATE_AREAS','RATE_BUDGET','CALC_RULES','CONFIG'];
+  const hash=()=>digestJson_(tables.map(k=>readTable_(k).rows)),before=hash(),fy=currentFy_();
+  const summary=apiCalcSummary_({user:{roles:['ADMIN']}},{fy:fy}),closeout=apiCloseout_({user:{roles:['ADMIN']}},{fy:fy});
+  const t=summary.totals,c=closeout.totals;
+  if(t.pending_free_n!==c.count||t.pending_ready_n!==c.ready_n||Math.round(t.pending_ready_amount*100)!==Math.round(c.ready_amount*100)||t.pending_ready_units!==c.ready_units)throw new Error('Pending summary does not match closeout');
+  if(t.pending_free_n!==t.pending_ready_n+t.pending_wait_n+t.pending_review_n+t.pending_noclaim_n)throw new Error('Pending status count mismatch');
+  const first=summary.officers[0];
+  if(first){const own=apiCalcSummary_({user:{roles:['COURIER'],officer_id:first.officer_id}},{fy:fy});if(own.officers.length!==1||own.totals.pending_free_n!==first.pending_free_n)throw new Error('Officer scope mismatch');}
+  if(hash()!==before)throw new Error('Read-only check changed financial data');
+  console.log(JSON.stringify({verification:'0.7.6',unchanged:true,officers:summary.officers.length,pending_counts_match:true,pending_amount_match:true,scope_correct:true,pending_free_n:t.pending_free_n,pending_ready_n:t.pending_ready_n,pending_wait_n:t.pending_wait_n,pending_review_n:t.pending_review_n,pending_noclaim_n:t.pending_noclaim_n}));
 }
 
 /** หน่วยเบิกหมายฟรีของผู้ส่ง 1 คน พร้อมหมายทุกฉบับที่รวม */

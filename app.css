@@ -450,3 +450,9 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 @media print{#printArea:has(.closeout-print){page:closeout}.closeout-print .close-table{min-width:0;table-layout:fixed;font-size:11pt}.closeout-print .close-table th{position:static;font-size:11pt;white-space:normal}.closeout-print .close-table td{font-size:11pt;white-space:normal;word-break:normal;overflow-wrap:anywhere}.closeout-print .close-table td.onm{white-space:normal}.closeout-print tr{break-inside:avoid}.closeout-print thead{display:table-header-group}.closeout-print .note{padding:6pt;font-size:12pt;color:#000;background:none;border:1pt solid #777}}
 
 
+/* 0.7.6: keep officer names intact while long warning text wraps. */
+.calc-officer-toolbar{gap:12px;align-items:center}
+.calc-officer-toolbar h3{margin:0}
+.calc-officer-toolbar label{display:flex;flex-direction:column;gap:5px;min-width:0;max-width:100%}
+.calc-officer-toolbar .sel{max-width:100%;white-space:normal}
+#calcOff td.onm .tiny{display:inline-block;max-width:210px;white-space:normal}

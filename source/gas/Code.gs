@@ -117,7 +117,12 @@ function normalizeIncomingImport_(body) {
   const out = Object.assign({}, body);
   const ledger = body.action === 'ledger_import';
   const mapping = {};
-  if (!ledger) IMPORT_FIELDS.forEach(function(f) { if (body.mapping && typeof body.mapping[f.f] === 'string') mapping[f.f] = body.mapping[f.f]; });
+  if (!ledger) IMPORT_FIELDS.forEach(function(f) {
+    if (!body.mapping || typeof body.mapping[f.f] !== 'string') return;
+    const col=body.mapping[f.f];
+    if (/โจทก์|จำเลย|คู่ความ|plaintiff|defendant/i.test(col)) throw appErr_('BAD_REQUEST','ไม่รับคอลัมน์ชื่อโจทก์หรือจำเลย กรุณาตรวจหัวคอลัมน์ในไฟล์');
+    mapping[f.f]=col;
+  });
   out.rows = (Array.isArray(body.rows) ? body.rows : []).map(function(row, i) {
     try {
       if (!ledger) return NoticeImportFormat.mapped(row || {}, mapping);
@@ -146,7 +151,7 @@ function resultCacheKey_(action, user, body) {
   if (!user) return '';
   const fy = String(body.fy || '').replace(/\D/g, '').slice(0, 4) || 'cur';
   const who = (user.roles || []).slice().sort().join('.') + '_' + (user.officer_id || '');
-  return ('R_' + action + '_' + dataVer_() + '_' + fy + '_' + who).slice(0, 240);
+  return ('R_' + API_VERSION + '_' + action + '_' + dataVer_() + '_' + fy + '_' + who).slice(0, 240);
 }
 
 const JOURNALED_ = { import_commit: 1, ledger_import: 1, payout_confirm: 1, payout_cancel: 1, payout_noclaim: 1, review_resolve: 1, round_payment: 1 };

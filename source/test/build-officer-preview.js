@@ -1,0 +1,21 @@
+// Synthetic visual evidence only. No production data, tokens, API or login flow is exported.
+const fs=require('fs'),path=require('path');const {JSDOM}=require(process.env.NP_JSDOM_PATH||'jsdom');const {g,call,props}=require('./harness');
+g.setupSystem();props.PRINTHUB_DB_ID='PH';const auth=call('login',{code:'U001',pin:'1234'}).data;
+g.readTable_('OFFICERS').rows.forEach((o,i)=>{o.first_name='เจ้าหน้าที่จำลอง '+(i+1);o.last_name='ทดสอบ';g.updateRow_('OFFICERS',o._r,o);});
+const n=(id,oid,extra={})=>({...{notice_uid:id,case_no:'DEMO-'+id+'/2569',fy:'2570',pay_type:'BUDGET',officer_id:oid,issued_date:'2026-10-01',delivered_date:'2026-11-01',reported_date:'2026-11-02',calc_amount:'300',calc_rule:'SINGLE',claim_piece:id,budget_unit_id:id},...extra});
+g.appendRows_('NOTICES',[n('A','OF01'),n('B','OF02',{calc_amount:'500'}),n('WAIT','OF01',{delivered_date:'',calc_rule:'WAIT_DELIVERY'}),n('REVIEW','OF02',{calc_rule:'REVIEW_RATE'}),n('CLOSED','OF01',{noclaim_at:'2026-11-10'}),n('PAID1','OF01',{pay_type:'PAID',calc_amount:'400',calc_rule:'PAID'}),n('PAID2','OF02',{pay_type:'PAID',calc_amount:'900',calc_rule:'PAID'})]);
+const web=path.join(__dirname,'../web');const html=fs.readFileSync(path.join(web,'index.html'),'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,'');
+const dom=new JSDOM(html,{url:'http://localhost',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;w.NP_CONFIG={VERSION:'0.7.6',API_URL:'/synthetic-only'};w.matchMedia=()=>({matches:false});w.scrollTo=()=>{};w.HTMLElement.prototype.scrollIntoView=()=>{};w.fetch=async(u,o)=>{const b=JSON.parse(o.body);return{json:async()=>call(b.action,b)}};
+w.eval(fs.readFileSync(path.join(web,'import-formats.js'),'utf8'));w.eval(fs.readFileSync(path.join(web,'app.js'),'utf8').replace(/\}\)\(\);\s*$/,'window.__TEST={S,go,sortable,resort};})();'));
+const tick=()=>new Promise(r=>setTimeout(r,80));
+(async()=>{
+ await tick();const api=w.__TEST;api.S.token=auth.token;api.S.user=auth.user;api.S.fy='2570';api.go('calc');await tick();const snapshots={};
+ for(const mode of ['ALL','PAID','FREE','FREE_PENDING']){
+  const s=w.document.querySelector('#calcMode');s.value=mode;s.dispatchEvent(new w.Event('change'));const panel=s.closest('section').cloneNode(true);
+  panel.querySelectorAll('.srt,.ou,#calcPngLinks').forEach(e=>e.remove());panel.querySelector('#calcPng').remove();panel.querySelector('#calcMode option[value="'+mode+'"]').setAttribute('selected','');snapshots[mode]=panel.outerHTML;
+ }
+ const script='const snapshots='+JSON.stringify(snapshots)+';const $=s=>document.querySelector(s);const esc=v=>String(v??\"\").replace(/&/g,\"&amp;\").replace(/</g,\"&lt;\").replace(/>/g,\"&gt;\").replace(/\"/g,\"&quot;\");'+api.sortable.toString()+api.resort.toString()+';function paint(mode){document.querySelector(\"#preview\").innerHTML=snapshots[mode]||snapshots.ALL;$(\"#calcMode\").value=mode;$(\"#calcMode\").onchange=e=>paint(e.target.value);sortable($(\"#calcOff\"));}const p=new URLSearchParams(location.search);if(p.has(\"mobile\")){document.body.innerHTML=\"<p class=demo>ข้อมูลจำลอง · ตรวจหน้าจอมือถือ 390 พิกเซล</p><iframe title=\\\"ตัวอย่างหน้าจอมือถือ\\\" width=390 height=1000 src=\\\"?frame=1&mode=PAID\\\"></iframe>\";}else paint(p.get(\"mode\")||\"PAID\");';
+ const out=path.join(__dirname,'../evidence/officer-view-076.html');fs.mkdirSync(path.dirname(out),{recursive:true});
+ fs.writeFileSync(out,'<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>ตรวจหน้าจอ 0.7.6 · ข้อมูลจำลอง</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap"><style>'+fs.readFileSync(path.join(web,'app.css'),'utf8')+'body{padding:12px}.demo{font-weight:700;color:#714f0d;margin-bottom:12px}iframe{border:1px solid #aac4b2;max-width:100%}#preview{max-width:1050px;margin:auto}</style><p class="demo">ข้อมูลจำลองสำหรับตรวจหน้าจอ · ไม่เชื่อมต่อฐานข้อมูลจริง</p><main id="preview"></main><script>'+script.replace(/<\/script/gi,'<\\/script')+'</script></html>');
+ dom.window.close();console.log(out);
+})().catch(e=>{console.error(e);dom.window.close();process.exitCode=1});
