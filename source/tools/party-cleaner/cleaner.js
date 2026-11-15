@@ -12,15 +12,28 @@ var NoticePartyCleaner=(function(){
     payer:['ผู้วางเงิน','ชื่อผู้วางเงิน','ผู้ชำระเงิน','ผู้ชำระ','payer'],
     party:['โจทก์','ชื่อโจทก์','จำเลย','ชื่อจำเลย','คู่ความ','ชื่อคู่ความ','plaintiff','defendant']
   };
-  function kind(v){var h=header(v);if(/^(ฐานะ|สถานะ|ประเภท)/.test(h))return '';return Object.keys(aliases).find(k=>aliases[k].some(a=>header(a)===h))||(/โจทก์|จำเลย|คู่ความ|plaintiff|defendant/i.test(h)?'party':'');}
+  function kind(v){var h=header(v),role=NoticeImportFormat.privacyField(v);if(role==='officer'||role==='free')return role;if(/^(ฐานะ|สถานะ|ประเภท)/.test(h))return '';return Object.keys(aliases).find(k=>aliases[k].some(a=>header(a)===h))||(/โจทก์|จำเลย|คู่ความ|plaintiff|defendant/i.test(h)?'party':'');}
   function col(c){return c.getAttribute('r').replace(/\d/g,'');}
   function value(c,strings){if(!c)return '';var t=c.getAttribute('t');if(t==='s'){var v=nodes(c,'v')[0];return strings[Number(v&&v.textContent)]||'';}if(t==='inlineStr')return nodes(c,'t').map(x=>x.textContent).join('');return (nodes(c,'v')[0]||{}).textContent||'';}
   function write(c,v){Array.from(c.childNodes).forEach(x=>c.removeChild(x));c.setAttribute('t','inlineStr');var is=c.ownerDocument.createElementNS(NS,'is'),t=c.ownerDocument.createElementNS(NS,'t');t.setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');t.textContent=v;is.appendChild(t);c.appendChild(is);}
+  function scanSheet(doc,strings,stats,sheetNo,removed){
+    var scope={},contexts=[];
+    nodes(doc,'row').forEach(function(row){
+      var cells=nodes(row,'c'),found={};cells.forEach(c=>{var k=kind(value(c,strings));if(k)found[col(c)]=k;});
+      if(Object.values(found).includes('case_no')||Object.values(found).includes('free')||Object.values(found).includes('officer'))scope=found;
+      var payment=cells.some(c=>/^\s*จ่ายเงินให้/.test(value(c,strings)));
+      cells.forEach(c=>contexts.push({cell:c,role:scope[col(c)]||'',skip:payment,row:row.getAttribute('r')}));
+    });
+    function exempt(x){var s=value(x.cell,strings);return x.skip||x.role==='officer'||(x.role==='case_no'&&/[/\\]\s*[0-9๐-๙]{2,4}/.test(s))||/^(?:R1-[A-F0-9]{64})(?:,R1-[A-F0-9]{64})*$/.test(s);}
+    function blocked(x){throw Error('พบข้อความที่ต้องตรวจ: ชีตที่ '+sheetNo+' แถว '+x.row+' คอลัมน์ '+col(x.cell)+' — ยังไม่ส่งออก');}
+    contexts.forEach(function(x){if(exempt(x)||x.role!=='free')return;var old=value(x.cell,strings),r=NoticeImportFormat.redactNames(old);if(r.count){if(nodes(x.cell,'f').length)blocked(x);write(x.cell,r.text);stats.other_names+=r.count;}});
+    contexts.forEach(function(x){if(exempt(x))return;var s=value(x.cell,strings);if(NoticeImportFormat.nameMatches(s).length||Array.from(removed).some(v=>s.includes(v)))blocked(x);});
+  }
   async function clean(bytes){
-    var zip=await JSZip.loadAsync(bytes),files=Object.keys(zip.files),stats={sheets:0,rows:0,recipients:0,payers:0,parties:0},removed=new Set(),recognized=0;
+    var zip=await JSZip.loadAsync(bytes),files=Object.keys(zip.files),stats={sheets:0,rows:0,recipients:0,payers:0,parties:0,other_names:0},removed=new Set(),recognized=0;
     if(files.some(p=>/vbaProject|externalLinks|customXml|comments|threadedComments|embeddings|drawings|vmlDrawing|digitalSignature|_xmlsignatures/i.test(p)))throw Error('ไฟล์มีความคิดเห็น ภาพ วัตถุฝัง ลิงก์ภายนอก หรือส่วนเสริมที่เครื่องมือนี้ยังตรวจชื่อไม่ได้ กรุณาใช้สำเนา .xlsx ที่ไม่มีส่วนเหล่านี้');
     var shared=zip.file('xl/sharedStrings.xml'),sd=shared?xml(await shared.async('string')):null,sis=sd?nodes(sd,'si'):[],strings=sis.map(si=>nodes(si,'t').map(t=>t.textContent).join(''));
-    for(var path of files.filter(p=>/^xl\/worksheets\/sheet\d+\.xml$/.test(p))){
+    for(var path of files.filter(p=>/^xl\/worksheets\/[^/]+\.xml$/.test(p))){
       var doc=xml(await zip.file(path).async('string')),active=null;stats.sheets++;
       for(var row of nodes(doc,'row')){
         var cells=nodes(row,'c'),map={},found={};cells.forEach(c=>{map[col(c)]=c;var k=kind(value(c,strings));if(k)(found[k]=found[k]||[]).push(col(c));});
@@ -43,6 +56,7 @@ var NoticePartyCleaner=(function(){
           if(old!==next){removed.add(old);write(field.c,next);stats[field.k==='recipient'?'recipients':field.k==='payer'?'payers':'parties']++;}
         }
       }
+      scanSheet(doc,strings,stats,stats.sheets,removed);
       // Inline every shared string so unused original names cannot remain in the ZIP.
       for(var cell of nodes(doc,'c').filter(c=>c.getAttribute('t')==='s')){
         var idx=Number((nodes(cell,'v')[0]||{}).textContent),si=sis[idx];if(!si)throw Error('ดัชนีข้อความใน Excel ไม่ถูกต้อง');
@@ -55,7 +69,7 @@ var NoticePartyCleaner=(function(){
     for(var relPath of ['[Content_Types].xml','xl/_rels/workbook.xml.rels'])if(zip.file(relPath)){
       var rel=xml(await zip.file(relPath).async('string'));Array.from(rel.documentElement.childNodes).filter(n=>n.nodeType===1&&/sharedStrings/i.test(n.getAttribute('PartName')||n.getAttribute('Type')||n.getAttribute('Target')||'')).forEach(n=>n.parentNode.removeChild(n));zip.file(relPath,serialize(rel));
     }
-    for(var p of Object.keys(zip.files).filter(p=>/\.xml$|\.rels$/.test(p)&&!zip.files[p].dir)){
+    for(var p of Object.keys(zip.files).filter(p=>/\.xml$|\.rels$/.test(p)&&!zip.files[p].dir&&!/^xl\/worksheets\/[^/]+\.xml$/.test(p))){
       var body=xml(await zip.file(p).async('string')).documentElement.textContent||'';
       if(Array.from(removed).some(v=>body.includes(v)))throw Error('ยังพบชื่อเดิมในส่วนอื่นของไฟล์ จึงยังไม่ส่งออก กรุณาตรวจสำเนาต้นฉบับ');
     }

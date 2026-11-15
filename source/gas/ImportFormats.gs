@@ -1,4 +1,4 @@
-/* NoticePay 0.7.5: shared, deterministic input rules. No network or storage. */
+/* NoticePay 0.7.8: shared, deterministic input/privacy rules. No network or storage. */
 var NoticeImportFormat = (function () {
   'use strict';
   function digits(v) { return String(v == null ? '' : v).replace(/[๐-๙]/g, function(c) { return String(c.charCodeAt(0)-0x0e50); }); }
@@ -76,6 +76,45 @@ var NoticeImportFormat = (function () {
     });
     return out;
   }
-  return {date:date,recipient:recipient,mapped:mapped,sha256:sha256};
+  function privacyField(key) {
+    var h=String(key||'').replace(/[\s\u200b:().]/g,'').toLowerCase();
+    if(['officer','officerraw','officerid','officer_raw','officer_id','ผู้ส่งหมาย','ผู้ปฏิบัติ','เจ้าของหมาย','ผู้ส่ง','พนักงานส่งหมาย','ผู้ส่งหมายเจ้าหน้าที่','พนักงานศาล'].indexOf(h)>=0)return 'officer';
+    if(['case_no','caseno','case_ref','red_no','เลขดำที่','เลขดำ','เลขคดี','หมายเลขคดี','คดีหมายเลข','เลขที่คดี','คดีเลขที่','คดีดำ','หมายเลขคดีดำ','เลขคดีดำ','คดีหมายเลขดำ','คดีหมายเลขดำที่','เลขแดงที่','เลขแดง','คดีแดง','หมายเลขคดีแดง'].indexOf(h)>=0)return 'case';
+    if(['result','note','notes','remark','remarks','ผลการส่งหมาย','ผลการส่ง','ผลหมาย','ผล','สถานะ','หมายเหตุ','บันทึกหมายเหตุ','รายละเอียดผลการส่งหมาย'].indexOf(h)>=0)return 'free';
+    return '';
+  }
+  var TITLES=['นาย','นาง','นางสาว','น.ส.','นส.','ด.ช.','ด.ญ.','เด็กชาย','เด็กหญิง','คุณ','ว่าที่ร้อยตรี','ว่าที่ ร.ต.','ดร.','นพ.','พญ.','พระครู','พระมหา','พระอธิการ','สามเณร','แม่ชี','Mr.','Mrs.','Ms.','Miss'];
+  ['ตำรวจ','เรือ','อากาศ',''].forEach(function(branch){['เอก','โท','ตรี'].forEach(function(rank){TITLES.push('พล'+branch+rank);});});
+  ['พันตำรวจ','ร้อยตำรวจ','สิบตำรวจ','จ่าสิบตำรวจ','พัน','ร้อย','สิบ','จ่าสิบ','นาวา','เรือ','พันจ่า','จ่า','นาวาอากาศ','เรืออากาศ','พันจ่าอากาศ','จ่าอากาศ'].forEach(function(base){['เอก','โท','ตรี'].forEach(function(rank){TITLES.push(base+rank);});});
+  TITLES=TITLES.concat(['ดาบตำรวจ','พลทหาร','พล.ต.อ.','พล.ต.ท.','พล.ต.ต.','พ.ต.อ.','พ.ต.ท.','พ.ต.ต.','ร.ต.อ.','ร.ต.ท.','ร.ต.ต.','ด.ต.','ส.ต.อ.','ส.ต.ท.','ส.ต.ต.','จ.ส.ต.','พล.อ.','พล.ท.','พล.ต.','พ.อ.','พ.ท.','พ.ต.','ร.อ.','ร.ท.','ร.ต.','ส.อ.','ส.ท.','ส.ต.','จ.ส.อ.','จ.ส.ท.','จ.ส.ต.','พล.ร.อ.','พล.ร.ท.','พล.ร.ต.','น.อ.','น.ท.','น.ต.','พ.จ.อ.','พ.จ.ท.','พ.จ.ต.','จ.อ.','จ.ท.','จ.ต.','พล.อ.อ.','พล.อ.ท.','พล.อ.ต.','พ.อ.อ.','พ.อ.ท.','พ.อ.ต.']);
+  TITLES.push('ว่าที่ ร้อยตรี');TITLES=TITLES.concat(TITLES.filter(function(t){return /^(พล|พัน|ร้อย|สิบ|จ่า|ดาบ|นาวา|เรือ|พ\.|ร\.|ส\.|น\.|ด\.ต|จ\.)/.test(t);}).map(function(t){return t+' หญิง';}));
+  var titleSource=TITLES.sort(function(a,b){return b.length-a.length;}).map(function(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\\\./g,'\\.\\s*').replace(/ /g,'\\s*');}).join('|');
+  var nameWord=/^[A-Za-z\u0E00-\u0E7F][A-Za-z\u0E00-\u0E7F'’\-]*/;
+  var nameStops=/^(รับแทน|ผู้รับ|จำเลย|โจทก์|ลงชื่อ|ส่งได้|ส่งไม่ได้|ไม่พบ|เสียชีวิต|ปฏิเสธ|วันที่|โทรศัพท์|โทร|ตาม|ที่|และ|โดย|ลงลายมือชื่อ|รวมเป็นเงิน)$/;
+  function nameMatches(value) {
+    var s=String(value==null?'':value),re=new RegExp(titleSource,'gi'),matches=[],m;
+    while((m=re.exec(s))){
+      var start=m.index,prev=s.slice(0,start);
+      if(start&&/[A-Za-z0-9\u0E00-\u0E7F_]$/.test(prev))continue;
+      if(/^Miss$/i.test(m[0])&&!/^\s/.test(s.slice(re.lastIndex)))continue;
+      if(/(?:ซ\.|ซอย|ถ\.|ถนน|ต\.|อ\.|ตำบล|อำเภอ|หมู่บ้าน)\s*$/i.test(prev))continue;
+      var at=re.lastIndex,words=0,end=at;
+      while(words<2){
+        var rest=s.slice(end),space=(rest.match(/^[\s\u200b]*/)||[''])[0];
+        if(words&&!space)break;
+        if(words&&/^(พระราชบัญญัติ|พ\.ร\.บ\.|พระราชกำหนด|พระราชกฤษฎีกา|ซ\.|ซอย|ถ\.|ถนน|ต\.|อ\.|หมู่บ้าน)/.test(rest.slice(space.length)))break;
+        var word=rest.slice(space.length).match(nameWord);if(!word)break;
+        if(words&&nameStops.test(word[0]))break;
+        end+=space.length+word[0].length;words++;
+      }
+      if(words)matches.push({start:start,end:end});
+    }
+    var merged=[];matches.forEach(function(x){var last=merged[merged.length-1];if(last&&x.start<=last.end)last.end=Math.max(last.end,x.end);else merged.push({start:x.start,end:x.end});});return merged;
+  }
+  function redactNames(value) {
+    var s=String(value==null?'':value),ms=nameMatches(s);for(var i=ms.length-1;i>=0;i--)s=s.slice(0,ms[i].start)+'[ตัดชื่อ]'+s.slice(ms[i].end);
+    return {text:s,count:ms.length};
+  }
+  return {date:date,recipient:recipient,mapped:mapped,sha256:sha256,privacyField:privacyField,nameMatches:nameMatches,redactNames:redactNames};
 })();
 if (typeof module!=='undefined' && module.exports) module.exports=NoticeImportFormat;

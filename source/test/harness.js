@@ -71,7 +71,7 @@ const g = {
 };
 vm.createContext(g);
 const dir = path.join(__dirname, '../gas');
-['Config.gs', 'ImportFormats.gs', 'Core.gs', 'Db.gs', 'Setup.gs', 'Auth.gs', 'Users.gs', 'Import.gs', 'Calc.gs', 'Dashboard.gs', 'Payout.gs', 'Ledger.gs', 'Operations.gs', 'Tracking.gs', 'Code.gs', 'PrivacyMigration.gs']
+['Config.gs', 'ImportFormats.gs', 'Core.gs', 'Db.gs', 'Setup.gs', 'Auth.gs', 'Users.gs', 'Import.gs', 'Calc.gs', 'Dashboard.gs', 'Payout.gs', 'Ledger.gs', 'Operations.gs', 'Tracking.gs', 'Code.gs', 'PrivacyMigration.gs', 'FreeTextMigration.gs']
   .forEach(f => vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), g, { filename: f }));
 
 // ทุกคำขอเริ่มใหม่ (ล้างแคชระดับคำขอเหมือน GAS)

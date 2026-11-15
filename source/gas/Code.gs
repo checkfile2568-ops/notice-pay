@@ -113,6 +113,19 @@ function json_(o) {
 }
 
 /** Strip unmapped party columns before preview binding, journal snapshots or writes. */
+function assertImportTextPrivacy078_(value, mapping, rowNo) {
+  function check(v, key, depth) {
+    if(depth>24)throw appErr_('BAD_REQUEST','ข้อมูลนำเข้าซ้อนกันเกินกำหนด');
+    const role=key===mapping.officer?'officer':(key===mapping.case_no||key===mapping.red_no)?'case':NoticeImportFormat.privacyField(key);
+    if(role==='officer'||role==='case')return;
+    if(Array.isArray(v)){v.forEach(function(x){check(x,'',depth+1);});return;}
+    if(v&&typeof v==='object'){Object.keys(v).forEach(function(k){check(v[k],k,depth+1);});return;}
+    if(typeof v!=='string')return;
+    if(/^[\[{]/.test(v.trim())){let parsed;try{parsed=JSON.parse(v);}catch(e){}if(parsed&&typeof parsed==='object'){check(parsed,'',depth+1);return;}}
+    if(NoticeImportFormat.nameMatches(v).length)throw appErr_('BAD_REQUEST',rowNo?'พบคำนำหน้าชื่อในแถว '+rowNo+' กรุณาตัดชื่อด้วยเครื่องมือออฟไลน์ก่อนนำเข้า':'พบคำนำหน้าชื่อในข้อมูลประกอบไฟล์ กรุณาตรวจชื่อไฟล์ ชีต และตัวเลือก');
+  }
+  check(value,'',0);
+}
 function normalizeIncomingImport_(body) {
   const out = Object.assign({}, body);
   const ledger = body.action === 'ledger_import';
@@ -125,18 +138,26 @@ function normalizeIncomingImport_(body) {
   });
   out.rows = (Array.isArray(body.rows) ? body.rows : []).map(function(row, i) {
     try {
-      if (!ledger) return NoticeImportFormat.mapped(row || {}, mapping);
+      if (!ledger) {
+        const safe=NoticeImportFormat.mapped(row || {}, mapping);
+        // Check every supplied column, including those which would otherwise be discarded.
+        // Recipient/payer are converted first; staff and case columns retain their exceptions.
+        assertImportTextPrivacy078_(Object.assign({},row||{},safe),mapping,i+1);
+        return safe;
+      }
       const r = {}; ['case_no','recipient','officer','amount','pay_date','received_date','receipt_no','notice_kind','tambon','result'].forEach(function(k) { if(row && row[k]!==undefined)r[k]=row[k]; });
       r.recipient = NoticeImportFormat.recipient(r.case_no,r.recipient);
       ['pay_date','received_date'].forEach(function(k) {
         if (r[k]===undefined) return; const dt=parseDate_(r[k]);
         if (dt===null) throw new Error('วันที่ไม่ถูกต้อง กรุณาใช้วัน/เดือน/ปี 4 หลัก'); r[k]=dt;
       });
+      assertImportTextPrivacy078_(Object.assign({},row||{},r),{},i+1);
       return r;
     } catch(e) { throw appErr_('BAD_REQUEST', 'แถว '+(i+1)+': '+e.message); }
   });
+  assertImportTextPrivacy078_({file:body.file||{},options:body.options||{},mapping:mapping},{},0);
   if (!ledger) out.mapping = mapping;
-  out.privacy_version = '1';
+  out.privacy_version = '2';
   return out;
 }
 
