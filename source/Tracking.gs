@@ -2,13 +2,17 @@
 var TRACK_STATUS_TH_ = { WAIT: 'รอผลการส่ง', REVIEW: 'รอตรวจข้อมูล', READY: 'พร้อมเบิก / ยังไม่พบประวัติรอบ', HELD: 'เลื่อนไปรอบหน้า', ROUND: 'อยู่ในรอบยืนยันแล้ว', PAID: 'จ่ายเงินจริงแล้ว', NOCLAIM: 'ปิดไม่เบิก' };
 function trackingData_(ctx, d) {
   const scope = scopeOfficer_(ctx.user), rounds = {}, history = {}, held = payoutHeld_();
+  const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  const from = d.from ? parseDate_(d.from) : '', to = d.to ? parseDate_(d.to) : '';
+  if (from === null || to === null || (from && to && from > to)) throw appErr_('BAD_REQUEST', 'ช่วงวันที่ค้นหาไม่ถูกต้อง');
   readTable_('PAYOUT_ROUNDS').rows.forEach(function (r) { rounds[r.round_id] = r; });
   readTable_('PAYOUT_ITEMS').rows.forEach(function (it) {
     if (String(it.included).toUpperCase() !== 'TRUE') return;
     const r = rounds[it.round_id]; if (!r || r.status !== 'CONFIRMED') return;
     String(it.notice_uids || '').split(',').filter(String).forEach(function (u) { (history[u] = history[u] || []).push({ round_id: r.round_id, pay_date: r.pay_date, amount: Number(it.amount) || 0, payment_status: r.payment_status || '', payment_date: r.payment_date || '', payment_ref: r.payment_ref || '' }); });
   });
-  const unitMembers = {}; readTable_('NOTICES').rows.forEach(function (n) { if (n.budget_unit_id) (unitMembers[n.budget_unit_id] = unitMembers[n.budget_unit_id] || []).push(n.notice_uid); });
+  const unitMembers = {}, legacyClaims = {}; readTable_('NOTICES').rows.forEach(function (n) { if (n.budget_unit_id) (unitMembers[n.budget_unit_id] = unitMembers[n.budget_unit_id] || []).push(n.notice_uid); });
+  readTable_('BUDGET_UNITS').rows.forEach(function(u) { if (u.claim_ref || /^(CLAIMED|PAID)$/.test(String(u.status || ''))) legacyClaims[u.unit_id] = true; });
   const names = officerNames_(), q = normText_(d.q || '').replace(/\s+/g, '').toUpperCase();
   const fy = String(d.fy || ''), type = String(d.pay_type || ''), status = String(d.status || ''), officer = scope || String(d.officer_id || '');
   const list = readTable_('NOTICES').rows.filter(function (n) {
@@ -16,15 +20,24 @@ function trackingData_(ctx, d) {
     if (officer && n.officer_id !== officer) return false;
     if (fy && String(n.fy) !== fy) return false;
     if (type && n.pay_type !== type) return false;
-    if (d.from && String(n.delivered_date || n.issued_date) < String(d.from)) return false;
-    if (d.to && String(n.delivered_date || n.issued_date) > String(d.to)) return false;
+    const date = parseDate_(n.delivered_date || n.issued_date) || '';
+    if (from && (!date || date < from)) return false;
+    if (to && (!date || date > to)) return false;
     return !q || [n.case_no, n.case_ref, n.red_no, n.notice_no, n.recipient].some(function (v) { return normText_(v).replace(/\s+/g, '').toUpperCase().indexOf(q) >= 0; });
   }).map(function (n) {
-    const r = rounds[n.payout_round_id], hs = history[n.notice_uid] || [];
+    const hs = history[n.notice_uid] || [];
+    const prior = hs.slice().sort(function(a,b) { return String(a.pay_date).localeCompare(String(b.pay_date)) || String(a.round_id).localeCompare(String(b.round_id)); });
+    const pointer = rounds[n.payout_round_id];
+    const r = pointer && pointer.status === 'CONFIRMED' ? pointer : prior.length ? rounds[prior[prior.length-1].round_id] : pointer;
     let st = n.noclaim_at ? 'NOCLAIM' : !n.delivered_date ? 'WAIT' : /^REVIEW|WAIT_ISSUE/.test(String(n.calc_rule)) ? 'REVIEW' : held['N:' + n.notice_uid] ? 'HELD' : 'READY';
+    const freeClosed = n.pay_type === 'BUDGET' && (String(n.calc_rule)==='PRE_START' ||
+      (/^25\d{2}$/.test(String(n.fy)) && ((parseDate_(n.issued_date) || '9999') < (Number(n.fy)-544)+'-10-01' || today > (Number(n.fy)-543)+'-09-30')));
+    if (freeClosed) st = 'NOCLAIM';
+    if (n.claim_status || legacyClaims[n.budget_unit_id]) st = 'REVIEW';
+    if (n.payout_round_id && (!r || r.status !== 'CONFIRMED')) st = 'REVIEW';
     if (r && r.status === 'CONFIRMED') st = r.payment_status === 'PAID' ? 'PAID' : 'ROUND';
     const reference = n.calc_amount === '' || n.calc_amount === undefined ? null : Number(n.calc_amount);
-    const actual = effAmount_(n), diff = reference === null ? null : Math.round((actual - reference) * 100) / 100;
+    const actual = st === 'NOCLAIM' && n.pay_type === 'BUDGET' ? 0 : effAmount_(n), diff = st === 'NOCLAIM' || reference === null ? null : Math.round((actual - reference) * 100) / 100;
     return { notice_uid: n.notice_uid, fy: n.fy, pay_type: n.pay_type, case_no: n.case_no, notice_kind: n.notice_kind, recipient: n.recipient,
       officer_id: n.officer_id, officer: (names[n.officer_id] || {}).name || n.officer_raw, tambon: n.tambon, issued_date: String(n.issued_date || '').slice(0, 10), delivered_date: String(n.delivered_date || '').slice(0, 10), reported_date: String(n.reported_date || '').slice(0, 10),
       reference: reference, amount: actual, difference: diff, source: n.pay_type === 'PAID' && n.payout_round_id && n.paid_amount !== '' ? 'ยอดจ่ายตามบัญชี' : n.pay_type === 'BUDGET' && n.court_at ? 'ราคาบัญชีศาล ประเภท 18' : 'ยอดระบบคำนวณ',
@@ -42,7 +55,7 @@ function trackingData_(ctx, d) {
   ['amount', 'shortage', 'excess'].forEach(function (k) { totals[k] /= 100; Object.keys(per).forEach(function (id) { per[id][k] /= 100; }); });
   const ledger = readTable_('LEDGER').rows.filter(function(l){return l.source==='PAY' && (!officer || l.officer_id===officer) && (!fy || fiscalYear_(String(l.pay_date),10)===fy);});
   const controls={count:ledger.length,amount:0,unmatched_n:0,unmatched_amount:0}; ledger.forEach(function(l){controls.amount+=cents2_(l.amount);if(l.match!=='OK'){controls.unmatched_n++;controls.unmatched_amount+=cents2_(l.amount);}}); controls.amount/=100;controls.unmatched_amount/=100;
-  const rr=Object.keys(rounds).map(function(k){return rounds[k];}).filter(function(r){return r.status==='CONFIRMED' && (!fy || r.fy===fy) && (!type || r.round_type===(type==='BUDGET'?'FREE':'PAID'));});
+  const rr=Object.keys(rounds).map(function(k){return rounds[k];}).filter(function(r){return r.status==='CONFIRMED' && (!fy || String(r.fy)===fy) && (!type || r.round_type===(type==='BUDGET'?'FREE':'PAID'));});
   const rc={count:rr.length,amount:rr.reduce(function(a,r){if(!officer)return a+cents2_(r.total);let lines=[];try{lines=JSON.parse(r.lines_json||'[]');}catch(e){}return a+lines.filter(function(l){return l.officer_id===officer;}).reduce(function(t,l){return t+l.total_c;},0);},0)/100};
   return { ledger_summary:controls,round_summary:rc,rows: list, totals: totals, officers: names, per_officer: Object.keys(per).map(function (id) { return per[id]; }), last_imports: lastImports_(), statuses: TRACK_STATUS_TH_, scope_officer: scope };
 }
@@ -66,6 +79,26 @@ function apiRoundPayment_(ctx, d) {
 function validIso_(s) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s))) return false;
   const d = new Date(String(s) + 'T12:00:00Z'); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === String(s);
+}
+
+/** Owner/editor verification only. No setup, writes, imports, recalculation or payments. */
+function verifyRelease075ReadOnly() {
+  const tables = ['NOTICES','BUDGET_UNITS','LEDGER','PAYOUT_ROUNDS','PAYOUT_ITEMS','RATE_AREAS','RATE_BUDGET','CALC_RULES','CONFIG'];
+  const before = {}; tables.forEach(function(k) { before[k] = digestJson_(readTable_(k).rows); });
+  const ctx = {user:{code:'READ_ONLY_VERIFY',roles:['ADMIN']}}, fy = String(currentFy_());
+  const tracking = trackingData_(ctx,{fy:fy}), report = apiCloseout_(ctx,{fy:fy});
+  if (tracking.round_summary.count !== readTable_('PAYOUT_ROUNDS').rows.filter(function(r) { return r.status==='CONFIRMED' && String(r.fy)===fy; }).length) throw new Error('Round filter failed');
+  const synthetic = normalizeIncomingImport_({action:'import_preview',mapping:{case_no:'case',recipient:'party',delivered_date:'date'},rows:[{case:'TEST/2569',party:'ชื่อคู่ความจำลอง',date:46332,plaintiff:'ไม่นำเข้า'}]});
+  if (JSON.stringify(synthetic).indexOf('ชื่อคู่ความจำลอง')>=0 || synthetic.rows[0].date!=='2026-11-06') throw new Error('Import normalization failed');
+  const nt = readTable_('NOTICES').rows, names=officerNames_(), officers=officersAll_();
+  const ledger=readTable_('LEDGER').rows.filter(function(r){return r.source==='PAY';}).map(function(r) {
+    return {case_no:r.case_no,recipient:r.recipient,officer:(names[r.officer_id]||{}).name||r.officer_raw,amount:Number(r.amount)||0};
+  });
+  const rawMatches=ledgerMatch_(ledger,nt,officers,'PAID'), privateMatches=ledgerMatch_(ledger.map(function(r){return Object.assign({},r,{recipient:NoticeImportFormat.recipient(r.case_no,r.recipient)});}),nt,officers,'PAID');
+  if (JSON.stringify(rawMatches.map(function(r){return [r.match,r.notice_uids];}))!==JSON.stringify(privateMatches.map(function(r){return [r.match,r.notice_uids];}))) throw new Error('Legacy matching changed');
+  const after = {}; tables.forEach(function(k) { after[k] = digestJson_(readTable_(k).rows); });
+  const unchanged=JSON.stringify(before)===JSON.stringify(after); if(!unchanged)throw new Error('Read-only verification changed data');
+  console.log(JSON.stringify({verification:'0.7.5',unchanged:unchanged,tables:tables.length,notices:nt.length,ledger_rows:ledger.length,legacy_matching_equal:true,tracking:tracking.totals,rounds:tracking.round_summary,closeout:report.totals}));
 }
 
 /** รายงานปัจจุบันสำหรับประเมินงบ: อ่านอย่างเดียว ไม่เปลี่ยนยอด/เศษ/สถานะรอบ */
@@ -140,7 +173,7 @@ function closeoutData_(notices, rounds, payoutItems, names, fy, today, budgetUni
   totals.ready_amount /= 100;
   const officers = Object.keys(per).map(function(id) { per[id].ready_amount /= 100; return per[id]; }).sort(function(a,b) { return a.officer.localeCompare(b.officer, 'th'); });
   rows.sort(function(a,b) { return String(a.officer).localeCompare(String(b.officer), 'th') || String(a.case_no).localeCompare(String(b.case_no), 'th') || String(a.notice_uid).localeCompare(String(b.notice_uid)); });
-  return { report_mode: 'closeout', report_version: '0.7.2', fy: fy, from: from, to: to, fiscal_end: end, checked_at: now_(), today: today, expired: expired,
+  return { report_mode: 'closeout', report_version: '0.7.5', fy: fy, from: from, to: to, fiscal_end: end, checked_at: now_(), today: today, expired: expired,
     rows: rows, per_officer: officers, totals: totals, last_imports: lastImports_(), data_period: dashboardPeriod_(readTable_('IMPORT_BATCHES').rows, fy) };
 }
 

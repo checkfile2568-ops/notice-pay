@@ -13,7 +13,8 @@
   const S = { token: '', user: null, page: 'home', pick: null, pin: '', busy: false, fy: '' };
 
   /* ---------------------------------------------------------------- ตัวช่วย */
-  const esc = (v) => String(v === null || v === undefined ? '' : v)
+  const partyText = (v) => /^R1-[A-F0-9]{64}(?:,R1-[A-F0-9]{64})*$/.test(String(v || '')) ? 'ไม่จัดเก็บชื่อคู่ความ' : v;
+  const esc = (v) => String(v === null || v === undefined ? '' : partyText(v))
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   const num = (n) => Number(n || 0).toLocaleString('th-TH');
   /* ตารางจัดลำดับได้: หัวคอลัมน์ th[data-sort] มีปุ่มเล็ก ▲ (น้อย→มาก) ▼ (มาก→น้อย) · กดซ้ำ = กลับลำดับเดิม · แถวรวม (tr.sum) อยู่ท้ายเสมอ */
@@ -679,7 +680,7 @@
       const dig = await crypto.subtle.digest('SHA-256', buf);
       if (fileEpoch !== importEpoch) return;
       IM.file = { name: f.name, size: f.size, checksum: Array.from(new Uint8Array(dig)).map((b) => b.toString(16).padStart(2, '0')).join('') };
-      IM.wb = XLSX.read(buf, { type: 'array', cellDates: true });
+      IM.wb = XLSX.read(buf, { type: 'array', cellDates: false });
       IM.sheet = IM.wb.SheetNames[0];
       if (IM.kind === 'PAY' || IM.kind === 'FREE18') return ledgerFile(fileEpoch);
       loadSheet();
@@ -690,14 +691,7 @@
   const TH_MON = { 'ม.ค.': 1, 'ก.พ.': 2, 'มี.ค.': 3, 'เม.ย.': 4, 'พ.ค.': 5, 'มิ.ย.': 6, 'ก.ค.': 7, 'ส.ค.': 8, 'ก.ย.': 9, 'ต.ค.': 10, 'พ.ย.': 11, 'ธ.ค.': 12 };
   const digits = (v) => String(v === null || v === undefined ? '' : v).replace(/[๐-๙]/g, c => String(c.charCodeAt(0)-0x0E50));
   function thIso(v) {
-    if (v instanceof Date) return cellVal(v);
-    const s = digits(v).trim(); if (!s) return '';
-    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/), y, mo, day;
-    if (m) { y=+m[1]; mo=+m[2]; day=+m[3]; }
-    else { m=s.match(/^(\d{1,2})[\s/.-]+(\d{1,2}|[ก-๙.]+)[\s/.-]+(\d{2,4})$/); if(!m)return ''; day=+m[1]; mo=+m[2] || TH_MON[m[2]] || TH_ML.indexOf(m[2])+1; y=+m[3]; }
-    if(y<100)y+=2500; if(y>2400)y-=543;
-    const dt=new Date(Date.UTC(y,mo-1,day)); if(!mo||dt.getUTCFullYear()!==y||dt.getUTCMonth()!==mo-1||dt.getUTCDate()!==day)return '';
-    return y+'-'+String(mo).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+    return NoticeImportFormat.date(v, !!(IM.wb && IM.wb.Workbook && IM.wb.Workbook.WBProps && IM.wb.Workbook.WBProps.date1904)) || '';
   }
   const amtOf = (v) => { const t=digits(v).trim().replace(/,/g,''); if(!/^\d+(?:\.\d{1,2})?$/.test(t)) throw new Error('จำนวนเงินไม่ถูกต้อง: '+String(v)); const n=Number(t); if(!Number.isFinite(n))throw new Error('จำนวนเงินไม่ถูกต้อง'); return n; };
   const firstLine = (v) => String(v || '').split(/\r?\n/)[0].trim();
@@ -719,9 +713,10 @@
         return;
       }
       if (seq < 0 || !/^\d+$/.test(digits(r[seq]).trim())) return;
-      if (kind === 'PAY') rows.push({ pay_date: thIso(r[col('วันที่จ่าย')]), case_no: firstLine(r[col('เลขดำที่')]), recipient: String(r[col('ส่งหมายถึงใคร')] || '').trim(),
+      if (kind === 'PAY' && r[col('วันที่รับเงิน')] && !thIso(r[col('วันที่รับเงิน')])) throw new Error('วันที่รับเงินแถว '+(rows.length+1)+' ไม่ถูกต้อง กรุณาใช้วัน/เดือน/ปี 4 หลัก');
+      if (kind === 'PAY') rows.push({ pay_date: thIso(r[col('วันที่จ่าย')]), case_no: firstLine(r[col('เลขดำที่')]), recipient: NoticeImportFormat.recipient(firstLine(r[col('เลขดำที่')]), r[col('ส่งหมายถึงใคร')]),
         received_date: thIso(r[col('วันที่รับเงิน')]), receipt_no: String(r[col('เลขที่ใบเสร็จ')] || '').trim(), amount: amtOf(r[col('ราคา')]), officer: officer });
-      else rows.push({ case_no: firstLine(r[col('เลขดำที่')]), notice_kind: String(r[col('หมายอะไร')] || '').trim(), recipient: String(r[col('หมายถึงใคร')] || '').trim(),
+      else rows.push({ case_no: firstLine(r[col('เลขดำที่')]), notice_kind: String(r[col('หมายอะไร')] || '').trim(), recipient: NoticeImportFormat.recipient(firstLine(r[col('เลขดำที่')]), r[col('หมายถึงใคร')]),
         tambon: String(r[col('ตำบล')] || '').trim(), amount: amtOf(r[col('ราคา')]), officer: String(r[col('เจ้าของหมาย')] || '').trim(), result: String(r[col('ผลการส่งหมาย')] || '').trim() });
     });
     if (kind === 'FREE18') { const m = aoa.slice(0, hi).map(text).join(' ').match(/จำนวนรวม\s*(\d[\d,]*)\s*หมาย/); if (m && footerN === null) footerN = amtOf(m[1]); }
@@ -735,7 +730,7 @@
   async function ledgerFile(revision) {
     const kind = IM.kind; revision = revision || importEpoch;
     try {
-      const aoa = XLSX.utils.sheet_to_json(IM.wb.Sheets[IM.sheet], { header: 1, raw: false, defval: '' });
+      const aoa = XLSX.utils.sheet_to_json(IM.wb.Sheets[IM.sheet], { header: 1, raw: true, defval: '' });
       const p = IM.ledger = parseLedger(kind, aoa);
       const totOk = p.footer === null || Math.abs(p.footer - p.sum) < 0.005;
       const nOk = p.footerN === null || p.footerN === p.rows.length;
@@ -746,7 +741,7 @@
         (p.footerN !== null ? ' · จำนวนท้ายไฟล์ ' + num(p.footerN) + (nOk ? ' ✓' : ' ✗') : '') +
         (kind === 'PAY' ? ' · ผู้ส่ง ' + num(p.groups.length) + ' คน' + (p.grpBad.length ? ' ✗ ยอดรายคนไม่ตรงหัวกลุ่ม: ' + esc(p.grpBad.join(', ')) : ' ✓ ยอดรายคนตรงหัวกลุ่ม') + (p.badDate ? ' · ✗ อ่านวันที่จ่ายไม่ได้ ' + num(p.badDate) + ' แถว' : '') : '') +
         (p.wrongKind ? '<br><b>ไฟล์นี้ดูเหมือนเป็นอีกชนิด — ตรวจว่าเลือกชนิดไฟล์ถูก</b>' : '') + '</span></div>' +
-        '<p class="tiny muted" style="margin:8px 2px 0">ส่งเข้าระบบเฉพาะ เลขดำ · ผู้รับ · ' + (kind === 'PAY' ? 'วันที่จ่าย · ใบเสร็จ · ' : 'ชนิดหมาย · ตำบล · ผล · ') + 'ราคา · ผู้ส่ง (ไม่ส่งโจทก์/จำเลย/ผู้วางเงิน)</p>';
+        '<p class="tiny muted" style="margin:8px 2px 0">ส่งเข้าระบบเฉพาะ เลขดำ · รหัสจับคู่แทนชื่อ · ' + (kind === 'PAY' ? 'วันที่จ่าย · ใบเสร็จ · ' : 'ชนิดหมาย · ตำบล · ผล · ') + 'ราคา · ผู้ส่ง (ไม่ส่งชื่อโจทก์/จำเลย/ผู้รับหมาย/ผู้วางเงิน)</p>';
       if (!IM.ledgerOk) { $('#imPrev').innerHTML = ''; return; }
       $('#imPrev').innerHTML = '<div class="clay panel"><span class="spin"></span> <span class="muted">กำลังจับคู่กับหมายในระบบ…</span></div>';
       const r = await api('ledger_import', { kind: kind, rows: p.rows, file: IM.file, sheet: IM.sheet, period_from: p.period_from, period_to: p.period_to });
@@ -852,7 +847,7 @@
     $('#imMap').innerHTML = '<div class="clay panel"><h3>3 · จับคู่คอลัมน์</h3>' +
       '<p class="small muted" style="margin:0 0 12px">ระบบเดาให้จากชื่อหัวคอลัมน์และครั้งก่อน ตรวจแล้วแก้ได้ · ระบบจำการจับคู่ไว้ใช้ครั้งต่อไป · ' +
         (isRes ? 'ไฟล์ผลหมายจับคู่กับหมายเดิมด้วย <b>เลขคดี + ผู้รับ + ผู้ส่ง</b> (ไฟล์ผลไม่มีที่อยู่)' : '✓ = ใช้เป็นคีย์ไม่ซ้ำ (ไฟล์ของศาลไม่มีเลขหมาย ใช้ เลขคดี + ผู้รับ + ผู้ส่ง + ชนิดหมาย + บ้านเลขที่ + หมู่)') +
-        ' · <b>ไม่อ่านคอลัมน์โจทก์/จำเลย</b> · ราคา 0.00 = หมายฟรี (เงินงบประมาณ)</p>' +
+        ' · <b>ตัดชื่อโจทก์/จำเลย/ผู้รับหมายก่อนส่ง ใช้รหัสจับคู่แทนชื่อ</b> · ราคา 0.00 = หมายฟรี (เงินงบประมาณ)</p>' +
       '<div class="tbl-wrap"><table class="map"><thead><tr><th>คีย์</th><th>ข้อมูลในระบบ</th><th>คอลัมน์ในไฟล์</th><th>ตัวอย่าง</th></tr></thead><tbody>' +
       fields.map((fd) => '<tr><td>' + (isRes ? (['case_no', 'recipient', 'officer'].indexOf(fd.f) >= 0 ? '✓' : '') : '<input type="checkbox" class="kchk" data-f="' + fd.f + '"' + (IM.keys.indexOf(fd.f) >= 0 ? ' checked' : '') + ' aria-label="ใช้ ' + esc(fd.th) + ' เป็นคีย์">') + '</td>' +
         '<td><b>' + esc(fd.th) + '</b></td><td><select class="sel msel" data-f="' + fd.f + '" aria-label="คอลัมน์สำหรับ ' + esc(fd.th) + '">' + opt(IM.mapping[fd.f]) + '</select></td>' +
@@ -877,9 +872,12 @@
 
   function importBody() {
     const map = {}; Object.keys(IM.mapping).forEach((k) => { if (IM.mapping[k]) map[k] = IM.mapping[k]; });
-    // ส่งเฉพาะคอลัมน์ที่จับคู่ (ลดขนาดคำขอ)
-    const cols = Object.values(map);
-    const rows = IM.rows.map((r) => { const o = {}; cols.forEach((c) => { o[c] = r[c]; }); return o; });
+    // Remove party names locally, before any request; dates use the shared parser.
+    const date1904 = !!(IM.wb && IM.wb.Workbook && IM.wb.Workbook.WBProps && IM.wb.Workbook.WBProps.date1904);
+    const rows = IM.rows.map((r, i) => {
+      try { return NoticeImportFormat.mapped(r, map, date1904); }
+      catch (e) { throw new Error('แถว '+(IM.rowNos[i] || i+2)+': '+e.message); }
+    });
     return { kind: IM.kind, mapping: map, key_fields: IM.keys, options: IM.opts, rows: rows, row_nos: IM.rowNos,
              file: { name: IM.file.name, size: IM.file.size, checksum: IM.file.checksum, sheet: IM.sheet } };
   }
@@ -1694,4 +1692,5 @@
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { /* ใช้งานต่อได้ตามปกติ */ }); });
   }
 })();
+
 

@@ -1,0 +1,14 @@
+const assert = require('assert');
+const {g} = require('./harness');
+const batch = (kind, from, to, at, status='CONFIRMED') => ({kind, period_from:from, period_to:to, imported_at:at, status});
+const period = g.dashboardPeriod_;
+assert.deepStrictEqual(JSON.parse(JSON.stringify(period([], '2570'))), {from:'2026-10-01',to:'',result_to:''});
+const rows = [batch('ISSUE','2026-10-01','2026-11-13','2026-11-14'),batch('ISSUE','2026-09-01','2026-09-30','2026-11-15'),batch('RESULT','2026-10-01','2026-11-12','2026-11-14'),batch('PAY','2026-10-01','2026-11-20','2026-11-14'),batch('ISSUE','2026-10-01','2026-11-30','2026-11-14','PREVIEW')];
+const p = period(rows,'2570');
+assert.strictEqual(p.to,'2026-11-13'); assert.strictEqual(p.result_to,'2026-11-12');
+assert.strictEqual(period([batch('ISSUE','2026-10-01','2026-11-13','2026-11-14'),batch('ISSUE','2026-10-01','2026-10-15','2026-11-15')],'2570').to,'2026-11-13');
+assert.strictEqual(period([batch('ISSUE','2026-09-01','2027-10-01','2026-11-14')],'2570').to,'2027-09-30');
+assert.strictEqual(period([batch('ISSUE','2027-10-01','2027-11-13','2027-11-14')],'2570').to,'');
+assert.strictEqual(period([batch('ISSUE','','','2026-11-13')],'2570').to,'');
+assert.strictEqual(period([batch('ISSUE','2026-10-01','2026-10-99','2026-11-13')],'2570').to,'');
+console.log('ผ่านช่วงวันที่: แยกวันที่ในไฟล์จากวันนำเข้า ชนิดไฟล์ ปีงบ และข้อมูลย้อนหลัง');
