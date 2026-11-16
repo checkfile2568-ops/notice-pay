@@ -212,6 +212,8 @@ function apiImportCommit_(ctx, d) {
     out.retry = retry;
     // ระยะ 3: คำนวณค่าหมายใหม่ทันทีหลังนำเข้า (ยอดเงินอัปเดตตลอดปีงบ)
     try { out.calc = calcRunCore_(ctx.user.code); } catch (e) { out.calc = { error: String(e && e.message || e) }; }
+    // 0.7.13 หมายใหม่อาจเชื่อมบัญชีจ่ายที่ค้าง "รอยืนยันการจับคู่" ได้ — ตรวจให้อัตโนมัติ (ไม่แตะยอดเงิน/รอบเดิม)
+    out.ledger_check = ledgerAutoReconcile_(ctx.user.code);
     audit_(ctx.user.code, 'IMPORT', out.batch_id, { kind: req.kind, file: req.file.name, counts: out.counts, retry_closed: retry && retry.closed });
     return out;
   } finally { lock.releaseLock(); }

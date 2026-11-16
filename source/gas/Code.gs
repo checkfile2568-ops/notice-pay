@@ -58,6 +58,7 @@ function routes_() {
     ledger_reconcile:  { auth: true, roles: IMPORTERS, fn: apiLedgerReconcile_ },
     tracking: { auth: true, roles: WORK, fn: apiTracking_ },
     reports: { auth: true, roles: ALL, fn: apiReports_ },
+    free_claim: { auth: true, roles: ALL, fn: apiFreeClaim_ },
     round_payment: { auth: true, roles: ['FINANCE', 'ADMIN'], fn: apiRoundPayment_ },
     round_payment_bulk: { auth: true, roles: ['FINANCE', 'ADMIN'], fn: apiRoundPaymentBulk_ },
     operation_status: { auth: true, roles: IMPORTERS, fn: apiOperationStatus_ },

@@ -208,6 +208,13 @@ function budgetRateOf_(areaId, opt) {
 }
 
 /* ---------- ส่วน GAS ---------- */
+/** 0.7.13 ตัวเลือกอัตราหมายฟรีจากชีต (ชุดเดียวกับ calcRunCore_) */
+function freeRateOpt_() {
+  const areaRate = {}; readTable_('RATE_AREAS').rows.forEach(function (a) { areaRate[a.area_id] = Number(a.rate) || 0; });
+  const budgetRate = {}; readTable_('RATE_BUDGET').rows.forEach(function (b) { if (b.amphoe_code) budgetRate[String(b.amphoe_code)] = Number(b.rate) || 0; });
+  const fm = readTable_('CALC_RULES').rows.filter(function (r) { return r.rule_code === 'FREE_MAX_RATE'; })[0];
+  return { areaRate: areaRate, budgetRate: budgetRate, freeMax: Number((fm || {}).mode) || 0 };
+}
 function unitLocked_(u) {
   return !!(u.payout_round_id || u.claim_ref || String(u.locked).toUpperCase() === 'TRUE' ||
             (u.status && u.status !== 'NOT_CLAIMED'));

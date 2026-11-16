@@ -120,6 +120,51 @@ function freeExpired_(n, today) {
   return String(today).slice(0, 10) > (fy - 543) + '-09-30';
 }
 
+/**
+ * 0.7.13 หมายเงินงบประมาณ: เบิกจ่ายจริง กับ ยังไม่เบิก (รายผู้ส่ง) — ใช้ทั้งหน้าสถิติ (ผู้ส่งเห็น) และหน้าทะเบียน
+ * ยังไม่เบิก = หมายที่ส่งแล้ว ยังไม่อยู่ในรอบยืนยัน คิด **เต็มอัตราต่อฉบับตามวันที่ส่ง** (ยอดสูงสุดที่อาจเบิก ไม่หักกึ่งหนึ่ง/รวมหน่วย)
+ * เบิกจ่ายจริง = ยอดเดิมในรอบยืนยัน · รอผลส่งนับฉบับ ไม่คิดเงิน · ก่อนเริ่มปีงบ/ปิดไม่เบิก/พ้นปีงบ = ไม่เบิกจ่าย
+ * notices ต้องผ่าน linkNotices_ แล้ว · opt: { fy, today, scope, rateOf(n) → บาท }
+ */
+function freeClaimSummary_(notices, opt) {
+  var fy = String(opt.fy || ''), per = {}, tot = null;
+  var blank = function (id) { return { officer_id: id, delivered_n: 0, claimed_n: 0, claimed_c: 0, unclaimed_n: 0, unclaimed_c: 0, wait_n: 0, closed_n: 0, no_moo_n: 0 }; };
+  tot = blank('');
+  (notices || []).forEach(function (n) {
+    if (n.pay_type !== 'BUDGET' || String(n.fy) !== fy) return;
+    if (opt.scope && n.officer_id !== opt.scope) return;
+    var o = per[n.officer_id] = per[n.officer_id] || blank(String(n.officer_id || ''));
+    var add = function (k, v) { o[k] += v; tot[k] += v; };
+    if (n.payout_round_id) {
+      add('claimed_n', 1); add('delivered_n', 1);
+      add('claimed_c', n.round_amount_c !== undefined ? Number(n.round_amount_c) || 0 : Math.round((Number(n.court_amount || n.calc_amount) || 0) * 100));
+      return;
+    }
+    if (String(n.calc_rule) === 'PRE_START' || n.noclaim_at || freeExpired_(n, opt.today)) { add('closed_n', 1); return; }
+    if (!n.delivered_date) { add('wait_n', 1); return; }
+    add('delivered_n', 1); add('unclaimed_n', 1);
+    add('unclaimed_c', Math.round((Number(opt.rateOf ? opt.rateOf(n) : 0) || 0) * 100));
+    if (!String(n.moo || '').trim() && String(n.addr_type || '') !== 'MOO') add('no_moo_n', 1);
+  });
+  var out = function (o) { return { officer_id: o.officer_id, delivered_n: o.delivered_n, claimed_n: o.claimed_n, claimed_amount: o.claimed_c / 100,
+    unclaimed_n: o.unclaimed_n, unclaimed_full: o.unclaimed_c / 100, wait_n: o.wait_n, closed_n: o.closed_n, no_moo_n: o.no_moo_n }; };
+  return { fy: fy, officers: Object.keys(per).sort().map(function (k) { return out(per[k]); }), totals: out(tot) };
+}
+
+/** 0.7.13 API: สรุปหมายเงินงบประมาณ เบิกจริง/ยังไม่เบิก (ทุกบทบาท · ผู้ส่งเห็นเฉพาะตนเอง · ไม่มีเลขคดี/ผู้รับ) */
+function apiFreeClaim_(ctx, d) {
+  const fy = /^25\d{2}$/.test(String(d.fy || '')) ? String(d.fy) : String(currentFy_());
+  return freeClaimData_(ctx, fy);
+}
+function freeClaimData_(ctx, fy) {
+  const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'), names = officerNames_();
+  const ro = freeRateOpt_();
+  const res = freeClaimSummary_(linkedNotices_(), { fy: fy, today: today, scope: scopeOfficer_(ctx.user), rateOf: function (n) { return budgetRateOf_(n.area_id, ro); } });
+  res.officers.forEach(function (o) { o.name = (names[o.officer_id] || {}).name || o.officer_id || 'ไม่ระบุผู้ส่ง'; });
+  res.scope_officer = scopeOfficer_(ctx.user);
+  return res;
+}
+
 /** วันที่ลงข้อมูล (รายงานผล) — ศาลใช้ตัดช่วงเบิก · ไม่มีใช้วันที่ส่ง */
 function repDate_(n) { return String(n.reported_date || n.delivered_date || '').slice(0, 10); }
 /** ส่วนต่างยอดจริงกับยอดที่ระบบคำนวณ (คำเตือน ▲/▼ ไม่ใช่ยอดที่จ่าย) */

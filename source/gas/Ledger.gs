@@ -127,9 +127,15 @@ function apiLedgerPending_(ctx, d) {
 /** Called through the existing journal. Change matching metadata only, never saved monetary fields. */
 function apiLedgerReconcile_(ctx, d) {
   if (d.expected_hash && d.expected_hash !== ledgerReconcileHash_()) throw appErr_('STALE', 'ข้อมูลเปลี่ยนแล้ว กดตรวจรายการรอยืนยันอีกครั้ง');
+  return ledgerReconcileCore_(ctx.user.code, 'LEDGER_RECONCILE');
+}
+
+/** แกนตรวจจับคู่บัญชีจ่ายใหม่ (เรียกภายใต้ล็อก/journal เท่านั้น) — แก้เฉพาะ match + notice_uids ของวันที่ยังไม่เข้ารอบ */
+function ledgerReconcileCore_(userCode, tag) {
   const raw = readTable_('LEDGER').rows, checked = ledgerChecked_(raw, readTable_('NOTICES').rows, officersAll_());
   const protectedHash = digestJson_(['NOTICES', 'BUDGET_UNITS', 'PAYOUT_ROUNDS', 'PAYOUT_ITEMS'].map(function (name) { return readTable_(name).rows; }));
   const money = function (rows) { return rows.map(function (r) { return [r.ledger_id, r.source, r.pay_date, r.officer_id, r.officer_raw, r.case_no, r.recipient, r.receipt_no, r.received_date, r.amount, r.round_id, r.batch_id, r.created_at]; }); };
+  const okBefore = raw.filter(function (r) { return r.source === 'PAY' && r.match === 'OK'; }).length;
   let changed = 0;
   const out = raw.map(function (r, i) {
     const m = checked[i];
@@ -141,8 +147,21 @@ function apiLedgerReconcile_(ctx, d) {
   if (changed) rewriteTable_('LEDGER', out);
   DB_CACHE_ = null; HEAD_CACHE_ = {};
   if (protectedHash !== digestJson_(['NOTICES', 'BUDGET_UNITS', 'PAYOUT_ROUNDS', 'PAYOUT_ITEMS'].map(function (name) { return readTable_(name).rows; }))) throw appErr_('DATA_REVIEW', 'ข้อมูลรอบเดิมเปลี่ยนระหว่างตรวจจับคู่');
-  audit_(ctx.user.code, 'LEDGER_RECONCILE', '', { changed: changed, pending: checked.filter(function (r) { return r.source === 'PAY' && r.match !== 'OK'; }).length });
-  return { changed: changed, pending: checked.filter(function (r) { return r.source === 'PAY' && r.match !== 'OK'; }).length, amounts_unchanged: true };
+  const pending = checked.filter(function (r) { return r.source === 'PAY' && r.match !== 'OK'; }).length;
+  const okAfter = out.filter(function (r) { return r.source === 'PAY' && r.match === 'OK'; }).length;
+  audit_(userCode, tag || 'LEDGER_RECONCILE', '', { changed: changed, pending: pending, newly_matched: okAfter - okBefore });
+  return { changed: changed, pending: pending, newly_matched: Math.max(0, okAfter - okBefore), unlinked: Math.max(0, okBefore - okAfter), amounts_unchanged: true };
+}
+
+/**
+ * 0.7.13 ตรวจรายการรอยืนยันการจับคู่ให้อัตโนมัติหลังนำเข้าไฟล์หมาย (ไฟล์ 50/42) — ตั้งปิดได้ที่ CONFIG LEDGER_AUTO_RECONCILE = FALSE
+ * ผิดพลาดไม่ทำให้การนำเข้าล้ม (คืนข้อความให้กดตรวจเองภายหลัง)
+ */
+function ledgerAutoReconcile_(userCode) {
+  if (String(cfg_('LEDGER_AUTO_RECONCILE', 'TRUE')).toUpperCase() === 'FALSE') return { auto: false };
+  if (!readTable_('LEDGER').rows.some(function (r) { return r.source === 'PAY'; })) return { auto: true, changed: 0, pending: 0, newly_matched: 0, unlinked: 0 };
+  try { return Object.assign({ auto: true }, ledgerReconcileCore_(userCode, 'LEDGER_RECONCILE_AUTO')); }
+  catch (e) { return { auto: true, error: String(e && e.message || e) }; }
 }
 
 function reconcileLedger0711() {
