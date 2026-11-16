@@ -8,8 +8,8 @@
  * ============================================================================
  */
 
-const API_VERSION = '0.7.11';
-const SCHEMA_VERSION = '0.7.0';   // เปลี่ยนเมื่อเพิ่มชีต/คอลัมน์ → ระบบรัน setupSystem ให้เองครั้งแรกที่มีการเรียก
+const API_VERSION = '0.7.12';
+const SCHEMA_VERSION = '0.7.12';   // เปลี่ยนเมื่อเพิ่มชีต/คอลัมน์ → ระบบรัน setupSystem ให้เองครั้งแรกที่มีการเรียก
 const APP_NAME    = 'ระบบบริหารจัดการค่าส่งคำคู่ความ ศาลจังหวัดลพบุรี';
 
 /* ---------- บทบาทในระบบนี้ (1 บัญชีมีได้หลายบทบาท คั่นด้วย ,) ---------- */
@@ -41,7 +41,7 @@ const SHEETS = {
                    'payout_round_id', 'budget_unit_id', 'locked', 'calc_amount', 'calc_rule', 'calc_note',
                    'first_batch', 'last_batch', 'created_at', 'updated_at',
                    'amount_ok_value', 'amount_ok_by', 'amount_ok_at', 'date_ok', 'date_ok_by', 'date_ok_at', 'claim_piece',
-                   'court_amount', 'court_at', 'paid_amount', 'noclaim_reason', 'noclaim_by', 'noclaim_at'],
+                   'court_amount', 'court_at', 'paid_amount', 'noclaim_reason', 'noclaim_by', 'noclaim_at', 'split_parent_uid', 'split_by', 'split_at', 'split_reason'],
   BUDGET_UNITS  : ['unit_id', 'fy', 'officer_id', 'delivered_date', 'area_id', 'place_key', 'addr_type',
                    'rule_code', 'notice_count', 'sub_units', 'rate_base', 'multiplier', 'amount',
                    'notice_uids', 'case_list', 'status', 'payout_round_id', 'claim_ref', 'locked',

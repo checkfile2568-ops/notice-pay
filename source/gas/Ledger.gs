@@ -29,6 +29,7 @@ function ledgerMatch_(rows, notices, officers, payType) {
   var offIdx = buildOfficerIndex_(officers);
   var idx = {};
   notices.forEach(function (n) {
+    if (n.split_parent_uid) return;
     var k = normCase_(n.case_no) + '|' + NoticeImportFormat.recipient(n.case_no, n.recipient);
     (idx[k] = idx[k] || []).push(n);
   });
@@ -93,6 +94,20 @@ function ledgerReconcileHash_() {
   return digestJson_(['LEDGER', 'NOTICES', 'PAYOUT_ROUNDS', 'PAYOUT_ITEMS'].map(function (name) { return readTable_(name).rows; }));
 }
 
+function ledgerPendingBreakdown_(rows, rounds) {
+  const map = {}; (rounds || []).forEach(function(r) { map[r.round_id] = r; });
+  const out = { no_round_n:0, no_round_amount:0, confirmed_round_n:0, confirmed_round_amount:0, recorded_paid_n:0, recorded_paid_amount:0 };
+  (rows || []).forEach(function(l) {
+    if (l.source !== 'PAY' || l.match === 'OK') return;
+    const r = map[l.round_id], linked = r && r.status === 'CONFIRMED', c = cents2_(l.amount);
+    out[linked ? 'confirmed_round_n' : 'no_round_n']++;
+    out[linked ? 'confirmed_round_amount' : 'no_round_amount'] += c;
+    if (linked && r.payment_status === 'PAID') { out.recorded_paid_n++; out.recorded_paid_amount += c; }
+  });
+  ['no_round_amount','confirmed_round_amount','recorded_paid_amount'].forEach(function(k) { out[k] /= 100; });
+  return out;
+}
+
 function apiLedgerPending_(ctx, d) {
   const fy = String(d.fy || ''), q = normText_(d.q || '').replace(/\s+/g, '').toUpperCase();
   if (fy && !/^25\d{2}$/.test(fy)) throw appErr_('BAD_REQUEST', 'ระบุปีงบประมาณ พ.ศ. 4 หลัก');
@@ -102,7 +117,7 @@ function apiLedgerPending_(ctx, d) {
     return r.source === 'PAY' && r.match !== 'OK' && (!fy || String(fiscalYear_(String(r.pay_date), 10)) === fy) &&
       (!d.officer_id || r.officer_id === String(d.officer_id)) && (!q || normText_(r.case_no).replace(/\s+/g, '').toUpperCase().indexOf(q) >= 0);
   }).sort(function (a, b) { return String(a.pay_date).localeCompare(String(b.pay_date)) || String(a.ledger_id).localeCompare(String(b.ledger_id)); });
-  return { status_th: 'รอยืนยัน', total_rows: rows.length, amount: rows.reduce(function (s, r) { return s + cents2_(r.amount); }, 0) / 100,
+  return { pending_breakdown: ledgerPendingBreakdown_(rows,readTable_('PAYOUT_ROUNDS').rows), status_th: 'รอยืนยัน', total_rows: rows.length, amount: rows.reduce(function (s, r) { return s + cents2_(r.amount); }, 0) / 100,
     page: page, page_size: 50, reconcile_hash: ledgerReconcileHash_(), officers: names,
     rows: rows.slice((page - 1) * 50, page * 50).map(function (r) { return { ledger_id: r.ledger_id, case_no: r.case_no, pay_date: r.pay_date,
       received_date: r.received_date, receipt_no: r.receipt_no, officer: (names[r.officer_id] || {}).name || r.officer_id || 'ยังระบุไม่ได้',

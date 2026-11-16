@@ -118,6 +118,7 @@ function existingNotices_() {
   const t = readTable_('NOTICES');
   const map = {};
   t.rows.forEach(function (r) {
+    if (r.split_parent_uid) return; // manual physical copies share their parent's financial identity
     map[String(r.notice_uid)] = { row_hash: String(r.row_hash), result_hash: String(r.result_hash),
       locked: !!(r.payout_round_id || r.budget_unit_id || String(r.locked).toUpperCase() === 'TRUE'), obj: r };
   });

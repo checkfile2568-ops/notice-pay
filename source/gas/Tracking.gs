@@ -1,5 +1,43 @@
 /** 0.7.0: read-only tracing from notice to financial round. Existing monetary rules are unchanged. */
 var TRACK_STATUS_TH_ = { WAIT: 'รอผลการส่ง', REVIEW: 'รอตรวจข้อมูล', READY: 'พร้อมเบิก / ยังไม่พบประวัติรอบ', HELD: 'เลื่อนไปรอบหน้า', ROUND: 'อยู่ในรอบยืนยันแล้ว · ยังไม่บันทึกหลักฐานจ่าย', PAID: 'อยู่ในรอบ · บันทึกจ่ายจริงแล้ว', NOCLAIM: 'ไม่เบิกจ่าย / ปิดไม่เบิก' };
+
+function splitSnapshot_(root, notices) {
+  return digestJson_([root, notices.filter(function(n) { return n.split_parent_uid === root.notice_uid; }).map(function(n) { return n.notice_uid; }).sort()]);
+}
+
+/** An explicit physical copy. Financial source, rules, imports and confirmed rounds remain intact. */
+function apiNoticeSplit_(ctx, d) {
+  if (!hasRole_(ctx.user,['ADMIN'])) throw appErr_('FORBIDDEN','แยกฉบับได้เฉพาะผู้ดูแลระบบ');
+  const reason = str_(d.reason,300);
+  if (!reason) throw appErr_('BAD_REQUEST','ระบุเหตุผลและหลักฐานยืนยันจำนวนฉบับ');
+  const nt = readTable_('NOTICES'), root = nt.rows.filter(function(n) { return n.notice_uid === String(d.notice_uid); })[0];
+  if (!root || root.split_parent_uid) throw appErr_('BAD_REQUEST','เลือกฉบับต้นทางที่ต้องการแยก');
+  if (!d.expected_snapshot || d.expected_snapshot !== splitSnapshot_(root,nt.rows)) throw appErr_('STALE','ข้อมูลหรือจำนวนฉบับเปลี่ยนแล้ว กรุณาค้นรายการใหม่');
+  const protectedTables = ['LEDGER','BUDGET_UNITS','PAYOUT_ROUNDS','PAYOUT_ITEMS'];
+  const before = digestJson_(protectedTables.map(function(k) { return readTable_(k).rows; }));
+  const ts = now_(), uid = 'NS-' + Utilities.getUuid().replace(/-/g,'').toUpperCase();
+  const copy = Object.assign({},root,{ notice_uid:uid, split_parent_uid:root.notice_uid, split_by:ctx.user.code, split_at:ts, split_reason:reason,
+    calc_amount:'0',calc_rule:'SPLIT_COPY',calc_note:'ฉบับแยกนับจำนวน ร่วมยอดกับฉบับต้นทาง ไม่คิดเงินเพิ่ม',
+    amount_src:'0',court_amount:'0',court_at:'',paid_amount:'0',row_hash:'',result_hash:'',created_at:ts,updated_at:ts,
+    payout_round_id:'',locked:'FALSE',amount_ok_value:'',amount_ok_by:'',amount_ok_at:'' });
+  delete copy._r;
+  appendRows_('NOTICES',[copy]);
+  if (before !== digestJson_(protectedTables.map(function(k) { return readTable_(k).rows; }))) throw appErr_('DATA_REVIEW','การแยกฉบับต้องไม่เปลี่ยนยอดหรือรอบเดิม');
+  audit_(ctx.user.code,'NOTICE_SPLIT',root.notice_uid,{copy_uid:uid,reason:reason,financial_unchanged:true});
+  return {notice_uid:uid,parent_uid:root.notice_uid,physical_count:nt.rows.filter(function(n) { return n.split_parent_uid === root.notice_uid; }).length+2,financial_unchanged:true};
+}
+
+function verify0712ReadOnly() {
+  const tables = ['NOTICES','LEDGER','BUDGET_UNITS','PAYOUT_ROUNDS','PAYOUT_ITEMS'];
+  const hash = function() { DB_CACHE_=null; HEAD_CACHE_={}; return digestJson_(tables.map(function(k) { return readTable_(k).rows; })); };
+  const before=hash(),ctx={user:{roles:['ADMIN']}},fy=currentFy_(),track=trackingData_(ctx,{fy:fy,pay_type:'BUDGET'}),finance=apiCloseout_(ctx,{fy:fy}),comp=apiCompensationSummary_(ctx,{fy:fy});
+  if (cents2_(track.totals.ready_amount)!==cents2_(finance.totals.ready_amount)) throw new Error('Register ready amount does not match finance');
+  if (track.rows.some(function(n) { return n.status==='WAIT' && n.ready_amount!==0; })) throw new Error('Waiting notice must not carry ready amount');
+  const splitCount=readTable_('NOTICES').rows.filter(function(n) { return n.split_parent_uid; }).length;
+  if(hash()!==before)throw new Error('Read-only verification changed data');
+  console.log(JSON.stringify({verification:'0.7.12',unchanged:true,split_copies:splitCount,ready_count:finance.totals.ready_n,ready_amount:finance.totals.ready_amount,register_ready_amount:track.totals.ready_amount,compensation60:comp.totals.c60,recorded60:comp.totals.paid60,unrecorded60:comp.totals.pending60}));
+}
+
 function trackingData_(ctx, d) {
   const scope = scopeOfficer_(ctx.user), rounds = {}, history = {}, held = payoutHeld_();
   const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
@@ -11,7 +49,12 @@ function trackingData_(ctx, d) {
     const r = rounds[it.round_id]; if (!r || r.status !== 'CONFIRMED') return;
     String(it.notice_uids || '').split(',').filter(String).forEach(function (u) { (history[u] = history[u] || []).push({ round_id: r.round_id, pay_date: r.pay_date, amount: Number(it.amount) || 0, payment_status: r.payment_status || '', payment_date: r.payment_date || '', payment_ref: r.payment_ref || '' }); });
   });
-  const allNotices = linkNotices_(readTable_('NOTICES').rows, Object.keys(rounds).map(function (k) { return rounds[k]; }), readTable_('PAYOUT_ITEMS').rows);
+  const rawNotices = readTable_('NOTICES').rows, roundRows = Object.keys(rounds).map(function(k) { return rounds[k]; }), payoutRows = readTable_('PAYOUT_ITEMS').rows;
+  const allNotices = linkNotices_(rawNotices, roundRows, payoutRows);
+  const budgetViews = {}, years = {};
+  allNotices.forEach(function(n) { if (n.pay_type === 'BUDGET' && /^25\d{2}$/.test(String(n.fy)) && fyStartDate_(String(n.fy),10) <= today) years[n.fy] = true; });
+  Object.keys(years).forEach(function(y) { closeoutData_(rawNotices, roundRows, payoutRows, officerNames_(), y, today, readTable_('BUDGET_UNITS').rows).rows.forEach(function(r) { budgetViews[r.notice_uid] = r; }); });
+  const splitGroups = {}; rawNotices.forEach(function(n) { const root = n.split_parent_uid || n.notice_uid; (splitGroups[root] = splitGroups[root] || []).push(n.notice_uid); });
   const unitMembers = {}, legacyClaims = {}; allNotices.forEach(function (n) { if (n.budget_unit_id) (unitMembers[n.budget_unit_id] = unitMembers[n.budget_unit_id] || []).push(n.notice_uid); });
   readTable_('BUDGET_UNITS').rows.forEach(function(u) { if (u.claim_ref || /^(CLAIMED|PAID)$/.test(String(u.status || ''))) legacyClaims[u.unit_id] = true; });
   const names = officerNames_(), q = normText_(d.q || '').replace(/\s+/g, '').toUpperCase();
@@ -39,16 +82,26 @@ function trackingData_(ctx, d) {
     if (n.claim_status || legacyClaims[n.budget_unit_id]) st = 'REVIEW';
     if (n.payout_round_id && (!r || r.status !== 'CONFIRMED')) st = 'REVIEW';
     if (r && r.status === 'CONFIRMED') st = r.payment_status === 'PAID' ? 'PAID' : 'ROUND';
+    const bv = budgetViews[n.notice_uid], sourceAmount = n.split_parent_uid ? 0 : n.court_at ? Number(n.court_amount) || 0 : Number(n.calc_amount) || 0;
+    const readyAmount = bv && bv.status === 'READY' ? bv.amount : 0;
+    const unitAdjustment = bv && bv.status === 'READY' && !n.split_parent_uid ? Math.round((readyAmount - sourceAmount) * 100) / 100 : 0;
+    const rootUid = n.split_parent_uid || n.notice_uid;
+    const rootRecord = rawNotices.filter(function(x) { return x.notice_uid === rootUid; })[0];
     const reference = n.calc_amount === '' || n.calc_amount === undefined ? null : Number(n.calc_amount);
     const actual = st === 'NOCLAIM' && n.pay_type === 'BUDGET' ? 0 : effAmount_(n), diff = st === 'NOCLAIM' || reference === null ? null : Math.round((actual - reference) * 100) / 100;
     return { notice_uid: n.notice_uid, fy: n.fy, pay_type: n.pay_type, case_no: n.case_no, notice_kind: n.notice_kind, recipient: n.recipient,
       officer_id: n.officer_id, officer: (names[n.officer_id] || {}).name || n.officer_raw, tambon: n.tambon, amphoe:n.amphoe, area_id:n.area_id, issued_date: String(n.issued_date || '').slice(0, 10), delivered_date: String(n.delivered_date || '').slice(0, 10), reported_date: String(n.reported_date || '').slice(0, 10),
+      source_amount: n.pay_type === 'BUDGET' ? sourceAmount : null, unit_adjustment: n.pay_type === 'BUDGET' ? unitAdjustment : null,
+      ready_amount: n.pay_type === 'BUDGET' ? readyAmount : null, ready_reason: bv ? bv.reason : r ? 'อยู่ในรอบเดิมแล้ว ไม่เสนอซ้ำ' : '',
+      split_parent_uid: n.split_parent_uid || '', split_count: (splitGroups[rootUid] || []).length,
+      split_snapshot: hasRole_(ctx.user,['ADMIN']) && rootRecord ? splitSnapshot_(rootRecord, rawNotices) : '', can_split: hasRole_(ctx.user,['ADMIN']) && !!rootRecord && !n.split_parent_uid,
       reference: reference, amount: actual, difference: diff, source: n.round_amount_c !== undefined && r && r.status === 'CONFIRMED' ? (n.pay_type === 'PAID' ? 'ยอดจ่ายตามบัญชี (ยอดเดิมในรอบ)' : 'ยอดเดิมในรอบเบิก') : n.pay_type === 'BUDGET' && n.court_at ? 'ราคาบัญชีศาล ประเภท 18' : 'ยอดระบบคำนวณ',
       status: st, status_th: TRACK_STATUS_TH_[st], round_id: r && r.status === 'CONFIRMED' ? r.round_id : '', round_date: r ? r.pay_date : '', payment_date: r ? r.payment_date || '' : '', payment_ref: r ? r.payment_ref || '' : '',
       unit_id: n.budget_unit_id || '', grouped_count: n.budget_unit_id ? (unitMembers[n.budget_unit_id] || []).length : 1, flags: n.flags || '', history: hs };
   }).filter(function (r) { return !status || r.status === status; });
-  const totals = { count: list.length, amount: 0, shortage: 0, excess: 0, shortage_n: 0, excess_n: 0, statuses: {}, status_amount: {} }, per = {}, perArea = {};
+  const totals = { source_amount: 0, unit_adjustment: 0, ready_amount: 0, count: list.length, amount: 0, shortage: 0, excess: 0, shortage_n: 0, excess_n: 0, statuses: {}, status_amount: {} }, per = {}, perArea = {};
   list.forEach(function (r) {
+    ['source_amount','unit_adjustment','ready_amount'].forEach(function(k) { totals[k] += cents2_(r[k]); });
     totals.amount += Math.round(r.amount * 100); totals.statuses[r.status] = (totals.statuses[r.status] || 0) + 1;
     totals.status_amount[r.status] = (totals.status_amount[r.status] || 0) + Math.round(r.amount * 100);
     if (r.difference < 0) { totals.shortage += Math.round(-r.difference * 100); totals.shortage_n++; }
@@ -58,10 +111,12 @@ function trackingData_(ctx, d) {
     p.count++; p.amount += Math.round(r.amount * 100); p.shortage += Math.round(Math.max(0, -(r.difference || 0)) * 100); p.excess += Math.round(Math.max(0, r.difference || 0) * 100);
   });
   ['amount', 'shortage', 'excess'].forEach(function (k) { totals[k] /= 100; Object.keys(per).forEach(function (id) { per[id][k] /= 100; }); });
+  ['source_amount','unit_adjustment','ready_amount'].forEach(function(k) { totals[k] /= 100; });
   Object.keys(totals.status_amount).forEach(function (k) { totals.status_amount[k] /= 100; });
   const ledger = ledgerChecked_(readTable_('LEDGER').rows, allNotices, officersAll_()).filter(function(l){return l.source==='PAY' && (!officer || l.officer_id===officer) && (!fy || fiscalYear_(String(l.pay_date),10)===fy);});
   const controls={count:ledger.length,amount:0,unmatched_n:0,unmatched_amount:0}; ledger.forEach(function(l){controls.amount+=cents2_(l.amount);if(l.match!=='OK'){controls.unmatched_n++;controls.unmatched_amount+=cents2_(l.amount);}}); controls.amount/=100;controls.unmatched_amount/=100;
   controls.by_date = ledgerByDate_(ledger, rounds);
+  controls.pending_breakdown = ledgerPendingBreakdown_(ledger,roundRows);
   // 0.7.10 หมายฟรีคงค้าง: ใช้ตัวคำนวณเดียวกับหน้า "การเงิน · ตรวจสอบก่อนเบิก" (ยอดทะเบียนรวมรายการที่เบิกแล้ว ใช้แทนยอดคงค้างไม่ได้)
   let budgetPending = null;
   if (type !== 'PAID' && /^25\d{2}$/.test(fy) && fyStartDate_(fy, 10) <= today) {
@@ -254,7 +309,7 @@ function closeoutData_(notices, rounds, payoutItems, names, fy, today, budgetUni
     const issued = String(n.issued_date || '').slice(0, 10), delivered = String(n.delivered_date || '').slice(0, 10);
     if (issued && issued > to) return;
     if (claimed[n.notice_uid] || confirmed[n.payout_round_id] || n.claim_status || legacyUnits[n.budget_unit_id]) { totals.excluded_claimed++; return; }
-    const it = candidates[n.notice_uid], rule = String(n.calc_rule || '');
+    const it = candidates[n.notice_uid] || (n.split_parent_uid && candidates[n.split_parent_uid] ? Object.assign({}, candidates[n.split_parent_uid], {amount_c:0}) : null), rule = String(n.calc_rule || '');
     let status = 'REVIEW', reason = 'รอตรวจข้อมูลก่อนเสนอเบิก', amountC = 0;
     if (expired || n.noclaim_at || (issued && issued < from) || rule === 'PRE_START') {
       status = 'NOCLAIM'; reason = expired ? 'ไม่เบิกจ่าย — ไม่ได้เบิกภายในปีงบประมาณ' : n.noclaim_at ? 'ไม่เบิกจ่าย — ปิดไม่เบิกไว้แล้ว' : 'ไม่เบิกจ่าย — จ่ายหมายก่อนเริ่มปีงบประมาณ';

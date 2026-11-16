@@ -54,6 +54,10 @@ function calcCompute_(notices, opt) {
   var inRound = opt.inRound || {}, fyStartM = opt.fyStartMonth || 10;
   notices.forEach(function (n) {
     var uid = String(n.notice_uid);
+    if (n.split_parent_uid) {
+      byNotice[uid] = { calc_amount: '0', calc_rule: 'SPLIT_COPY', calc_note: 'ฉบับแยกนับจำนวน ร่วมยอดกับฉบับต้นทาง ไม่คิดเงินเพิ่ม', budget_unit_id: n.budget_unit_id || '', claim_piece: n.claim_piece || '' };
+      return;
+    }
     if (lockedUid[uid]) return;                                   // อยู่ในหน่วยที่ล็อกแล้ว — ไม่แตะ
     if (n.payout_round_id || inRound[uid]) return;                // 0.7.10 อยู่ในรอบยืนยันแล้ว (รวมประวัติรอบ) — คงยอดเดิม ไม่คำนวณทับ
     // ไฟล์ 50 คร่อมวันเริ่มปีงบ และยังไม่มีวันที่จ่ายจากไฟล์ 42 → ยังไม่รู้ว่านับหรือไม่ ยังไม่คิดเงิน

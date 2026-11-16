@@ -83,7 +83,7 @@ function roundLinks_(rounds, items) {
 function linkNotices_(notices, rounds, items) {
   var links = roundLinks_(rounds, items), conf = {};
   (rounds || []).forEach(function (r) { if (r.status === 'CONFIRMED') conf[r.round_id] = true; });
-  return (notices || []).map(function (n) {
+  var linked = (notices || []).map(function (n) {
     var l = links[String(n.notice_uid)], ptr = String(n.payout_round_id || '');
     if (!l) return n;
     var o = Object.assign({}, n);
@@ -93,6 +93,15 @@ function linkNotices_(notices, rounds, items) {
       if (o.pay_type === 'PAID' && (o.paid_amount === '' || o.paid_amount === undefined || o.paid_amount === null)) o.paid_amount = String(l.amount_c / 100);
     }
     return o;
+  });
+  var parents = {}; linked.forEach(function(n) { if (!n.split_parent_uid) parents[n.notice_uid] = n; });
+  return linked.map(function(n) {
+    if (!n.split_parent_uid) return n;
+    var p = parents[n.split_parent_uid];
+    if (!p) return Object.assign({}, n, { calc_amount: '0', court_amount: '0', paid_amount: '0', round_amount_c: 0 });
+    var inherited = Object.assign({}, n);
+    ['fy','pay_type','case_no','case_ref','red_no','notice_no','notice_kind','recipient','house_no','moo','tambon','amphoe','area_id','address_text','addr_type','place_key','officer_id','officer_raw','issued_date','delivered_date','reported_date','result','flags','noclaim_at','noclaim_reason'].forEach(function(k) { inherited[k] = p[k]; });
+    return Object.assign(inherited, { payout_round_id: conf[p.payout_round_id] ? p.payout_round_id : '', round_amount_c: 0, paid_amount: '0', court_amount: '0', calc_amount: '0', budget_unit_id: p.budget_unit_id || '', claim_piece: p.claim_piece || '' });
   });
 }
 /** ปีงบ (พ.ศ.) ของวันที่ ISO แบบไม่พึ่งไฟล์อื่น */
@@ -130,7 +139,7 @@ function payoutFreeItems_(notices, opt) {
   var cutoff = String(opt.cutoff || '9999-12-31'), held = opt.held || {}, today = String(opt.today || '');
   var items = [], blocked = { wait: 0, late: 0, review: 0, noclaim: 0, expired: 0 };
   notices.forEach(function (r) {
-    if (r.pay_type !== 'BUDGET' || r.payout_round_id) return;
+    if (r.split_parent_uid || r.pay_type !== 'BUDGET' || r.payout_round_id) return;
     if (r.noclaim_at) { blocked.noclaim++; return; }
     if (freeExpired_(r, today)) { blocked.expired++; return; }          // พ้นปีงบของหมายแล้ว — ไม่เบิกจ่าย
     var rule = String(r.calc_rule || '');
@@ -162,7 +171,7 @@ function payoutFreeItems_(notices, opt) {
 function rule7Cap_(items, notices) {
   var units = {};
   notices.forEach(function (n) {
-    if (n.pay_type !== 'BUDGET' || String(n.calc_rule || '') !== 'ONE_SAME' || !n.budget_unit_id || n.noclaim_at) return;
+    if (n.split_parent_uid || n.pay_type !== 'BUDGET' || String(n.calc_rule || '') !== 'ONE_SAME' || !n.budget_unit_id || n.noclaim_at) return;
     var u = units[n.budget_unit_id] = units[n.budget_unit_id] || { cap: 0, used: 0, court: 0 };
     u.cap += cents2_(n.calc_amount);
     if (n.court_at && cents2_(n.court_amount) > 0) u.court++;
