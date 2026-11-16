@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.12';
+  const UI_VERSION = '0.7.13';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -551,8 +551,9 @@
       offRows(d.officers, null) + '</tbody></table></div>' +
       '<div class="stlegend">' + ST.map((x) => '<span><i style="background:' + x.c + '"></i>' + esc(x.th) + '</span>').join('') +
       '<span class="muted">· กราฟเส้น = จำนวนหมายที่ส่งแล้วรายสัปดาห์</span></div></div>' +
-      '</div></div>';
+      '</div></div><div id="fcBox" aria-live="polite"></div>';
     $('#fy').addEventListener('change', (e) => { S.fy = e.target.value; go('home'); });
+    loadFreeClaim($('#fcBox'), d.fy);
     m.querySelectorAll('[data-go]').forEach((b2) => b2.addEventListener('click', () => go(b2.dataset.go)));
     countUp(m);
     // กรองตารางตามสีที่เลือก
@@ -582,6 +583,39 @@
     });
     if (reduceMotion() || !('IntersectionObserver' in window)) drawBars(m.querySelector('.hero'));
   };
+  /** 0.7.13 ผลตรวจรายการรอยืนยันการจับคู่อัตโนมัติหลังนำเข้า */
+  function ledgerCheckHtml(c) {
+    if (!c) return '';
+    if (c.auto === false) return '<p class="note" style="margin:0 0 12px">ปิดการตรวจจับคู่อัตโนมัติไว้ (CONFIG LEDGER_AUTO_RECONCILE) — กดตรวจเองที่หน้า “การเงิน · ตรวจสอบก่อนเบิก”</p>';
+    if (c.error) return '<p class="note r" style="margin:0 0 12px">ตรวจรายการรอยืนยันการจับคู่อัตโนมัติไม่สำเร็จ: ' + esc(c.error) + ' — กดตรวจเองที่หน้า “การเงิน · ตรวจสอบก่อนเบิก”</p>';
+    return '<p class="note g" style="margin:0 0 12px">ตรวจรายการรอยืนยันการจับคู่บัญชีจ่ายให้อัตโนมัติแล้ว · เชื่อมเพิ่ม ' + num(c.newly_matched || 0) + ' รายการ' +
+      (c.unlinked ? ' · ถอดการเชื่อมที่หลักฐานขัดกัน ' + num(c.unlinked) + ' รายการ' : '') + ' · เหลือรอยืนยัน ' + num(c.pending || 0) + ' รายการ · ยอดเงินและรอบเดิมไม่เปลี่ยน</p>';
+  }
+  /** 0.7.13 หมายเงินงบประมาณ: เบิกจ่ายจริง / ยังไม่เบิก (เต็มอัตรา) รายผู้ส่ง — ทุกบทบาทเห็น ผู้ส่งเห็นเฉพาะตนเอง */
+  async function loadFreeClaim(box, fy) {
+    if (!box) return;
+    box.innerHTML = '<div class="clay panel"><p class="muted small">กำลังโหลดสรุปหมายเงินงบประมาณ…</p></div>';
+    try { box.innerHTML = freeClaimHtml(await api('free_claim', { fy: fy })); }
+    catch (e) { box.innerHTML = '<div class="clay panel"><p class="flag-r small">โหลดสรุปหมายเงินงบประมาณไม่ได้: ' + esc(e.message) + '</p></div>'; }
+  }
+  function freeClaimHtml(d) {
+    const row = (o, total) => '<tr' + (total ? ' class="tot"' : '') + '><td>' + (total ? '<b>รวม</b>' : '<span class="onm">' + esc(o.name) + '</span>') +
+      '<br><span class="tiny muted">ส่งแล้ว ' + num(o.delivered_n) + ' · รอผล ' + num(o.wait_n) + ' ฉบับ</span></td>' +
+      '<td class="n" data-v="' + o.claimed_amount + '"><b style="color:#2f7a4f">' + baht2(o.claimed_amount) + '</b><br><span class="tiny muted">' + num(o.claimed_n) + ' ฉบับ</span></td>' +
+      '<td class="n" data-v="' + o.unclaimed_full + '"><b class="flag-a">' + baht2(o.unclaimed_full) + '</b><br><span class="tiny muted">' + num(o.unclaimed_n) + ' ฉบับ</span></td></tr>';
+    const t = d.totals || {}, list = d.officers || [];
+    return '<section class="clay panel fc-panel" aria-labelledby="fcH"><h3 id="fcH">หมายเงินงบประมาณ · เบิกจ่ายจริง และยังไม่เบิก</h3>' +
+      '<p class="small muted" style="margin:0 0 8px">ปีงบประมาณ ' + esc(d.fy) + (d.scope_officer ? ' · เฉพาะหมายของฉัน' : ' · แยกรายผู้ส่ง') + '</p>' +
+      '<div class="tbl-wrap"><table class="fc-tbl"><thead><tr><th>ผู้ส่ง</th>' +
+      '<th class="n">เบิกจ่ายจริง<br><span class="tiny muted">บาท</span></th><th class="n">ยังไม่เบิก*<br><span class="tiny muted">บาท · เต็มอัตรา</span></th></tr></thead><tbody>' +
+      (list.length ? list.map((o) => row(o)).join('') : '<tr><td colspan="3" class="muted small">ยังไม่มีหมายเงินงบประมาณในปีงบนี้</td></tr>') +
+      '</tbody>' + (list.length > 1 ? '<tfoot>' + row(t, true) + '</tfoot>' : '') + '</table></div>' +
+      '<div class="note fc-note small" role="note"><b>หมายเหตุ</b><ul style="margin:6px 0 0;padding-left:18px">' +
+      '<li><b>* ยังไม่เบิก</b> คิดเต็มอัตราต่อฉบับตามวันที่ส่ง (อ.เมืองลพบุรี 300 บาท อำเภออื่นตามอัตราตำบล) เป็นยอดสูงสุดที่อาจเบิกได้ เมื่อเบิกจริงอาจได้กึ่งหนึ่ง (เช่น 150 บาท) หรือนับรวมเป็นหมายเดียว ตามระเบียบ ก.บ.ศ. ว่าด้วยค่าตอบแทนในการส่งคำคู่ความหรือเอกสารโดยเจ้าพนักงานศาล พ.ศ. 2562 ข้อ 7 (ส่งหลายคดีในหมู่บ้านเดียวกันคราวเดียวกัน) หรือเบิกไม่ได้หากพ้นปีงบประมาณ (30 ก.ย.)</li>' +
+      '<li><b>เบิกจ่ายจริง</b> คือยอดในรอบเบิกที่ยืนยันแล้ว · หมายรอผลส่งยังไม่คิดเงิน · ไม่นับหมายก่อนเริ่มปีงบและหมายที่ปิดไม่เบิก' + (t.closed_n ? ' (' + num(t.closed_n) + ' ฉบับ)' : '') + '</li>' +
+      '<li>ต.ท่าหิน ต.ท่าศาลา และ ต.ทะเลชุบศร มีหมู่บ้าน — หมายที่ที่อยู่ไม่ระบุหมู่' + (t.no_moo_n ? ' <b>' + num(t.no_moo_n) + ' ฉบับ</b>' : '') + ' ควรตรวจหมู่ก่อนเสนอเบิก</li>' +
+      '<li>ยอดเสนอเบิกตามข้อ 7 (หักกึ่งหนึ่ง/รวมหน่วยแล้ว) ดูที่หน้า “การเงิน · ตรวจสอบก่อนเบิก”</li></ul></div></section>';
+  }
   /** แถวตารางผู้ส่งหมาย (กรองตามสถานะยอดเงินได้) */
   function offRows(list, sel) {
     let L = list.slice();
@@ -945,6 +979,7 @@
       api('import_templates').then((x) => { IM.meta=x; paintKinds(); }).catch(() => {});
       $('#imPrev').innerHTML = '<div class="clay panel"><h3>นำเข้าเรียบร้อย</h3><p class="note g" style="margin:0 0 12px">เลขชุด ' + esc(r.batch_id) +
         ' · เพิ่มใหม่ ' + num(r.inserted) + ' · ปรับปรุง ' + num(r.updated) + ' · รออนุมัติแก้ ' + num(r.held_changes) + ' · แถวรอตรวจสอบ ' + num(r.review_rows) + (r.review_auto_resolved ? ' · ระบบจับคู่แถวที่ค้างให้แล้ว ' + num(r.review_auto_resolved) + ' แถว' : '') + '</p>' +
+        ledgerCheckHtml(r.ledger_check) +
         (r.calc ? (r.calc.error ? '<p class="note r" style="margin:0 0 12px">คำนวณค่าหมายไม่สำเร็จ: ' + esc(r.calc.error) + '</p>'
           : '<p class="note g" style="margin:0 0 12px">คำนวณค่าหมายใหม่แล้ว · หน่วยเบิกหมายฟรี ' + num(r.calc.units) + ' หน่วย' + (r.calc.warnings ? ' · ข้อควรตรวจ ' + num(r.calc.warnings) + ' รายการ' : '') + '</p>') : '') +
         '<div class="row"><button type="button" class="btn btn-g" id="again">นำเข้าไฟล์ถัดไป</button><button type="button" class="btn" id="toCalc">ดูยอดค่าหมาย</button><button type="button" class="btn" id="toHome">ไปหน้าแรก</button></div></div>';
@@ -1484,11 +1519,71 @@
     $('#pBack').addEventListener('click', () => { S.payoutSub = 'list'; go('payout'); });
     if (d.can_payment) { const pay = document.createElement('button'); pay.className='btn btn-sm'; pay.type='button'; pay.textContent='บันทึกหลักฐานจ่ายจริง'; $('.top .row',m).appendChild(pay); pay.onclick=()=>paymentForm(m,r); }
     $('#pPrint').addEventListener('click', () => printPayout(d));
+    { const img = document.createElement('button'); img.className = 'btn btn-sm'; img.type = 'button'; img.id = 'pImage'; img.textContent = 'บันทึกเป็นรูป';
+      $('#pPrint').after(img); img.onclick = async () => { img.disabled = true; try { await saveRoundImage(d); } catch (e) { toast(e.message || 'สร้างรูปไม่สำเร็จ'); } img.disabled = false; }; }
     if ($('#pClaim')) $('#pClaim').addEventListener('click', () => printClaim(inc.map((it) => ({ officer_id: it.officer_id, case_list: it.case_list, notice_kind:it.notice_kind, tambon:it.tambon, report_date: it.reported_date || '', amount_c: Math.round(it.amount * 100) })), names, { pay_date: r.pay_date, cutoff: r.cutoff_date, source: r.source_label, round_id: r.round_id }, false));
     if ($('#pCancel')) $('#pCancel').addEventListener('click', async () => {
       const reason = await askBox('เหตุผลที่ยกเลิกรอบนี้ (หมายในรอบจะกลับเป็นพร้อมเบิก)', { input: 'ระบุเหตุผล' }); if (!reason) return;
       try { await api('payout_cancel', { round_id: rid, reason: reason }); toast('ยกเลิกรอบแล้ว'); S.payoutSub = 'round:' + rid; go('payout'); } catch (x) { toast(x.message); }
     });
+  }
+
+  /**
+   * 0.7.13 ใบแบ่งยอด 60:40 เป็นรูป PNG (แชร์/บันทึกจากมือถือได้) — ครบรายผู้ส่ง ยอด 60% นำกลับ 40% กองกลาง เศษยกมา ได้คนละ เศษยกไป
+   * วาดด้วย canvas จากข้อมูลรอบ (ไม่ถ่ายหน้าจอ) จึงได้ทุกแถวแม้หน้าจอเลื่อน
+   */
+  async function saveRoundImage(d) {
+    loadSarabun();
+    try { await Promise.race([Promise.all([document.fonts.load('400 28px Sarabun'), document.fonts.load('700 28px Sarabun')]), new Promise((res) => setTimeout(res, 2000))]); } catch (e) { /* ใช้ฟอนต์สำรอง */ }
+    const r = d.round, names = d.officers, free = r.round_type === 'FREE';
+    const amtOf = (l) => free ? l.budget : (r.round_type === 'PAID' ? l.paid : l.total);
+    const cntOf = (l) => free ? l.n_budget : (r.round_type === 'PAID' ? l.n_paid : (l.n_paid || 0) + (l.n_budget || 0));
+    const W = 1080, P = 48, RH = 56, F = '"Sarabun","TH Sarabun New","Noto Sans Thai",sans-serif';
+    const pool = [['กองกลาง 40%', baht2(r.pool40)], ['เศษยกมาจากรอบก่อน', baht2(r.carry_in)], ['รวมกองกลาง', baht2(r.pool_total)],
+      ['คนนั่งงาน ' + num(r.seats) + ' คน ได้คนละ', baht2(r.per_seat) + ' ฿', 1], ['จ่ายรวม (' + num(r.seats) + ' × ' + baht2(r.per_seat) + ')', baht2(r.paid_out)]]
+      .concat(r.extra_one ? [['เศษให้ 1 คน', baht2(r.extra_one)]] : []).concat([['เศษยกไปรอบหน้า', baht2(r.carry_out)]]);
+    const H = 250 + RH * (d.lines.length + 2) + 40 + pool.length * 50 + 40 + 150;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    const txt = (t, x, y, o) => { o = o || {}; g.font = (o.b ? '700 ' : '400 ') + (o.s || 26) + 'px ' + F; g.fillStyle = o.c || '#1d2b24'; g.textAlign = o.a || 'left'; g.fillText(String(t), x, y); };
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e7f2ea'; g.fillRect(0, 0, W, 190);
+    const seal = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = C.SEAL_URL || 'court-seal.webp'; setTimeout(() => res(null), 1500); });
+    if (seal) { try { g.drawImage(seal, P, 36, 110, 110); } catch (e) { /* ข้ามตรา */ } }
+    const tx = seal ? P + 130 : P;
+    txt('ศาลจังหวัดลพบุรี', tx, 70, { s: 28, b: 1, c: '#2f6b4a' });
+    txt('ใบแบ่งยอดค่าหมาย 60 : 40 · ' + (RTYPE_TH[r.round_type] || ''), tx, 112, { s: 34, b: 1 });
+    txt('วันที่จ่าย ' + dLong(r.pay_date) + ' · รอบ ' + r.round_id + (free && r.cutoff_date ? ' · ลงข้อมูลถึง ' + thDate(r.cutoff_date) : ''), tx, 152, { s: 22, c: '#4b5d53' });
+    if (r.status === 'CANCELLED') txt('ยกเลิกแล้ว', W - P, 70, { s: 30, b: 1, c: '#b3261e', a: 'right' });
+    const cols = [{ t: 'ที่', x: P + 10, a: 'left' }, { t: 'ผู้ส่งหมาย', x: P + 70, a: 'left' }, { t: 'เรื่อง', x: 540, a: 'right' },
+      { t: 'ยอดเงิน', x: 720, a: 'right' }, { t: 'ผู้ส่ง 60%', x: 868, a: 'right' }, { t: 'นำกลับ 40%', x: W - P - 10, a: 'right' }];
+    let y = 230;
+    g.fillStyle = '#f1f5f2'; g.fillRect(P, y - 36, W - 2 * P, RH);
+    cols.forEach((c) => txt(c.t, c.x, y, { s: 22, b: 1, a: c.a, c: '#4b5d53' }));
+    d.lines.forEach((l, i) => {
+      y += RH; if (i % 2) { g.fillStyle = '#fafcfb'; g.fillRect(P, y - 36, W - 2 * P, RH); }
+      txt(i + 1, cols[0].x, y, { s: 24 }); txt(oFull(names, l.officer_id), cols[1].x, y, { s: 24 });
+      txt(num(cntOf(l) || 0), cols[2].x, y, { s: 24, a: 'right' }); txt(baht2(amtOf(l)), cols[3].x, y, { s: 24, a: 'right' });
+      txt(baht2(l.c60), cols[4].x, y, { s: 24, a: 'right' }); txt(baht2(l.c40), cols[5].x, y, { s: 24, b: 1, a: 'right' });
+    });
+    y += RH; g.fillStyle = '#d6e6dc'; g.fillRect(P, y - 40, W - 2 * P, 2);
+    txt('รวม', cols[1].x, y, { s: 26, b: 1 }); txt(num(d.lines.reduce((a, l) => a + (cntOf(l) || 0), 0)), cols[2].x, y, { s: 26, b: 1, a: 'right' });
+    txt(baht2(r.total), cols[3].x, y, { s: 26, b: 1, a: 'right' }); txt(baht2(r.courier60), cols[4].x, y, { s: 26, b: 1, a: 'right' }); txt(baht2(r.pool40), cols[5].x, y, { s: 26, b: 1, a: 'right' });
+    y += 50; g.fillStyle = '#eef4f0'; g.fillRect(P, y, W - 2 * P, pool.length * 50 + 24);
+    y += 12;
+    pool.forEach((p) => { y += 50; txt(p[0], P + 24, y - 14, { s: p[2] ? 28 : 24, b: p[2] }); txt(p[1], W - P - 24, y - 14, { s: p[2] ? 34 : 24, b: 1, a: 'right', c: p[2] ? '#1f5a3c' : '#24507a' }); });
+    y += 60;
+    txt(r.payment_status === 'PAID' ? 'จ่ายเงินจริง ' + thDate(r.payment_date) + ' · หลักฐาน ' + (r.payment_ref || '') : 'สถานะ: ยืนยันรอบแล้ว · ยังไม่บันทึกหลักฐานจ่ายในระบบ', P, y, { s: 22, c: r.payment_status === 'PAID' ? '#2f7a4f' : '#8a5a00' });
+    txt('วิธีปัดเศษ: ' + (r.policy_th || '—') + ' · ที่มา: ' + (r.source_label || '—'), P, y + 36, { s: 20, c: '#4b5d53' });
+    txt('บัญชีคำนวณภายใน (ข้อตกลง 60:40) แยกจากเอกสารเบิกจ่ายทางราชการ · สร้างรูปเมื่อ ' + new Date().toLocaleString('th-TH'), P, y + 70, { s: 20, c: '#6b7b72' });
+    const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
+    if (!blob) throw new Error('สร้างรูปไม่สำเร็จ');
+    const name = 'ใบแบ่งยอด-' + String(r.pay_date).slice(0, 10) + '-' + (free ? 'หมายฟรี' : 'หมายเงิน') + '.png';
+    const file = typeof File === 'function' ? new File([blob], name, { type: 'image/png' }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    toast('บันทึกรูปใบแบ่งยอดแล้ว');
   }
 
   function loadSarabun() {
@@ -1624,7 +1719,7 @@
         if(ticket!==seq)return;
         if(!seeded){seeded=true;Object.keys(d.officers).filter(id=>!d.scope_officer||id===d.scope_officer).forEach(id=>$('#trOfficer').insertAdjacentHTML('beforeend','<option value="'+esc(id)+'">'+esc(d.officers[id].name)+'</option>'));(d.areas||[]).forEach(a=>$('#trArea').insertAdjacentHTML('beforeend','<option value="'+esc(a.area_id)+'">ต.'+esc(a.tambon)+' · อ.'+esc(a.amphoe)+'</option>'));Object.keys(d.statuses).forEach(k=>$('#trStatus').insertAdjacentHTML('beforeend','<option value="'+k+'">'+esc(d.statuses[k])+'</option>'));}
         box.innerHTML=latestHtml(d.last_imports)+budgetPendingHtml(d)+(d.totals.ready_amount!==undefined?'<p class="note">ยอดพร้อมเสนอตามตัวกรอง '+baht2(d.totals.ready_amount)+' บาท · ราคาต้นทางเป็นข้อมูลอ้างอิง การรวมหน่วยและรายการรอผลส่งอาจทำให้ยอดพร้อมเสนอต่างกัน</p>':'')+'<div class="chips"><span class="chip">พบ '+num(d.total_rows)+' รายการ</span><span class="chip">'+(d.budget_pending?'ยอดในทะเบียน (รวมที่เบิกแล้ว) ':'ยอดที่แสดง ')+baht2(d.totals.amount)+' ฿</span>'+statusAmountChips(d)+'<span class="chip flag-r">เทียบอ้างอิง: ขาด '+baht2(d.totals.shortage)+' ฿ · '+num(d.totals.shortage_n)+' รายการ</span><span class="chip flag-up">เทียบอ้างอิง: เกิน '+baht2(d.totals.excess)+' ฿ · '+num(d.totals.excess_n)+' รายการ</span></div><p class="tiny muted">ส่วนต่างเป็นข้อมูลเปรียบเทียบรายหมายตามพื้นที่ ต้องตรวจยอดใบเบิกทั้งใบประกอบด้วย</p>'+
-        '<div class="clay panel"><div class="tbl-wrap"><table><thead><tr><th>เลขคดี / หมาย</th><th class="onm">ผู้ส่ง</th><th>วันที่ส่ง / รายงาน</th><th class="n">ยอดอ้างอิงระบบ</th><th class="n">ยอดบัญชี / ยอดที่ใช้</th><th>เทียบอ้างอิง</th><th class="n">ราคาต้นทาง</th><th class="n">ปรับรวมหน่วย</th><th class="n">ยอดพร้อมเสนอ</th><th>สถานะ</th><th>รอบ / หลักฐาน</th><th></th></tr></thead><tbody>'+
+        '<div class="clay panel"><div class="tbl-wrap"><table class="wide-tbl track-tbl"><thead><tr><th>เลขคดี / หมาย</th><th class="onm">ผู้ส่ง</th><th>วันที่ส่ง / รายงาน</th><th class="n">ยอดอ้างอิงระบบ</th><th class="n">ยอดบัญชี / ยอดที่ใช้</th><th>เทียบอ้างอิง</th><th class="n">ราคาต้นทาง</th><th class="n">ปรับรวมหน่วย</th><th class="n">ยอดพร้อมเสนอ</th><th>สถานะ</th><th>รอบ / หลักฐาน</th><th></th></tr></thead><tbody>'+
         (d.rows.length?d.rows.map((r,i)=>'<tr><td><b>'+esc(r.case_no)+'</b><br><span class="tiny">'+esc(r.notice_kind)+'</span><br><span class="tiny muted">ต.'+esc(r.tambon||'ไม่ระบุ')+' · อ.'+esc(r.amphoe||'ไม่ระบุ')+'</span></td><td class="onm">'+esc(r.officer)+'</td><td class="small">'+esc(thDate(r.delivered_date)||'รอผล')+'<br>'+esc(thDate(r.reported_date)||'—')+'</td><td class="n">'+(r.reference===null?'—':baht2(r.reference))+'</td><td class="n"><b>'+baht2(r.amount)+'</b><br><span class="tiny">'+esc(r.source)+'</span></td><td>'+differenceHtml(r.difference)+'</td><td class="n">'+(r.pay_type==='BUDGET'?baht2(r.source_amount):'—')+'</td><td class="n">'+(r.pay_type==='BUDGET'?baht2(r.unit_adjustment):'—')+'</td><td class="n"><b>'+ (r.pay_type==='BUDGET'?baht2(r.ready_amount):'—')+'</b>'+(r.pay_type==='BUDGET'?'<br><span class="tiny muted">'+esc(r.ready_reason)+'</span>':'')+'</td><td>'+statusHtml(r)+'</td><td class="small">'+esc(r.round_id||'ยังไม่พบประวัติรอบ')+'<br>'+esc(r.payment_date?thDate(r.payment_date)+' · '+r.payment_ref: r.round_id?'ยังไม่บันทึกหลักฐานจ่ายในระบบ':'')+'</td><td><button class="btn btn-sm" data-tr="'+i+'">รายละเอียด</button></td></tr>').join(''):'<tr><td colspan="12">ไม่พบรายการตามตัวกรอง</td></tr>')+'</tbody></table></div>'+
         '<div class="row" style="margin-top:12px"><button class="btn btn-sm" id="trPrev" '+(page<=1?'disabled':'')+'>← ก่อนหน้า</button><span>หน้า '+num(page)+'</span><button class="btn btn-sm" id="trNext" '+(page*100>=d.total_rows?'disabled':'')+'>ถัดไป →</button>'+(unit?'<button class="btn btn-sm" id="trClearUnit">กลับทุกรายการ</button>':'')+'</div><p class="tiny muted">ยังไม่พบประวัติในระบบไม่ได้แปลว่าไม่เคยเบิก · ยอดศูนย์อาจรวมในหมายอื่น · ประวัติรอบเก่าคงยอดเดิม</p></div>';
         if(S.page==='overview'){
@@ -1651,7 +1746,7 @@
     $('#trackForm').onsubmit=e=>{e.preventDefault();unit='';page=1;run();};await run();
   };
   RENDER.paid=m=>RENDER.tracking(m,{pay_type:'PAID',title:'หมายเงินนอกงบประมาณ',description:'ตรวจรายหมาย ยอดตามบัญชีจ่าย ผู้ส่งและพื้นที่ พร้อมดูรอบยืนยันและหลักฐานที่เกี่ยวข้อง'});
-  RENDER.budget=m=>RENDER.tracking(m,{pay_type:'BUDGET',title:'หมายเงินงบประมาณ',description:'ทะเบียนหมายฟรี แยกส่งแล้ว รอผล รอตรวจ และสถานะการเบิก เลือกพื้นที่หรือผู้ส่งเพื่อดูรายการของตน'});
+  RENDER.budget=async m=>{const box=document.createElement('div');await RENDER.tracking(m,{pay_type:'BUDGET',title:'หมายเงินงบประมาณ',description:'ทะเบียนหมายฟรี แยกส่งแล้ว รอผล รอตรวจ และสถานะการเบิก เลือกพื้นที่หรือผู้ส่งเพื่อดูรายการของตน'});const desc=m.querySelector('.page-description');if(desc)desc.after(box);else m.prepend(box);loadFreeClaim(box,S.fy);};
   RENDER.overview=m=>viewerOnly()?RENDER.calc(m):RENDER.tracking(m,{title:'ภาพรวม 2 ประเภท',description:'รวมเงินนอกงบประมาณและเงินงบประมาณ กรองรายคน รายพื้นที่ และสถานะ แล้วตรวจรายละเอียดรายหมายได้ด้านล่าง'});
   RENDER.search = RENDER.tracking;
   RENDER.reports = async(m)=>{
@@ -1666,7 +1761,7 @@
   };
   function pendingBreakdownHtml(b){if(!b)return '';return '<div class="note"><b>รอยืนยันการจับคู่ ไม่ใช่ยอดค้างจ่าย</b><br>มีบัญชีจ่ายแล้ว ยังไม่มีรอบแบ่งในระบบ '+num(b.no_round_n)+' รายการ · '+baht2(b.no_round_amount)+' บาท<br>มีบัญชีจ่ายและรอบแบ่งแล้ว ยังไม่ผูกทะเบียน '+num(b.confirmed_round_n)+' รายการ · '+baht2(b.confirmed_round_amount)+' บาท<p class="tiny muted">ตรวจแยกวันที่ได้ที่ตาราง “บัญชีจ่ายแยกตามวันที่จ่าย” การจับคู่ไม่ได้ไม่ทำให้ยอดบัญชีหรือยอดแบ่งเดิมหายไป สถานะรับเงินจริงให้ดูหลักฐานจ่ายของรอบ</p></div>';}
   function ledgerPendingPanel() {
-    return '<section class="clay panel"><h3>บัญชีจ่ายเงิน · รอยืนยันการจับคู่</h3><p class="small muted">แสดงรายการที่ยังเชื่อมกับหมายไม่ได้ หรือหลักฐานขัดกัน รอยืนยันการจับคู่ไม่ได้แปลว่ายังไม่จ่ายเงิน ยอดตามบัญชีและรอบเดิมคงเดิม</p>'+
+    return '<section class="clay panel"><h3>บัญชีจ่ายเงิน · รอยืนยันการจับคู่</h3><p class="small muted">แสดงรายการที่ยังเชื่อมกับหมายไม่ได้ หรือหลักฐานขัดกัน รอยืนยันการจับคู่ไม่ได้แปลว่ายังไม่จ่ายเงิน ยอดตามบัญชีและรอบเดิมคงเดิม · ระบบตรวจให้อัตโนมัติทุกครั้งที่นำเข้าไฟล์หมาย หรือกด “ตรวจจับคู่และบันทึกใหม่” เพื่อตรวจเอง</p>'+
       '<form id="lpForm" class="row"><label>ปีงบประมาณ<input id="lpFy" class="inp year-input" inputmode="numeric" placeholder="ทั้งหมด" value="'+esc(S.fy)+'"></label><label>เลขคดี<input id="lpQ" class="inp" placeholder="ค้นหาเลขคดี"></label><label>ผู้ส่งหมาย<select id="lpOfficer" class="sel"><option value="">ทุกคน</option></select></label><button class="btn btn-g">ตรวจรายการรอยืนยัน</button></form><div id="lpResult" aria-live="polite"></div></section>';
   }
   function bindLedgerPending(m) {
@@ -1682,7 +1777,7 @@
           '<div class="tbl-wrap"><table style="min-width:900px"><thead><tr><th>วันที่จ่าย / รับเงิน</th><th>เลขคดี / ใบเสร็จ</th><th class="onm">ผู้ส่งหมาย</th><th class="n">ยอดบัญชี (บาท)</th><th>ผลตรวจ</th><th>รอบเดิม</th></tr></thead><tbody>'+d.rows.map(r=>'<tr><td class="small">จ่าย '+esc(thDate(r.pay_date))+'<br>รับ '+esc(thDate(r.received_date)||'ไม่ระบุ')+'</td><td><b>'+esc(r.case_no)+'</b><br><span class="tiny">ใบเสร็จ '+esc(r.receipt_no||'ไม่ระบุ')+'</span></td><td class="onm">'+esc(r.officer)+'</td><td class="n">'+baht2(r.amount)+'</td><td><b class="flag-a">รอยืนยัน</b><br><span class="small">'+esc(r.reason)+'</span></td><td class="small">'+esc(r.round_id||'ยังไม่มีรอบแบ่งในระบบ')+(r.round_id?'<br><span class="tiny muted">คงยอดรอบเดิม</span>':'')+'</td></tr>').join('')+(d.rows.length?'':'<tr><td colspan="6">ไม่มีรายการรอยืนยันตามตัวกรอง</td></tr>')+'</tbody></table></div>'+
           '<div class="row" style="margin-top:12px"><button type="button" class="btn btn-sm" id="lpPrev" '+(page<=1?'disabled':'')+'>← ก่อนหน้า</button><span>หน้า '+num(page)+'</span><button type="button" class="btn btn-sm" id="lpNext" '+(page*d.page_size>=d.total_rows?'disabled':'')+'>ถัดไป →</button><button type="button" class="btn btn-sm" id="lpReconcile">ตรวจจับคู่และบันทึกใหม่</button></div><p class="tiny muted">บันทึกเฉพาะการจับคู่ของวันที่ยังไม่เข้ารอบ เมื่อข้อมูลตรงกันจึงเชื่อมทะเบียน รายการที่ยังไม่ชัดเจนคงเป็นรอยืนยัน ไม่แก้ยอดเงินหรือรอบเดิม</p>';
         $('#lpPrev').onclick=()=>{page--;run();};$('#lpNext').onclick=()=>{page++;run();};
-        $('#lpReconcile').onclick=async()=>{const b=$('#lpReconcile');b.disabled=true;try{const r=await api('ledger_reconcile',{expected_hash:hash});toast('ตรวจจับคู่แล้ว · ปรับข้อมูล '+num(r.changed)+' รายการ · ยอดเงินเดิม');await run();}catch(e){toast(e.message);b.disabled=false;}};
+        $('#lpReconcile').onclick=async()=>{const b=$('#lpReconcile');b.disabled=true;try{const r=await api('ledger_reconcile',{expected_hash:hash});toast('ตรวจจับคู่แล้ว · เชื่อมเพิ่ม '+num(r.newly_matched||0)+' · เหลือรอยืนยัน '+num(r.pending)+' รายการ · ยอดเงินเดิม');await run();}catch(e){toast(e.message);b.disabled=false;}};
       }catch(e){if(ticket!==seq||!m.isConnected)return;box.innerHTML='<p class="note r">'+esc(e.message)+'</p>';}
     };
     $('#lpForm').onsubmit=e=>{e.preventDefault();page=1;run();};run();
@@ -1764,8 +1859,8 @@
       '<form class="clay panel row" id="compForm"><label>ปีงบประมาณ พ.ศ.<input class="inp year-input" id="compFy" inputmode="numeric" maxlength="4" value="'+esc(d.fy)+'" placeholder="ทุกปีงบประมาณ"></label><button class="btn btn-g">แสดงสรุป</button><button type="button" class="btn" id="compPrint">พิมพ์สรุป</button></form>'+
       '<div class="comp-kpis"><div class="clay kpi"><span>ส่วน 60% ตามรอบยืนยัน</span><b>'+baht2(t.c60)+'</b><small>บาท · ยอดที่บันทึกไว้เดิม</small></div><div class="clay kpi"><span>บันทึกจ่ายจริงในระบบแล้ว</span><b class="flag-ok">'+baht2(t.paid60)+'</b><small>บาท · ตามสถานะจ่ายของรอบ</small></div><div class="clay kpi"><span>ยังไม่บันทึกหลักฐานจ่าย</span><b class="flag-a">'+baht2(t.pending60)+'</b><small>บาท · '+num(d.unrecorded_rounds||0)+' รอบ · ไม่ได้แปลว่ายังไม่จ่าย</small></div></div>'+
       (d.unrecorded_rounds?'<div class="note">มี '+num(d.unrecorded_rounds)+' รอบที่ยืนยันแล้วแต่ช่อง “สถานะจ่ายเงินจริง” ยังว่าง ยอด '+baht2(t.pending60)+' บาทจึงยังไม่นับเป็นจ่ายแล้ว หากจ่ายเงินแล้ว '+(d.can_payment?'ให้เลือกรอบในตารางด้านล่างแล้วกด “บันทึกว่าจ่ายแล้ว”':'ให้การเงินหรือผู้ดูแลระบบบันทึกหลักฐานจ่าย')+'</div>':'')+
-      '<section class="clay panel" id="compSummary"><h3>ค่าตอบแทนรายผู้ส่งหมาย</h3><p class="tiny muted">ยอดฐานเป็นยอดก่อนแบ่ง ส่วน 60% เป็นค่าตอบแทนตามรอบเดิม · ▲ ยอดมากไปน้อย · ▼ ยอดน้อยไปมาก</p><div class="tbl-wrap"><table id="compTable"><thead><tr><th class="onm">ผู้ส่งหมาย</th><th class="n">รอบยืนยัน</th><th class="n">ฐานนอกงบฯ</th><th class="n">ฐานงบประมาณ</th><th class="n">บันทึกจ่ายแล้ว (60%)</th><th class="n">ยังไม่บันทึกจ่าย (60%)</th><th class="n" data-sort>รวมส่วน 60% (บาท)</th></tr></thead><tbody>'+d.officers.map(r=>'<tr><td class="onm">'+oDot({officer:{color:r.color}},'officer')+' '+esc(r.name)+'</td><td class="n">'+num(r.rounds)+'</td><td class="n">'+baht2(r.paid)+'</td><td class="n">'+baht2(r.budget)+'</td><td class="n">'+baht2(r.paid60)+'</td><td class="n">'+baht2(r.pending60)+'</td><td class="n"><b>'+baht2(r.c60)+'</b></td></tr>').join('')+'</tbody><tfoot><tr><td colspan="2">รวม</td><td class="n">'+baht2(t.paid)+'</td><td class="n">'+baht2(t.budget)+'</td><td class="n">'+baht2(t.paid60)+'</td><td class="n">'+baht2(t.pending60)+'</td><td class="n"><b>'+baht2(t.c60)+'</b></td></tr></tfoot></table></div><p class="tiny muted">ส่วน 40% รวม '+baht2(t.c40)+' บาท นำเข้ากองกลาง ไม่ใช่ยอดรับส่วนบุคคล การแบ่งต่อที่นั่งและเศษยกไปแสดงในรายละเอียดรอบ</p></section>'+
-      '<section class="clay panel"><h3>รอบที่นำมาสรุป</h3><p class="tiny muted">รายการนี้ใช้รหัสรอบเดิม เลขที่ใบเบิกให้ตรวจจากเอกสารต้นทาง</p><div class="tbl-wrap"><table><thead><tr>'+(d.can_payment&&d.unrecorded_rounds?'<th><input type="checkbox" id="compAll" aria-label="เลือกทุกรอบที่ยังไม่บันทึกจ่าย"></th>':'')+'<th>รหัสรอบ</th><th>วันที่รอบ</th><th>แหล่งเงิน</th><th>สถานะจ่ายเงินจริง</th><th class="n">ส่วน 60% (บาท)</th><th></th></tr></thead><tbody>'+(d.rounds.length?d.rounds.map(r=>'<tr>'+(d.can_payment&&d.unrecorded_rounds?'<td>'+(r.payment_status==='PAID'?'':'<input type="checkbox" data-comp-pick="'+esc(r.round_id)+'" aria-label="เลือกรอบ '+esc(r.round_id)+'">')+'</td>':'')+'<td>'+esc(r.round_id)+'</td><td>'+esc(thDate(r.pay_date))+'</td><td>'+esc(RTYPE_TH[r.round_type]||r.round_type||'ตามรอบเดิม')+'</td><td>'+(r.payment_status==='PAID'?'<span class="flag-ok">จ่ายจริง '+esc(thDate(r.payment_date))+'</span>':'<span class="flag-a">ยืนยันรอบแล้ว · ยังไม่บันทึกหลักฐานจ่าย</span>')+'</td><td class="n">'+baht2(r.c60)+'</td><td><button class="btn btn-sm" type="button" data-comp-round="'+esc(r.round_id)+'">ดูรายละเอียด</button></td></tr>').join(''):'<tr><td colspan="6" class="muted">ยังไม่มีรอบยืนยันในปีงบประมาณที่เลือก</td></tr>')+'</tbody></table></div>'+
+      '<section class="clay panel" id="compSummary"><h3>ค่าตอบแทนรายผู้ส่งหมาย</h3><p class="tiny muted">ยอดฐานเป็นยอดก่อนแบ่ง ส่วน 60% เป็นค่าตอบแทนตามรอบเดิม · ▲ ยอดมากไปน้อย · ▼ ยอดน้อยไปมาก</p><div class="tbl-wrap"><table id="compTable" class="wide-tbl"><thead><tr><th class="onm">ผู้ส่งหมาย</th><th class="n">รอบยืนยัน</th><th class="n">ฐานนอกงบฯ</th><th class="n">ฐานงบประมาณ</th><th class="n">บันทึกจ่ายแล้ว (60%)</th><th class="n">ยังไม่บันทึกจ่าย (60%)</th><th class="n" data-sort>รวมส่วน 60% (บาท)</th></tr></thead><tbody>'+d.officers.map(r=>'<tr><td class="onm">'+oDot({officer:{color:r.color}},'officer')+' '+esc(r.name)+'</td><td class="n">'+num(r.rounds)+'</td><td class="n">'+baht2(r.paid)+'</td><td class="n">'+baht2(r.budget)+'</td><td class="n">'+baht2(r.paid60)+'</td><td class="n">'+baht2(r.pending60)+'</td><td class="n"><b>'+baht2(r.c60)+'</b></td></tr>').join('')+'</tbody><tfoot><tr><td colspan="2">รวม</td><td class="n">'+baht2(t.paid)+'</td><td class="n">'+baht2(t.budget)+'</td><td class="n">'+baht2(t.paid60)+'</td><td class="n">'+baht2(t.pending60)+'</td><td class="n"><b>'+baht2(t.c60)+'</b></td></tr></tfoot></table></div><p class="tiny muted">ส่วน 40% รวม '+baht2(t.c40)+' บาท นำเข้ากองกลาง ไม่ใช่ยอดรับส่วนบุคคล การแบ่งต่อที่นั่งและเศษยกไปแสดงในรายละเอียดรอบ</p></section>'+
+      '<section class="clay panel"><h3>รอบที่นำมาสรุป</h3><p class="tiny muted">รายการนี้ใช้รหัสรอบเดิม เลขที่ใบเบิกให้ตรวจจากเอกสารต้นทาง</p><div class="tbl-wrap"><table class="wide-tbl"><thead><tr>'+(d.can_payment&&d.unrecorded_rounds?'<th><input type="checkbox" id="compAll" aria-label="เลือกทุกรอบที่ยังไม่บันทึกจ่าย"></th>':'')+'<th>รหัสรอบ</th><th>วันที่รอบ</th><th>แหล่งเงิน</th><th>สถานะจ่ายเงินจริง</th><th class="n">ส่วน 60% (บาท)</th><th></th></tr></thead><tbody>'+(d.rounds.length?d.rounds.map(r=>'<tr>'+(d.can_payment&&d.unrecorded_rounds?'<td>'+(r.payment_status==='PAID'?'':'<input type="checkbox" data-comp-pick="'+esc(r.round_id)+'" aria-label="เลือกรอบ '+esc(r.round_id)+'">')+'</td>':'')+'<td>'+esc(r.round_id)+'</td><td>'+esc(thDate(r.pay_date))+'</td><td>'+esc(RTYPE_TH[r.round_type]||r.round_type||'ตามรอบเดิม')+'</td><td>'+(r.payment_status==='PAID'?'<span class="flag-ok">จ่ายจริง '+esc(thDate(r.payment_date))+'</span>':'<span class="flag-a">ยืนยันรอบแล้ว · ยังไม่บันทึกหลักฐานจ่าย</span>')+'</td><td class="n">'+baht2(r.c60)+'</td><td><button class="btn btn-sm" type="button" data-comp-round="'+esc(r.round_id)+'">ดูรายละเอียด</button></td></tr>').join(''):'<tr><td colspan="6" class="muted">ยังไม่มีรอบยืนยันในปีงบประมาณที่เลือก</td></tr>')+'</tbody></table></div>'+
       (d.can_payment&&d.unrecorded_rounds?'<form id="compPay" class="row" style="margin-top:12px"><label>เลขที่หลักฐาน / เอกสารการจ่าย<input class="inp" id="compRef" maxlength="200" required placeholder="เช่น ใบแบ่งยอดศาล / เลขที่ฎีกา"></label><label class="small"><input type="checkbox" id="compUsePay" checked> ใช้วันที่ของแต่ละรอบเป็นวันที่จ่ายจริง</label><label>หรือวันที่จ่ายจริง<input type="date" class="inp" id="compDate" disabled></label><button class="btn btn-g">บันทึกว่าจ่ายแล้ว</button></form><p class="tiny muted">บันทึกสถานะและหลักฐานเท่านั้น ไม่เปลี่ยนยอด เศษ หรือรายการของรอบ · รอบที่บันทึกจ่ายแล้วยกเลิกรอบโดยตรงไม่ได้</p>':'')+'</section>';
     sortable($('#compTable'));
     if($('#compPay')){
