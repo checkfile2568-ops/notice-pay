@@ -61,6 +61,7 @@ function routes_() {
     free_claim: { auth: true, roles: ALL, fn: apiFreeClaim_ },
     round_payment: { auth: true, roles: ['FINANCE', 'ADMIN'], fn: apiRoundPayment_ },
     round_payment_bulk: { auth: true, roles: ['FINANCE', 'ADMIN'], fn: apiRoundPaymentBulk_ },
+    ledger_outside:   { auth: true, roles: ['ADMIN'], fn: apiLedgerOutside_ },
     operation_status: { auth: true, roles: IMPORTERS, fn: apiOperationStatus_ },
     operation_resume: { auth: true, roles: IMPORTERS, fn: apiOperationResume_ }
   };
@@ -171,7 +172,7 @@ function normalizeIncomingImport_(body) {
  * คีย์ผูกกับ "รุ่นข้อมูล" (DATA_VER) — ทุกคำสั่งที่เขียนข้อมูลจะเพิ่มรุ่น ทำให้แคชเดิมไม่ถูกใช้อีก
  * คีย์รวมบทบาทและผู้ส่งที่ผูก เพราะผลลัพธ์ขึ้นกับสิทธิ์ (ขอบเขตการมองเห็น / ปุ่มคำนวณ) */
 const RESULT_CACHED_ = { dashboard: 1, calc_summary: 1 };
-const DATA_WRITES_ = { notice_split: 1, ledger_reconcile: 1, import_commit: 1, calc_run: 1, notice_confirm_amount: 1, notice_confirm_date: 1, officer_save: 1, user_save: 1, payout_confirm: 1, payout_cancel: 1, payout_noclaim: 1, ledger_import: 1, review_resolve: 1, round_payment: 1, round_payment_bulk: 1 };
+const DATA_WRITES_ = { notice_split: 1, ledger_reconcile: 1, import_commit: 1, calc_run: 1, notice_confirm_amount: 1, notice_confirm_date: 1, officer_save: 1, user_save: 1, payout_confirm: 1, payout_cancel: 1, payout_noclaim: 1, ledger_import: 1, review_resolve: 1, round_payment: 1, round_payment_bulk: 1, ledger_outside: 1 };
 function dataVer_() { return PropertiesService.getScriptProperties().getProperty('DATA_VER') || '0'; }
 function bumpDataVer_() { PropertiesService.getScriptProperties().setProperty('DATA_VER', Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36)); }
 function resultCacheKey_(action, user, body) {
@@ -181,4 +182,4 @@ function resultCacheKey_(action, user, body) {
   return ('R_' + API_VERSION + '_' + action + '_' + dataVer_() + '_' + fy + '_' + who).slice(0, 240);
 }
 
-const JOURNALED_ = { notice_split: 1, ledger_reconcile: 1, import_commit: 1, ledger_import: 1, payout_confirm: 1, payout_cancel: 1, payout_noclaim: 1, review_resolve: 1, round_payment: 1, round_payment_bulk: 1 };
+const JOURNALED_ = { notice_split: 1, ledger_reconcile: 1, import_commit: 1, ledger_import: 1, payout_confirm: 1, payout_cancel: 1, payout_noclaim: 1, review_resolve: 1, round_payment: 1, round_payment_bulk: 1, ledger_outside: 1 };

@@ -341,9 +341,9 @@ function lastFree_(rows) {
 
 /** วันที่จ่ายในบัญชีการจ่ายเงินที่ยังไม่ตั้งรอบ */
 function pendingPayDates_(ledger) {
-  const by = {};
+  const by = {}, outside = ledgerOutside_();   // 0.7.14 วันที่แบ่งนอกระบบแล้วไม่ต้องตั้งรอบ
   ledger.forEach(function (l) {
-    if (l.source !== 'PAY' || l.round_id) return;
+    if (l.source !== 'PAY' || l.round_id || outside[ledgerDateKey_(l.pay_date)]) return;
     const b = by[l.pay_date] = by[l.pay_date] || { pay_date: String(l.pay_date), rows: 0, amount: 0, none: 0 };
     b.rows++; b.amount += Number(l.amount) || 0; if (l.match !== 'OK') b.none++;
   });
@@ -364,7 +364,8 @@ function apiPayoutCandidates_(ctx, d) {
                  officers: officerNames_(), carry_in: carry.carry_c / 100, carry_from: carry.from, order_ok: carry.order_ok,
                  seats: Number(cfg_('DEFAULT_SEATS', '48')) || 48, policy: cfg_('ROUNDING_POLICY', 'DOWN_BAHT_CARRY'),
                  policy_th: ROUNDING_TH[cfg_('ROUNDING_POLICY', 'DOWN_BAHT_CARRY')] || '', last_free: lastFree_(rows),
-                 free18_at: cfg_('LAST_FREE18_AT', '') };
+                 free18_at: cfg_('LAST_FREE18_AT', ''),
+                 can_outside: o.type === 'PAID' && hasRole_(ctx.user, ['ADMIN']) && !ledgerOutside_()[o.payDate] };
   if (o.type === 'FREE') {
     const res = payoutFreeItems_(nt, { cutoff: o.cutoff, held: payoutHeld_(), today: o.today });
     return Object.assign(base, { snapshot: payoutSnapshot_(res.items, carry, o), items: res.items, blocked: res.blocked, source: LEDGER_KINDS.FREE18.src });
@@ -385,6 +386,7 @@ function apiPayoutConfirm_(ctx, d) {
     const o = payoutOpts_(d);
     const rt = readTable_('PAYOUT_ROUNDS');
     const carry = carryFor_(rt.rows, o.type, o.payDate);
+    if (o.type === 'PAID' && ledgerOutside_()[o.payDate]) throw appErr_('BAD_REQUEST', 'บัญชีวันที่นี้บันทึกว่าแบ่ง 60:40 นอกระบบแล้ว — ตั้งรอบซ้ำไม่ได้ (ยกเลิกการบันทึกนอกระบบก่อน)');
     if (!carry.order_ok) throw appErr_('BAD_REQUEST', 'ตั้งรอบได้เฉพาะต่อจากรอบล่าสุด (' + carry.last_key.replace('|1', ' หมายฟรี').replace('|2', ' หมายเงิน') + ') — รอบย้อนหลังให้ยกเลิกรอบหลังก่อน หรือตั้งตามลำดับวันที่');
     const nt = readTable_('NOTICES'), lt = o.type === 'PAID' ? readTable_('LEDGER') : null;
     const ntLinked = linkNotices_(nt.rows, rt.rows, readTable_('PAYOUT_ITEMS').rows);   // หมายที่มีประวัติรอบแล้วไม่เสนอซ้ำ
@@ -489,7 +491,8 @@ function apiPayoutList_(ctx, d) {
     return { round_id: r.round_id, fy: r.fy, pay_date: r.pay_date, cutoff_date: r.cutoff_date, round_type: r.round_type || '',
              seats: Number(r.seat_count), n_items: Number(r.n_items), n_excluded: Number(r.n_excluded),
              total_paid: Number(r.total_paid), total_budget: Number(r.total_budget), total: Number(r.total),
-             per_seat: Number(r.per_seat), carry_in: Number(r.carry_in), carry_out: Number(r.carry_out), status: r.status, created_at: r.created_at };
+             per_seat: Number(r.per_seat), carry_in: Number(r.carry_in), carry_out: Number(r.carry_out), status: r.status, created_at: r.created_at,
+             payment_status: String(r.payment_status || ''), payment_date: r.payment_date || '', payment_ref: r.payment_ref || '' };  // 0.7.14 สถานะจ่ายจริงในรายการรอบ
   }).sort(function (a, b) { return roundOrderKey_(b).localeCompare(roundOrderKey_(a)) || String(b.created_at).localeCompare(String(a.created_at)); });
   const bl = backlogOf_(nt, lt, today);
   const by = {};
@@ -507,7 +510,7 @@ function apiPayoutList_(ctx, d) {
   });
   const closed = nt.filter(function (n) { return n.noclaim_at && !n.payout_round_id; }).length;
   return { rounds: rounds, backlog: backlog, blocked: bl.free.blocked, closed_n: closed, officers: officerNames_(),
-           pending_dates: pendingPayDates_(lt), last_free: lastFree_(rt), free18_at: cfg_('LAST_FREE18_AT', ''),
+           pending_dates: pendingPayDates_(lt), outside: outsideSummary_(ledgerOutside_()), last_free: lastFree_(rt), free18_at: cfg_('LAST_FREE18_AT', ''),
            sources: { FREE18: LEDGER_KINDS.FREE18.src, PAY: LEDGER_KINDS.PAY.src },
            can_create: hasRole_(ctx.user, ['NOTICE', 'FINANCE', 'ADMIN']), can_cancel: hasRole_(ctx.user, ['ADMIN']),
            can_detail: hasRole_(ctx.user, ['NOTICE', 'CASE', 'FINANCE', 'COURIER', 'ADMIN']) };

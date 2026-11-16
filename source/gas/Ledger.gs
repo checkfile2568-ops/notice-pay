@@ -76,6 +76,55 @@ function ledgerMatchReason_(r) {
   return r.match_reason || ({ DATE_CONFLICT: 'วันที่จ่ายเงินก่อนวันจ่ายหมายหรือวันส่งหมาย', AMBIGUOUS: 'มีหมายหลายฉบับที่หลักฐานเท่ากัน', PARTIAL: 'จับคู่ได้ไม่ครบทุกฉบับในรายการ', TYPE: 'ประเภทหมายหรือผู้ส่งไม่ตรง', NONE: 'ยังไม่พบหมายตรงกับเลขคดี รหัสจับคู่ และผู้ส่ง' }[r.match]) || 'ข้อมูลยังไม่เพียงพอสำหรับยืนยันการจับคู่';
 }
 
+/**
+ * 0.7.14 วันที่จ่ายในบัญชีจ่ายเงินที่ "แบ่ง 60:40 นอกระบบแล้ว" (เช่น งานเดือน ก.ย. ก่อนเริ่มระบบ)
+ * เก็บใน CONFIG LEDGER_OUTSIDE_JSON = { 'yyyy-MM-dd': { rows, amount, reason, by, at } }
+ * ไม่แก้แถวบัญชี ไม่แก้ยอด ไม่สร้างรอบ — เพียงไม่นับเป็น "รอยืนยันการจับคู่" และ "ยังไม่มีรอบแบ่ง" อีก
+ */
+function ledgerOutside_() {
+  try { const o = JSON.parse(cfg_('LEDGER_OUTSIDE_JSON', '{}') || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; }
+  catch (e) { return {}; }
+}
+function outsideSummary_(out) {
+  const ks = Object.keys(out || {}).sort();
+  return { dates: ks.map(function (k) { return Object.assign({ pay_date: k }, out[k]); }), n: ks.reduce(function (s, k) { return s + (Number(out[k].rows) || 0); }, 0),
+           amount: ks.reduce(function (s, k) { return s + cents2_(out[k].amount); }, 0) / 100 };
+}
+function ledgerDateKey_(v) { return String(v || '').slice(0, 10); }
+function isOutsideRow_(r, out) { return r.source === 'PAY' && !r.round_id && !!(out || ledgerOutside_())[ledgerDateKey_(r.pay_date)]; }
+
+function apiLedgerOutside_(ctx, d) {
+  const date = ledgerDateKey_(d.pay_date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw appErr_('BAD_REQUEST', 'ระบุวันที่จ่าย');
+  const lock = writeLock_();
+  try { lock.waitLock(30000); } catch (e) { throw appErr_('BUSY', 'มีผู้อื่นกำลังนำเข้าหรือยืนยันรอบ กรุณาลองใหม่อีกครั้ง'); }
+  try {
+    const out = ledgerOutside_();
+    if (d.undo) {
+      if (!out[date]) throw appErr_('NOT_FOUND', 'วันที่นี้ไม่ได้บันทึกว่าแบ่งนอกระบบ');
+      const was = out[date]; delete out[date];
+      setCfg_('LEDGER_OUTSIDE_JSON', JSON.stringify(out));
+      audit_(ctx.user.code, 'LEDGER_OUTSIDE_UNDO', date, was);
+      return { pay_date: date, undone: true };
+    }
+    const reason = str_(d.reason, 300);
+    if (reason.length < 5) throw appErr_('BAD_REQUEST', 'ระบุเหตุผล เช่น งานเดือน ก.ย. ก่อนเริ่มระบบ แบ่ง 60:40 นอกระบบแล้ว');
+    if (out[date]) throw appErr_('BAD_REQUEST', 'วันที่นี้บันทึกว่าแบ่งนอกระบบไว้แล้ว');
+    const raw = readTable_('LEDGER').rows;
+    const rows = raw.filter(function (r) { return r.source === 'PAY' && ledgerDateKey_(r.pay_date) === date; });
+    if (!rows.length) throw appErr_('NOT_FOUND', 'ไม่พบบัญชีจ่ายเงินวันที่นี้');
+    if (rows.some(function (r) { return r.round_id; })) throw appErr_('BAD_REQUEST', 'วันที่นี้มีรายการอยู่ในรอบแบ่งของระบบแล้ว ปิดว่าแบ่งนอกระบบไม่ได้');
+    const ok = ledgerChecked_(raw, readTable_('NOTICES').rows, officersAll_())
+      .filter(function (r) { return r.source === 'PAY' && ledgerDateKey_(r.pay_date) === date && r.match === 'OK'; });
+    if (ok.length) throw appErr_('BAD_REQUEST', 'มี ' + ok.length + ' รายการจับคู่กับหมายในระบบได้ — หมายเหล่านี้ต้องแบ่งผ่านรอบของระบบ ปิดทั้งวันว่าแบ่งนอกระบบไม่ได้');
+    const amount_c = rows.reduce(function (s, r) { return s + cents2_(r.amount); }, 0);
+    out[date] = { rows: rows.length, amount: amount_c / 100, reason: reason, by: ctx.user.code, at: now_() };
+    setCfg_('LEDGER_OUTSIDE_JSON', JSON.stringify(out));
+    audit_(ctx.user.code, 'LEDGER_OUTSIDE', date, out[date]);
+    return { pay_date: date, rows: rows.length, amount: amount_c / 100 };
+  } finally { lock.releaseLock(); }
+}
+
 /** Re-evaluate open ledger rows. Confirmed dates and saved round links remain immutable. */
 function ledgerChecked_(rows, notices, officers) {
   const lockedDates = {};
@@ -112,12 +161,12 @@ function apiLedgerPending_(ctx, d) {
   const fy = String(d.fy || ''), q = normText_(d.q || '').replace(/\s+/g, '').toUpperCase();
   if (fy && !/^25\d{2}$/.test(fy)) throw appErr_('BAD_REQUEST', 'ระบุปีงบประมาณ พ.ศ. 4 หลัก');
   const page = Math.max(1, Math.floor(Number(d.page) || 1)), names = officerNames_();
-  const ledger = ledgerChecked_(readTable_('LEDGER').rows, readTable_('NOTICES').rows, officersAll_());
+  const ledger = ledgerChecked_(readTable_('LEDGER').rows, readTable_('NOTICES').rows, officersAll_()), outside = ledgerOutside_();
   const rows = ledger.filter(function (r) {
-    return r.source === 'PAY' && r.match !== 'OK' && (!fy || String(fiscalYear_(String(r.pay_date), 10)) === fy) &&
+    return r.source === 'PAY' && r.match !== 'OK' && !isOutsideRow_(r, outside) && (!fy || String(fiscalYear_(String(r.pay_date), 10)) === fy) &&
       (!d.officer_id || r.officer_id === String(d.officer_id)) && (!q || normText_(r.case_no).replace(/\s+/g, '').toUpperCase().indexOf(q) >= 0);
   }).sort(function (a, b) { return String(a.pay_date).localeCompare(String(b.pay_date)) || String(a.ledger_id).localeCompare(String(b.ledger_id)); });
-  return { pending_breakdown: ledgerPendingBreakdown_(rows,readTable_('PAYOUT_ROUNDS').rows), status_th: 'รอยืนยัน', total_rows: rows.length, amount: rows.reduce(function (s, r) { return s + cents2_(r.amount); }, 0) / 100,
+  return { pending_breakdown: ledgerPendingBreakdown_(rows,readTable_('PAYOUT_ROUNDS').rows), outside: outsideSummary_(outside), status_th: 'รอยืนยัน', total_rows: rows.length, amount: rows.reduce(function (s, r) { return s + cents2_(r.amount); }, 0) / 100,
     page: page, page_size: 50, reconcile_hash: ledgerReconcileHash_(), officers: names,
     rows: rows.slice((page - 1) * 50, page * 50).map(function (r) { return { ledger_id: r.ledger_id, case_no: r.case_no, pay_date: r.pay_date,
       received_date: r.received_date, receipt_no: r.receipt_no, officer: (names[r.officer_id] || {}).name || r.officer_id || 'ยังระบุไม่ได้',
@@ -147,7 +196,8 @@ function ledgerReconcileCore_(userCode, tag) {
   if (changed) rewriteTable_('LEDGER', out);
   DB_CACHE_ = null; HEAD_CACHE_ = {};
   if (protectedHash !== digestJson_(['NOTICES', 'BUDGET_UNITS', 'PAYOUT_ROUNDS', 'PAYOUT_ITEMS'].map(function (name) { return readTable_(name).rows; }))) throw appErr_('DATA_REVIEW', 'ข้อมูลรอบเดิมเปลี่ยนระหว่างตรวจจับคู่');
-  const pending = checked.filter(function (r) { return r.source === 'PAY' && r.match !== 'OK'; }).length;
+  const outside = ledgerOutside_();
+  const pending = checked.filter(function (r) { return r.source === 'PAY' && r.match !== 'OK' && !isOutsideRow_(r, outside); }).length;
   const okAfter = out.filter(function (r) { return r.source === 'PAY' && r.match === 'OK'; }).length;
   audit_(userCode, tag || 'LEDGER_RECONCILE', '', { changed: changed, pending: pending, newly_matched: okAfter - okBefore });
   return { changed: changed, pending: pending, newly_matched: Math.max(0, okAfter - okBefore), unlinked: Math.max(0, okBefore - okAfter), amounts_unchanged: true };

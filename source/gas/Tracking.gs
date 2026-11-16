@@ -114,9 +114,10 @@ function trackingData_(ctx, d) {
   ['source_amount','unit_adjustment','ready_amount'].forEach(function(k) { totals[k] /= 100; });
   Object.keys(totals.status_amount).forEach(function (k) { totals.status_amount[k] /= 100; });
   const ledger = ledgerChecked_(readTable_('LEDGER').rows, allNotices, officersAll_()).filter(function(l){return l.source==='PAY' && (!officer || l.officer_id===officer) && (!fy || fiscalYear_(String(l.pay_date),10)===fy);});
-  const controls={count:ledger.length,amount:0,unmatched_n:0,unmatched_amount:0}; ledger.forEach(function(l){controls.amount+=cents2_(l.amount);if(l.match!=='OK'){controls.unmatched_n++;controls.unmatched_amount+=cents2_(l.amount);}}); controls.amount/=100;controls.unmatched_amount/=100;
+  const outsideMap=ledgerOutside_();
+  const controls={count:ledger.length,amount:0,unmatched_n:0,unmatched_amount:0,outside_n:0,outside_amount:0}; ledger.forEach(function(l){controls.amount+=cents2_(l.amount);if(isOutsideRow_(l,outsideMap)){controls.outside_n++;controls.outside_amount+=cents2_(l.amount);}else if(l.match!=='OK'){controls.unmatched_n++;controls.unmatched_amount+=cents2_(l.amount);}}); controls.amount/=100;controls.unmatched_amount/=100;controls.outside_amount/=100;
   controls.by_date = ledgerByDate_(ledger, rounds);
-  controls.pending_breakdown = ledgerPendingBreakdown_(ledger,roundRows);
+  controls.pending_breakdown = ledgerPendingBreakdown_(ledger.filter(function(l){return !isOutsideRow_(l,outsideMap);}),roundRows);
   // 0.7.10 หมายฟรีคงค้าง: ใช้ตัวคำนวณเดียวกับหน้า "การเงิน · ตรวจสอบก่อนเบิก" (ยอดทะเบียนรวมรายการที่เบิกแล้ว ใช้แทนยอดคงค้างไม่ได้)
   let budgetPending = null;
   if (type !== 'PAID' && /^25\d{2}$/.test(fy) && fyStartDate_(fy, 10) <= today) {
@@ -135,7 +136,7 @@ function trackingData_(ctx, d) {
  * และจำนวนรายการที่จับคู่ทะเบียนไม่ได้ โดยไม่สรุปว่ายังไม่ได้จ่ายเงินจริง
  */
 function ledgerByDate_(ledger, rounds) {
-  const by = {};
+  const by = {}, outside = ledgerOutside_();
   (ledger || []).forEach(function (l) {
     if (l.source && l.source !== 'PAY') return;
     const k = String(l.pay_date || '').slice(0, 10) || 'ไม่ระบุ';
@@ -148,10 +149,10 @@ function ledgerByDate_(ledger, rounds) {
   });
   return Object.keys(by).sort().map(function (k) {
     const b = by[k];
-    const state = !b.no_round_n ? 'IN_ROUND' : b.in_round_n ? 'PARTIAL' : 'NO_ROUND';
+    const state = !b.no_round_n ? 'IN_ROUND' : b.in_round_n ? 'PARTIAL' : outside[b.pay_date] ? 'OUTSIDE' : 'NO_ROUND';
     return { pay_date: b.pay_date, rows: b.rows, amount: b.amount_c / 100, unmatched_n: b.unmatched_n, unmatched_amount: b.unmatched_c / 100,
              in_round_n: b.in_round_n, no_round_n: b.no_round_n, no_round_amount: b.no_round_c / 100, round_ids: b.round_ids, state: state,
-             state_th: state === 'IN_ROUND' ? 'มีบัญชีจ่ายและรอบแบ่งในระบบแล้ว' : state === 'PARTIAL' ? 'มีบัญชีจ่ายแล้ว · บางรายการยังไม่อยู่ในรอบแบ่ง' : 'มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ' };
+             state_th: state === 'IN_ROUND' ? 'มีบัญชีจ่ายและรอบแบ่งในระบบแล้ว' : state === 'OUTSIDE' ? 'จ่ายและแบ่ง 60:40 นอกระบบแล้ว (' + String(outside[b.pay_date].reason || '') + ')' : state === 'PARTIAL' ? 'มีบัญชีจ่ายแล้ว · บางรายการยังไม่อยู่ในรอบแบ่ง' : 'มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ' };
   });
 }
 function apiTracking_(ctx, d) {
