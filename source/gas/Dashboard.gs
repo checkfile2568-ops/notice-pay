@@ -42,8 +42,9 @@ function apiDashboard_(ctx, d) {
   const fy = str_(d.fy, 4) || currentFy_();
   const scope = scopeOfficer_(ctx.user);
   const offs = officersAll_();
-  const rows = readTable_('NOTICES').rows.filter(function (r) {
-    return String(r.fy) === fy && r.calc_rule !== 'PRE_START' && (!scope || r.officer_id === scope);
+  const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  const rows = linkedNotices_().filter(function (r) {                // 0.7.10 รวมประวัติรอบยืนยัน (หมายที่ช่องรอบว่าง)
+    return String(r.fy) === fy && (r.calc_rule !== 'PRE_START' || r.payout_round_id) && (!scope || r.officer_id === scope);
   });
   const per = {};
   offs.forEach(function (o) {
@@ -52,7 +53,7 @@ function apiDashboard_(ctx, d) {
       paid_issued: 0, paid_delivered: 0, free_issued: 0, free_delivered: 0, flagged: 0,
       money: { wait: 0, ready: 0, claim: 0, paid: 0, check: 0 }, weeks: [0, 0, 0, 0, 0, 0] };
   });
-  const tot = { total: 0, paid: 0, free: 0, issued: 0, delivered: 0, flagged: 0, no_area: 0, red: 0, adj_up: 0, adj_dn: 0, no_addr: 0, date_wait: 0,
+  const tot = { total: 0, paid: 0, free: 0, issued: 0, delivered: 0, flagged: 0, no_area: 0, red: 0, adj_up: 0, adj_dn: 0, no_addr: 0, date_wait: 0, free_expired: 0,
                 money: { wait: 0, ready: 0, claim: 0, paid: 0, check: 0 } };
   // กราฟเส้นรายสัปดาห์: จำนวนหมายที่ส่งแล้วใน 6 สัปดาห์ล่าสุด (นับถอยหลังจากวันนี้ หรือสิ้นปีงบถ้าเป็นปีที่ผ่านมา)
   const fyEnd = new Date(Number(fy) - 543, 8, 30);
@@ -70,6 +71,7 @@ function apiDashboard_(ctx, d) {
     if (r.pay_type === 'BUDGET' && String(r.flags || '').indexOf('หมายฟรีไม่มีที่อยู่') >= 0) tot.no_addr++;
     if (r.calc_rule === 'WAIT_ISSUE_DATE') tot.date_wait++;
     if (r.noclaim_at && !r.payout_round_id) return;               // ปิด "ไม่เบิก" แล้ว — ไม่นับยอดเงิน
+    if (freeExpired_(r, today)) { tot.free_expired++; return; }   // 0.7.10 หมายฟรีพ้นปีงบโดยยังไม่เบิก — ไม่เบิกจ่าย ไม่นับยอด
     const st = moneyStatus_(r), amt = effAmount_(r) || (st === 'check' ? Number(r.amount_src) || 0 : 0);
     p.money[st] += amt; tot.money[st] += amt;
     if (r.delivered_date) {
@@ -92,8 +94,8 @@ function apiDashboard_(ctx, d) {
 /** สถานะยอดเงิน (สีเดียวกันทุกหน้าจอ): wait=เทา รอผล · ready=ส้ม พร้อมเบิก/รอวันจ่าย · claim=ฟ้า เบิกแล้วรอจ่าย · paid=เขียว จ่ายแล้ว · check=แดง รอตรวจ */
 function moneyStatus_(r) {
   const rule = String(r.calc_rule || '');
+  if (r.payout_round_id) return 'paid';                          // 0.7.10 อยู่ในรอบยืนยันแล้ว ไม่จัดเป็นรอตรวจ
   if (rule === 'WAIT_ISSUE_DATE' || /^REVIEW/.test(rule) || amountRed_(r)) return 'check';
-  if (r.payout_round_id) return 'paid';
   if (r.claim_status === 'PAID') return 'paid';
   if (r.claim_status) return 'claim';
   if (!r.delivered_date) return 'wait';
@@ -107,7 +109,7 @@ function apiNoticeSearch_(ctx, d) {
   const scope = scopeOfficer_(ctx.user);
   const off = {};
   officersAll_().forEach(function (o) { off[o.officer_id] = o.name; });
-  const out = readTable_('NOTICES').rows.filter(function (r) {
+  const out = linkedNotices_().filter(function (r) {
     if (scope && r.officer_id !== scope) return false;
     return String(r.case_no).toUpperCase().indexOf(q) >= 0 || String(r.case_ref).toUpperCase().indexOf(q) >= 0 ||
            String(r.red_no).toUpperCase().indexOf(q) >= 0 || String(r.notice_no).toUpperCase() === q;
@@ -125,6 +127,7 @@ function apiNoticeSearch_(ctx, d) {
 
 /** ยอดที่ใช้แสดง: หมายเงินที่จ่ายแล้ว = ยอดจ่ายจริง · หมายฟรีที่มีราคาบัญชีศาล (ไฟล์ 18) = ราคาศาล · อื่น ๆ = ยอดที่ระบบคำนวณ */
 function effAmount_(r) {
+  if (r.payout_round_id && r.round_amount_c !== undefined) return r.round_amount_c / 100;   // 0.7.10 ยอดเดิมที่บันทึกในรอบยืนยัน
   if (r.payout_round_id && r.paid_amount !== '' && r.paid_amount !== undefined && r.pay_type === 'PAID') return Number(r.paid_amount) || 0;
   if (r.pay_type === 'BUDGET' && r.court_at) return Number(r.court_amount) || 0;
   return Number(r.calc_amount) || 0;

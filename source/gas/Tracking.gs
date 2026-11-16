@@ -1,5 +1,5 @@
 /** 0.7.0: read-only tracing from notice to financial round. Existing monetary rules are unchanged. */
-var TRACK_STATUS_TH_ = { WAIT: 'รอผลการส่ง', REVIEW: 'รอตรวจข้อมูล', READY: 'พร้อมเบิก / ยังไม่พบประวัติรอบ', HELD: 'เลื่อนไปรอบหน้า', ROUND: 'อยู่ในรอบยืนยันแล้ว', PAID: 'จ่ายเงินจริงแล้ว', NOCLAIM: 'ปิดไม่เบิก' };
+var TRACK_STATUS_TH_ = { WAIT: 'รอผลการส่ง', REVIEW: 'รอตรวจข้อมูล', READY: 'พร้อมเบิก / ยังไม่พบประวัติรอบ', HELD: 'เลื่อนไปรอบหน้า', ROUND: 'อยู่ในรอบยืนยันแล้ว · ยังไม่บันทึกหลักฐานจ่าย', PAID: 'อยู่ในรอบ · บันทึกจ่ายจริงแล้ว', NOCLAIM: 'ไม่เบิกจ่าย / ปิดไม่เบิก' };
 function trackingData_(ctx, d) {
   const scope = scopeOfficer_(ctx.user), rounds = {}, history = {}, held = payoutHeld_();
   const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
@@ -11,11 +11,12 @@ function trackingData_(ctx, d) {
     const r = rounds[it.round_id]; if (!r || r.status !== 'CONFIRMED') return;
     String(it.notice_uids || '').split(',').filter(String).forEach(function (u) { (history[u] = history[u] || []).push({ round_id: r.round_id, pay_date: r.pay_date, amount: Number(it.amount) || 0, payment_status: r.payment_status || '', payment_date: r.payment_date || '', payment_ref: r.payment_ref || '' }); });
   });
-  const unitMembers = {}, legacyClaims = {}; readTable_('NOTICES').rows.forEach(function (n) { if (n.budget_unit_id) (unitMembers[n.budget_unit_id] = unitMembers[n.budget_unit_id] || []).push(n.notice_uid); });
+  const allNotices = linkNotices_(readTable_('NOTICES').rows, Object.keys(rounds).map(function (k) { return rounds[k]; }), readTable_('PAYOUT_ITEMS').rows);
+  const unitMembers = {}, legacyClaims = {}; allNotices.forEach(function (n) { if (n.budget_unit_id) (unitMembers[n.budget_unit_id] = unitMembers[n.budget_unit_id] || []).push(n.notice_uid); });
   readTable_('BUDGET_UNITS').rows.forEach(function(u) { if (u.claim_ref || /^(CLAIMED|PAID)$/.test(String(u.status || ''))) legacyClaims[u.unit_id] = true; });
   const names = officerNames_(), q = normText_(d.q || '').replace(/\s+/g, '').toUpperCase();
   const fy = String(d.fy || ''), type = String(d.pay_type || ''), status = String(d.status || ''), officer = scope || String(d.officer_id || '');
-  const list = readTable_('NOTICES').rows.filter(function (n) {
+  const list = allNotices.filter(function (n) {
     if (d.unit_id && n.budget_unit_id !== String(d.unit_id)) return false;
     if (officer && n.officer_id !== officer) return false;
     if (d.area_id && String(n.area_id)!==String(d.area_id)) return false;
@@ -31,8 +32,9 @@ function trackingData_(ctx, d) {
     const pointer = rounds[n.payout_round_id];
     const r = pointer && pointer.status === 'CONFIRMED' ? pointer : prior.length ? rounds[prior[prior.length-1].round_id] : pointer;
     let st = n.noclaim_at ? 'NOCLAIM' : !n.delivered_date ? 'WAIT' : /^REVIEW|WAIT_ISSUE/.test(String(n.calc_rule)) ? 'REVIEW' : held['N:' + n.notice_uid] ? 'HELD' : 'READY';
-    const freeClosed = n.pay_type === 'BUDGET' && (String(n.calc_rule)==='PRE_START' ||
-      (/^25\d{2}$/.test(String(n.fy)) && ((parseDate_(n.issued_date) || '9999') < (Number(n.fy)-544)+'-10-01' || today > (Number(n.fy)-543)+'-09-30')));
+    // 0.7.10 กฎเดียวกับหน้าการเงิน/รอบเบิก/สถิติ: ก่อนเริ่มปีงบ หรือพ้นปีงบของวันที่จ่ายหมายโดยยังไม่เบิก = ไม่เบิกจ่าย
+    const freeClosed = (n.pay_type === 'BUDGET' && String(n.calc_rule) === 'PRE_START') || freeExpired_(n, today) ||
+      (n.pay_type === 'BUDGET' && /^25\d{2}$/.test(String(n.fy)) && (parseDate_(n.issued_date) || '9999') < (Number(n.fy)-544)+'-10-01');
     if (freeClosed) st = 'NOCLAIM';
     if (n.claim_status || legacyClaims[n.budget_unit_id]) st = 'REVIEW';
     if (n.payout_round_id && (!r || r.status !== 'CONFIRMED')) st = 'REVIEW';
@@ -41,13 +43,14 @@ function trackingData_(ctx, d) {
     const actual = st === 'NOCLAIM' && n.pay_type === 'BUDGET' ? 0 : effAmount_(n), diff = st === 'NOCLAIM' || reference === null ? null : Math.round((actual - reference) * 100) / 100;
     return { notice_uid: n.notice_uid, fy: n.fy, pay_type: n.pay_type, case_no: n.case_no, notice_kind: n.notice_kind, recipient: n.recipient,
       officer_id: n.officer_id, officer: (names[n.officer_id] || {}).name || n.officer_raw, tambon: n.tambon, amphoe:n.amphoe, area_id:n.area_id, issued_date: String(n.issued_date || '').slice(0, 10), delivered_date: String(n.delivered_date || '').slice(0, 10), reported_date: String(n.reported_date || '').slice(0, 10),
-      reference: reference, amount: actual, difference: diff, source: n.pay_type === 'PAID' && n.payout_round_id && n.paid_amount !== '' ? 'ยอดจ่ายตามบัญชี' : n.pay_type === 'BUDGET' && n.court_at ? 'ราคาบัญชีศาล ประเภท 18' : 'ยอดระบบคำนวณ',
+      reference: reference, amount: actual, difference: diff, source: n.round_amount_c !== undefined && r && r.status === 'CONFIRMED' ? (n.pay_type === 'PAID' ? 'ยอดจ่ายตามบัญชี (ยอดเดิมในรอบ)' : 'ยอดเดิมในรอบเบิก') : n.pay_type === 'BUDGET' && n.court_at ? 'ราคาบัญชีศาล ประเภท 18' : 'ยอดระบบคำนวณ',
       status: st, status_th: TRACK_STATUS_TH_[st], round_id: r && r.status === 'CONFIRMED' ? r.round_id : '', round_date: r ? r.pay_date : '', payment_date: r ? r.payment_date || '' : '', payment_ref: r ? r.payment_ref || '' : '',
       unit_id: n.budget_unit_id || '', grouped_count: n.budget_unit_id ? (unitMembers[n.budget_unit_id] || []).length : 1, flags: n.flags || '', history: hs };
   }).filter(function (r) { return !status || r.status === status; });
-  const totals = { count: list.length, amount: 0, shortage: 0, excess: 0, shortage_n: 0, excess_n: 0, statuses: {} }, per = {}, perArea = {};
+  const totals = { count: list.length, amount: 0, shortage: 0, excess: 0, shortage_n: 0, excess_n: 0, statuses: {}, status_amount: {} }, per = {}, perArea = {};
   list.forEach(function (r) {
     totals.amount += Math.round(r.amount * 100); totals.statuses[r.status] = (totals.statuses[r.status] || 0) + 1;
+    totals.status_amount[r.status] = (totals.status_amount[r.status] || 0) + Math.round(r.amount * 100);
     if (r.difference < 0) { totals.shortage += Math.round(-r.difference * 100); totals.shortage_n++; }
     if (r.difference > 0) { totals.excess += Math.round(r.difference * 100); totals.excess_n++; }
     const p = per[r.officer_id] = per[r.officer_id] || { officer_id: r.officer_id, officer: r.officer, count: 0, amount: 0, shortage: 0, excess: 0 };
@@ -55,12 +58,46 @@ function trackingData_(ctx, d) {
     p.count++; p.amount += Math.round(r.amount * 100); p.shortage += Math.round(Math.max(0, -(r.difference || 0)) * 100); p.excess += Math.round(Math.max(0, r.difference || 0) * 100);
   });
   ['amount', 'shortage', 'excess'].forEach(function (k) { totals[k] /= 100; Object.keys(per).forEach(function (id) { per[id][k] /= 100; }); });
+  Object.keys(totals.status_amount).forEach(function (k) { totals.status_amount[k] /= 100; });
   const ledger = readTable_('LEDGER').rows.filter(function(l){return l.source==='PAY' && (!officer || l.officer_id===officer) && (!fy || fiscalYear_(String(l.pay_date),10)===fy);});
   const controls={count:ledger.length,amount:0,unmatched_n:0,unmatched_amount:0}; ledger.forEach(function(l){controls.amount+=cents2_(l.amount);if(l.match!=='OK'){controls.unmatched_n++;controls.unmatched_amount+=cents2_(l.amount);}}); controls.amount/=100;controls.unmatched_amount/=100;
+  controls.by_date = ledgerByDate_(ledger, rounds);
+  // 0.7.10 หมายฟรีคงค้าง: ใช้ตัวคำนวณเดียวกับหน้า "การเงิน · ตรวจสอบก่อนเบิก" (ยอดทะเบียนรวมรายการที่เบิกแล้ว ใช้แทนยอดคงค้างไม่ได้)
+  let budgetPending = null;
+  if (type !== 'PAID' && /^25\d{2}$/.test(fy) && fyStartDate_(fy, 10) <= today) {
+    const co = closeoutData_(readTable_('NOTICES').rows, Object.keys(rounds).map(function (k) { return rounds[k]; }), readTable_('PAYOUT_ITEMS').rows, names, fy, today, readTable_('BUDGET_UNITS').rows);
+    const src = officer ? (co.per_officer.filter(function (o) { return o.officer_id === officer; })[0] || { count: 0, ready_n: 0, ready_units: 0, ready_amount: 0, wait_n: 0, review_n: 0, noclaim_n: 0 }) : co.totals;
+    budgetPending = { fy: fy, from: co.from, to: co.to, count: src.count, ready_n: src.ready_n, ready_units: src.ready_units, ready_amount: src.ready_amount,
+                      wait_n: src.wait_n, review_n: src.review_n, noclaim_n: src.noclaim_n, excluded_claimed: officer ? null : co.totals.excluded_claimed };
+  }
   const rr=Object.keys(rounds).map(function(k){return rounds[k];}).filter(function(r){return r.status==='CONFIRMED' && (!fy || String(r.fy)===fy) && (!type || r.round_type===(type==='BUDGET'?'FREE':'PAID'));});
   const rc={count:rr.length,amount:rr.reduce(function(a,r){if(!officer)return a+cents2_(r.total);let lines=[];try{lines=JSON.parse(r.lines_json||'[]');}catch(e){}return a+lines.filter(function(l){return l.officer_id===officer;}).reduce(function(t,l){return t+l.total_c;},0);},0)/100};
   Object.keys(perArea).forEach(k=>perArea[k].amount/=100);
-  return { per_area:Object.keys(perArea).map(k=>perArea[k]),ledger_summary:controls,round_summary:rc,rows: list, totals: totals, officers: names, areas:readTable_('RATE_AREAS').rows.map(a=>({area_id:a.area_id,tambon:a.tambon_name,amphoe:a.amphoe_name})),per_officer: Object.keys(per).map(function (id) { return per[id]; }), last_imports: lastImports_(), statuses: TRACK_STATUS_TH_, scope_officer: scope };
+  return { budget_pending: budgetPending, per_area:Object.keys(perArea).map(k=>perArea[k]),ledger_summary:controls,round_summary:rc,rows: list, totals: totals, officers: names, areas:readTable_('RATE_AREAS').rows.map(a=>({area_id:a.area_id,tambon:a.tambon_name,amphoe:a.amphoe_name})),per_officer: Object.keys(per).map(function (id) { return per[id]; }), last_imports: lastImports_(), statuses: TRACK_STATUS_TH_, scope_officer: scope };
+}
+/**
+ * 0.7.10 บัญชีจ่ายเงิน (PAY) แยกตามวันที่จ่าย: บอกชัดว่าวันใดมีบัญชีจ่ายแล้วแต่ยังไม่มีรอบแบ่งในระบบ
+ * และจำนวนรายการที่จับคู่ทะเบียนไม่ได้ โดยไม่สรุปว่ายังไม่ได้จ่ายเงินจริง
+ */
+function ledgerByDate_(ledger, rounds) {
+  const by = {};
+  (ledger || []).forEach(function (l) {
+    if (l.source && l.source !== 'PAY') return;
+    const k = String(l.pay_date || '').slice(0, 10) || 'ไม่ระบุ';
+    const b = by[k] = by[k] || { pay_date: k, rows: 0, amount_c: 0, unmatched_n: 0, unmatched_c: 0, in_round_n: 0, no_round_n: 0, no_round_c: 0, round_ids: [] };
+    const c = cents2_(l.amount), rid = String(l.round_id || ''), r = rid && rounds ? rounds[rid] : null;
+    b.rows++; b.amount_c += c;
+    if (l.match !== 'OK') { b.unmatched_n++; b.unmatched_c += c; }
+    if (r && r.status === 'CONFIRMED') { b.in_round_n++; if (b.round_ids.indexOf(rid) < 0) b.round_ids.push(rid); }
+    else { b.no_round_n++; b.no_round_c += c; }
+  });
+  return Object.keys(by).sort().map(function (k) {
+    const b = by[k];
+    const state = !b.no_round_n ? 'IN_ROUND' : b.in_round_n ? 'PARTIAL' : 'NO_ROUND';
+    return { pay_date: b.pay_date, rows: b.rows, amount: b.amount_c / 100, unmatched_n: b.unmatched_n, unmatched_amount: b.unmatched_c / 100,
+             in_round_n: b.in_round_n, no_round_n: b.no_round_n, no_round_amount: b.no_round_c / 100, round_ids: b.round_ids, state: state,
+             state_th: state === 'IN_ROUND' ? 'มีบัญชีจ่ายและรอบแบ่งในระบบแล้ว' : state === 'PARTIAL' ? 'มีบัญชีจ่ายแล้ว · บางรายการยังไม่อยู่ในรอบแบ่ง' : 'มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ' };
+  });
 }
 function apiTracking_(ctx, d) {
   const out = trackingData_(ctx, d), page = Math.max(1, Math.floor(Number(d.page) || 1));
@@ -90,7 +127,9 @@ function apiCompensationSummary_(ctx,d) {
   const totals={paid:0,budget:0,c60:0,c40:0,paid60:0,pending60:0};
   const officers=Object.keys(per).map(function(id){const p=per[id],o={officer_id:id,name:p.name,color:p.color,rounds:p.rounds};[['paid','paid_c'],['budget','budget_c'],['c60','c60'],['c40','c40'],['paid60','paid60_c'],['pending60','pending60_c']].forEach(function(pair){o[pair[0]]=p[pair[1]]/100;totals[pair[0]]+=p[pair[1]];});return o;});
   Object.keys(totals).forEach(k=>totals[k]/=100);
-  return {fy:fy,scope_officer:scope,officers:officers,totals:totals,rounds:rounds.sort((a,b)=>b.pay_date.localeCompare(a.pay_date)),source:'CONFIRMED_ROUND_LINES'};
+  const unrecorded=rounds.filter(r=>r.payment_status!=='PAID').length;
+  return {fy:fy,scope_officer:scope,officers:officers,totals:totals,rounds:rounds.sort((a,b)=>b.pay_date.localeCompare(a.pay_date)),source:'CONFIRMED_ROUND_LINES',
+    unrecorded_rounds:unrecorded,can_payment:!scope&&hasRole_(ctx.user,['FINANCE','ADMIN'])};
 }
 function verify079ReadOnly() {
   const tables=['NOTICES','BUDGET_UNITS','LEDGER','PAYOUT_ROUNDS','PAYOUT_ITEMS','RATE_AREAS','RATE_BUDGET','CALC_RULES','CONFIG'];
@@ -100,6 +139,23 @@ function verify079ReadOnly() {
   if(hash()!==before)throw new Error('Read-only verification changed data');
   console.log(JSON.stringify({verification:'0.7.9',unchanged:true,compensation_status_correct:true,scope_correct:true}));
 }
+/** 0.7.10 เจ้าของโครงการรันในตัวแก้ไข: ตรวจฐานจริงแบบอ่านอย่างเดียว (ไม่มี route) แล้วพิมพ์ตัวเลขเทียบรายงานตรวจ */
+function verify0710ReadOnly() {
+  const tables=['NOTICES','BUDGET_UNITS','LEDGER','PAYOUT_ROUNDS','PAYOUT_ITEMS','RATE_AREAS','RATE_BUDGET','CALC_RULES','CONFIG'];
+  const hash=()=>{DB_CACHE_=null;HEAD_CACHE_={};return digestJson_(tables.map(k=>readTable_(k).rows));},before=hash(),fy=String(currentFy_());
+  const admin={user:{code:'READ_ONLY_VERIFY',roles:['ADMIN']}},raw=readTable_('NOTICES').rows,linked=linkedNotices_(raw);
+  const fromHistory=linked.filter(n=>n.round_from_history),shifted=fromHistory.filter(n=>{const o=raw.filter(x=>x.notice_uid===n.notice_uid)[0];return effAmount_(o)!==effAmount_(n);});
+  const dash=apiDashboard_(admin,{fy:fy}),comp=apiCompensationSummary_(admin,{fy:fy}),tr=trackingData_(admin,{fy:fy,pay_type:'BUDGET'}),co=apiCloseout_(admin,{fy:fy});
+  const ledgerNoRound=trackingData_(admin,{fy:fy}).ledger_summary.by_date.filter(x=>x.state!=='IN_ROUND');
+  if(tr.budget_pending&&(tr.budget_pending.ready_n!==co.totals.ready_n||Math.round(tr.budget_pending.ready_amount*100)!==Math.round(co.totals.ready_amount*100)))throw new Error('Budget pending differs from finance page');
+  if(hash()!==before)throw new Error('Read-only verification changed data');
+  console.log(JSON.stringify({verification:'0.7.10',unchanged:true,fy:fy,
+    round_links_from_history:fromHistory.length,amount_changed_by_history:shifted.length,
+    amount_delta:Math.round(shifted.reduce((a,n)=>a+effAmount_(n)-effAmount_(raw.filter(x=>x.notice_uid===n.notice_uid)[0]),0)*100)/100,
+    dashboard_check:dash.totals.money.check,dashboard_free_expired:dash.totals.free_expired,
+    compensation:{c60:comp.totals.c60,recorded60:comp.totals.paid60,unrecorded60:comp.totals.pending60,unrecorded_rounds:comp.unrecorded_rounds},
+    ledger_without_round:ledgerNoRound,budget_pending:tr.budget_pending,budget_register_amount:tr.totals.amount}));
+}
 function apiRoundPayment_(ctx, d) {
   const ref = str_(d.payment_ref, 200), date = String(d.payment_date || '');
   if (!ref || !validIso_(date)) throw appErr_('BAD_REQUEST', 'ระบุวันที่จ่ายจริงและเลขที่หลักฐาน');
@@ -108,6 +164,33 @@ function apiRoundPayment_(ctx, d) {
   if (r.payment_status === 'PAID') throw appErr_('ALREADY_PAID', 'รอบนี้บันทึกจ่ายจริงแล้ว');
   r.payment_status = 'PAID'; r.payment_date = date; r.payment_ref = ref; r.payment_by = ctx.user.code; r.payment_at = now_();
   updateRow_('PAYOUT_ROUNDS', r._r, r); audit_(ctx.user.code, 'ROUND_PAYMENT', r.round_id, { date: date, reference: ref }); return { round_id: r.round_id, payment_date: date };
+}
+/**
+ * 0.7.10 บันทึกหลักฐานจ่ายจริงหลายรอบพร้อมกัน (การเงิน/ผู้ดูแล) — สำหรับรอบที่จ่ายเงินแล้วแต่ยังไม่ได้บันทึกในระบบ
+ * วันที่จ่ายจริง: ระบุวันเดียวให้ทุกรอบ หรือ use_pay_date = ใช้วันที่ของแต่ละรอบ · ไม่เปลี่ยนยอด/เศษ/รายการของรอบ
+ */
+function apiRoundPaymentBulk_(ctx, d) {
+  const ref = str_(d.payment_ref, 200), ids = Array.isArray(d.round_ids) ? d.round_ids.map(String).filter(String) : [];
+  const usePay = d.use_pay_date === true || String(d.use_pay_date) === 'true', date = String(d.payment_date || '');
+  if (!ids.length) throw appErr_('BAD_REQUEST', 'เลือกรอบที่จ่ายเงินแล้ว');
+  if (ids.length > 200) throw appErr_('BAD_REQUEST', 'เลือกได้ครั้งละไม่เกิน 200 รอบ');
+  if (!ref) throw appErr_('BAD_REQUEST', 'ระบุเลขที่หลักฐาน / เอกสารการจ่าย');
+  if (!usePay && !validIso_(date)) throw appErr_('BAD_REQUEST', 'ระบุวันที่จ่ายจริง หรือเลือกใช้วันที่ของแต่ละรอบ');
+  const want = {}; ids.forEach(function (x) { want[x] = true; });
+  return lockedEdit_(ctx, function () {
+    const table = readTable_('PAYOUT_ROUNDS'), ts = now_(), done = [], skipped = [];
+    table.rows.forEach(function (r) {
+      if (!want[r.round_id]) return;
+      if (r.status !== 'CONFIRMED' || r.payment_status === 'PAID') { skipped.push(r.round_id); return; }
+      const pd = usePay ? String(r.pay_date || '').slice(0, 10) : date;
+      if (!validIso_(pd)) { skipped.push(r.round_id); return; }
+      r.payment_status = 'PAID'; r.payment_date = pd; r.payment_ref = ref; r.payment_by = ctx.user.code; r.payment_at = ts;
+      updateRow_('PAYOUT_ROUNDS', r._r, r); done.push({ round_id: r.round_id, payment_date: pd });
+    });
+    ids.forEach(function (x) { if (!done.some(function (o) { return o.round_id === x; }) && skipped.indexOf(x) < 0) skipped.push(x); });
+    if (done.length) audit_(ctx.user.code, 'ROUND_PAYMENT_BULK', done.map(function (o) { return o.round_id; }).join(',').slice(0, 900), { reference: ref, use_pay_date: usePay, date: usePay ? '' : date, n: done.length });
+    return { updated: done.length, rounds: done, skipped: skipped };
+  });
 }
 function validIso_(s) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s))) return false;
@@ -150,6 +233,7 @@ function closeoutData_(notices, rounds, payoutItems, names, fy, today, budgetUni
   const year = Number(fy) - 543, from = (year - 1) + '-10-01', end = year + '-09-30';
   if (today < from) throw appErr_('BAD_REQUEST', 'ยังไม่เริ่มปีงบประมาณที่เลือก');
   const to = today < end ? today : end, expired = today > end;
+  notices = linkNotices_(notices, rounds, payoutItems);              // 0.7.10 หมายที่ช่องรอบว่างแต่มีประวัติรอบ = เบิกแล้ว
   const confirmed = {}, claimed = {}, legacyUnits = {}, lockedUnits = {};
   rounds.forEach(function(r) { if (r.status === 'CONFIRMED') confirmed[r.round_id] = r; });
   payoutItems.forEach(function(it) {

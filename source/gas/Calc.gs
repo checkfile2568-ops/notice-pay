@@ -51,12 +51,31 @@ function calcCompute_(notices, opt) {
   Object.keys(locked).forEach(function (u) { (locked[u].notice_uids || []).forEach(function (n) { lockedUid[n] = u; }); });
   var byNotice = {}, warnings = [], groups = {};
 
+  var inRound = opt.inRound || {}, fyStartM = opt.fyStartMonth || 10;
   notices.forEach(function (n) {
     var uid = String(n.notice_uid);
     if (lockedUid[uid]) return;                                   // อยู่ในหน่วยที่ล็อกแล้ว — ไม่แตะ
+    if (n.payout_round_id || inRound[uid]) return;                // 0.7.10 อยู่ในรอบยืนยันแล้ว (รวมประวัติรอบ) — คงยอดเดิม ไม่คำนวณทับ
     // ไฟล์ 50 คร่อมวันเริ่มปีงบ และยังไม่มีวันที่จ่ายจากไฟล์ 42 → ยังไม่รู้ว่านับหรือไม่ ยังไม่คิดเงิน
     // งานหมายยืนยันเองได้: BEFORE = จ่ายเดือน ก.ย. (ก่อนเริ่มปีงบ) ไม่นับ · AFTER = จ่ายตั้งแต่วันเริ่ม คิดตามปกติ
-    if (String(n.flags || '').indexOf(FLAG_DATE_UNSURE) >= 0 && !n.issued_date) {
+    // 0.7.10 หมายมีเงินนับตามวันที่ส่ง: มีวันที่ส่งแล้วไม่ต้องรอยืนยันวันที่จ่าย · ยืนยัน ก.ย. แต่ยังไม่มีวันที่ส่ง = ก่อนเริ่มปีงบ ไม่นับจนกว่าจะมีวันที่ส่งในปีงบใหม่
+    var unsure = String(n.flags || '').indexOf(FLAG_DATE_UNSURE) >= 0 && !n.issued_date;
+    if (unsure && n.pay_type === 'PAID' && (n.delivered_date || String(n.date_ok || '') === 'BEFORE')) {
+      var dd = String(n.delivered_date || '').slice(0, 10);
+      if (!dd) {
+        byNotice[uid] = { calc_amount: '', calc_rule: 'PRE_START', budget_unit_id: '',
+          calc_note: 'จ่ายเดือน ก.ย. — ยังไม่มีวันที่ส่งในปีงบที่เริ่มแล้ว จึงไม่นับในปีงบใหม่' };
+        return;
+      }
+      if (startDate && dd < startDate) {
+        byNotice[uid] = { calc_amount: '', calc_rule: 'PRE_START', budget_unit_id: '',
+          calc_note: 'หมายมีเงินส่งก่อนเริ่มปีงบ — ไม่นับ' };
+        return;
+      }
+      unsure = false;                                             // ส่งในปีงบแล้ว — คิดตามปกติ (ไม่ใช้ช่อง fy เดิม)
+      n = Object.assign({}, n, { fy: fiscalYear_(dd, fyStartM) || n.fy });
+    }
+    if (unsure) {
       var dok = String(n.date_ok || '');
       if (dok === 'BEFORE') {
         byNotice[uid] = { calc_amount: '', calc_rule: 'PRE_START', budget_unit_id: '',
@@ -70,14 +89,15 @@ function calcCompute_(notices, opt) {
       }
     }
     var preFy = startFy && Number(n.fy) && Number(n.fy) < startFy;
-    var preFree = n.pay_type === 'BUDGET' && startDate && n.issued_date && String(n.issued_date) < startDate;
+    var preFree = n.pay_type === 'BUDGET' && n.issued_date && ((startDate && String(n.issued_date) < startDate) ||
+      // 0.7.10 ทุกปีงบ: หมายฟรีจ่ายหมายปีงบหนึ่ง แต่ส่งในปีงบถัดไป → ไม่นับในปีงบใหม่ (ไม่รวมหน่วยกับหมายของปีใหม่)
+      (n.delivered_date && fiscalYear_(String(n.issued_date).slice(0, 10), fyStartM) < fiscalYear_(String(n.delivered_date).slice(0, 10), fyStartM)));
     if (preFy || preFree) {
       byNotice[uid] = { calc_amount: '', calc_rule: 'PRE_START', budget_unit_id: '',
         calc_note: n.pay_type === 'PAID' ? 'จ่ายก่อนเริ่มปีงบ — นับเมื่อวันที่ส่งอยู่ในปีงบที่เริ่มแล้ว' : 'หมายฟรีจ่ายก่อนเริ่มปีงบ — ไม่นับ' };
       return;
     }
     if (n.pay_type === 'PAID') {
-      if (n.payout_round_id) return;                              // เข้ารอบเบิกแล้ว — คงยอดเดิม
       var adj = amountAdj_(n);                                    // ราคาไม่เท่าอัตราตำบล → คิดตามอัตราตำบล
       var a = adj ? baht_(cents_(adj.rate)) : (String(n.amount_src || '') === '' ? '' : baht_(cents_(n.amount_src)));
       byNotice[uid] = { calc_amount: a, calc_rule: 'PAID', calc_note: adj ? adjNote_(adj) : (a === '' ? 'ไม่มีราคา' : ''), budget_unit_id: '' };
@@ -200,9 +220,13 @@ function calcRunCore_(byUser) {
   const urbanRule = rulesT.filter(function (r) { return r.rule_code === 'FREE_URBAN_GROUP'; })[0];
   const ut = readTable_('BUDGET_UNITS');
   const locked = {}, keep = [];
-  ut.rows.forEach(function (u) { if (unitLocked_(u)) { locked[u.unit_id] = { notice_uids: String(u.notice_uids || '').split(',').filter(String) }; keep.push(u); } });
+  const inRound = roundLinks_(readTable_('PAYOUT_ROUNDS').rows, readTable_('PAYOUT_ITEMS').rows);   // 0.7.10 ประวัติรอบยืนยัน
+  ut.rows.forEach(function (u) {
+    const uids = String(u.notice_uids || '').split(',').filter(String);
+    if (unitLocked_(u) || uids.some(function (x) { return inRound[x]; })) { locked[u.unit_id] = { notice_uids: uids }; keep.push(u); }
+  });
   const res = calcCompute_(nt.rows, { areaRate: areaRate, budgetRate: budgetRate, mode: rule ? rule.mode : 'HALF',
-                                       locked: locked, fyStartMonth: cfgNum_('FY_START_MONTH', 10),
+                                       locked: locked, inRound: inRound, fyStartMonth: cfgNum_('FY_START_MONTH', 10),
                                        startFy: cfg_('PROCESS_START_FY', ''),
                                        startDate: fyStartDate_(cfg_('PROCESS_START_FY', ''), cfgNum_('FY_START_MONTH', 10)),
                                        urbanGroup: (urbanRule && urbanRule.mode) || 'TAMBON',

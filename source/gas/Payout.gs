@@ -56,6 +56,61 @@ function payoutSplit_(lines, seats, policy, carryInC) {
 }
 
 function cents2_(v) { return Math.round(Number(String(v === undefined || v === null ? '' : v).replace(/,/g, '')) * 100) || 0; }
+/**
+ * 0.7.10 ประวัติรอบจาก PAYOUT_ITEMS ของรอบ CONFIRMED (รายการที่ included) → { uid: { round_id, pay_date, round_type, amount_c, payment_status } }
+ * หมายอยู่หลายรอบใช้รอบล่าสุดตามลำดับรอบ · ยอดของรายการตกที่ฉบับแรก (เหมือนตอนยืนยันรอบ) ฉบับอื่นในรายการเดียวกัน = 0
+ */
+function roundLinks_(rounds, items) {
+  var conf = {}, out = {};
+  (rounds || []).forEach(function (r) { if (r.status === 'CONFIRMED') conf[r.round_id] = r; });
+  (items || []).forEach(function (it) {
+    var r = conf[it.round_id];
+    if (!r || String(it.included).toUpperCase() !== 'TRUE') return;
+    String(it.notice_uids || '').split(',').filter(String).forEach(function (u, i) {
+      var amt = i === 0 ? cents2_(it.amount) : 0, cur = out[u];
+      if (cur && cur.round_id === r.round_id) { cur.amount_c += amt; return; }
+      if (cur && roundOrderKey_(conf[cur.round_id]) > roundOrderKey_(r)) return;
+      out[u] = { round_id: String(r.round_id), pay_date: String(r.pay_date || '').slice(0, 10), round_type: String(r.round_type || ''),
+                 amount_c: amt, payment_status: String(r.payment_status || '') };
+    });
+  });
+  return out;
+}
+/**
+ * แถว NOTICES ที่เติมรหัสรอบจากประวัติรอบ (ไม่เขียนชีต): ช่อง payout_round_id ว่าง/ชี้รอบที่ไม่ใช่ CONFIRMED แต่มีประวัติ → ใช้รอบจากประวัติ
+ * ทุกแถวที่อยู่ในรอบยืนยันได้ round_amount_c = ยอดเดิมในรอบ (ใช้แทนยอดอ้างอิง) · หมายเงินที่ paid_amount ว่างเติมจากรอบ
+ */
+function linkNotices_(notices, rounds, items) {
+  var links = roundLinks_(rounds, items), conf = {};
+  (rounds || []).forEach(function (r) { if (r.status === 'CONFIRMED') conf[r.round_id] = true; });
+  return (notices || []).map(function (n) {
+    var l = links[String(n.notice_uid)], ptr = String(n.payout_round_id || '');
+    if (!l) return n;
+    var o = Object.assign({}, n);
+    if (!ptr || !conf[ptr]) { o.payout_round_id = l.round_id; o.round_from_history = true; }
+    if (o.payout_round_id === l.round_id) {
+      o.round_amount_c = l.amount_c;
+      if (o.pay_type === 'PAID' && (o.paid_amount === '' || o.paid_amount === undefined || o.paid_amount === null)) o.paid_amount = String(l.amount_c / 100);
+    }
+    return o;
+  });
+}
+/** ปีงบ (พ.ศ.) ของวันที่ ISO แบบไม่พึ่งไฟล์อื่น */
+function fyOfIso_(iso, startMonth) {
+  var s = String(iso || '').slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return 0;
+  var y = +s.slice(0, 4), mo = +s.slice(5, 7); return (mo >= (startMonth || 10) ? y + 1 : y) + 543;
+}
+/**
+ * 0.7.10 กฎหมายฟรีข้ามปีงบ (ใช้ร่วมทุกหน้า): หมายฟรีที่ยังไม่อยู่ในรอบยืนยัน เบิกได้ภายในปีงบของวันที่จ่ายหมายเท่านั้น
+ * ปีงบของหมาย = ปีงบของวันที่จ่ายหมาย (ไม่มีใช้ช่อง fy) · พ้น 30 ก.ย. ของปีงบนั้นแล้ว = ไม่เบิกจ่าย (ยอด 0) · คงประวัติเดิม
+ */
+function freeExpired_(n, today) {
+  if (!n || n.pay_type !== 'BUDGET' || n.payout_round_id || !today) return false;
+  var fy = fyOfIso_(n.issued_date) || Number(n.fy) || 0;
+  if (!fy) return false;
+  return String(today).slice(0, 10) > (fy - 543) + '-09-30';
+}
+
 /** วันที่ลงข้อมูล (รายงานผล) — ศาลใช้ตัดช่วงเบิก · ไม่มีใช้วันที่ส่ง */
 function repDate_(n) { return String(n.reported_date || n.delivered_date || '').slice(0, 10); }
 /** ส่วนต่างยอดจริงกับยอดที่ระบบคำนวณ (คำเตือน ▲/▼ ไม่ใช่ยอดที่จ่าย) */
@@ -73,10 +128,11 @@ function diffNote_(actC, sysC, what) {
 function payoutFreeItems_(notices, opt) {
   opt = opt || {};
   var cutoff = String(opt.cutoff || '9999-12-31'), held = opt.held || {}, today = String(opt.today || '');
-  var items = [], blocked = { wait: 0, late: 0, review: 0, noclaim: 0 };
+  var items = [], blocked = { wait: 0, late: 0, review: 0, noclaim: 0, expired: 0 };
   notices.forEach(function (r) {
     if (r.pay_type !== 'BUDGET' || r.payout_round_id) return;
     if (r.noclaim_at) { blocked.noclaim++; return; }
+    if (freeExpired_(r, today)) { blocked.expired++; return; }          // พ้นปีงบของหมายแล้ว — ไม่เบิกจ่าย
     var rule = String(r.calc_rule || '');
     if (!FREE_RULES_OK_.test(rule)) { if (rule === 'WAIT_DELIVERY') blocked.wait++; else if (/^REVIEW|WAIT_ISSUE/.test(rule)) blocked.review++; return; }
     var rd = repDate_(r);
@@ -238,9 +294,14 @@ function pendingPayDates_(ledger) {
 }
 
 /** รายการเสนอเบิก (ไม่บันทึกอะไร) */
+/** NOTICES ที่เติมรหัสรอบจากประวัติรอบยืนยัน (อ่านอย่างเดียว) — ใช้ทุกหน้าที่แสดงสถานะ/ยอด เพื่อกันเสนอเบิกซ้ำ */
+function linkedNotices_(rows) {
+  return linkNotices_(rows || readTable_('NOTICES').rows, readTable_('PAYOUT_ROUNDS').rows, readTable_('PAYOUT_ITEMS').rows);
+}
+
 function apiPayoutCandidates_(ctx, d) {
   const o = payoutOpts_(d);
-  const rows = readTable_('PAYOUT_ROUNDS').rows, nt = readTable_('NOTICES').rows;
+  const rows = readTable_('PAYOUT_ROUNDS').rows, nt = linkedNotices_();
   const carry = carryFor_(rows, o.type, o.payDate);
   const base = { round_type: o.type, round_type_th: ROUND_TYPE_TH[o.type], pay_date: o.payDate, cutoff: o.cutoff,
                  officers: officerNames_(), carry_in: carry.carry_c / 100, carry_from: carry.from, order_ok: carry.order_ok,
@@ -269,8 +330,9 @@ function apiPayoutConfirm_(ctx, d) {
     const carry = carryFor_(rt.rows, o.type, o.payDate);
     if (!carry.order_ok) throw appErr_('BAD_REQUEST', 'ตั้งรอบได้เฉพาะต่อจากรอบล่าสุด (' + carry.last_key.replace('|1', ' หมายฟรี').replace('|2', ' หมายเงิน') + ') — รอบย้อนหลังให้ยกเลิกรอบหลังก่อน หรือตั้งตามลำดับวันที่');
     const nt = readTable_('NOTICES'), lt = o.type === 'PAID' ? readTable_('LEDGER') : null;
-    const cand = o.type === 'FREE' ? payoutFreeItems_(nt.rows, { cutoff: o.cutoff, today: o.today }).items
-                                   : payoutPaidItems_(lt.rows, nt.rows, { pay_date: o.payDate }).items;
+    const ntLinked = linkNotices_(nt.rows, rt.rows, readTable_('PAYOUT_ITEMS').rows);   // หมายที่มีประวัติรอบแล้วไม่เสนอซ้ำ
+    const cand = o.type === 'FREE' ? payoutFreeItems_(ntLinked, { cutoff: o.cutoff, today: o.today }).items
+                                   : payoutPaidItems_(lt.rows, ntLinked, { pay_date: o.payDate }).items;
     if (d.expect_count !== undefined && Number(d.expect_count) !== cand.length)
       throw appErr_('STALE', 'รายการเปลี่ยนไปแล้ว (มีผู้อื่นนำเข้า/ยืนยันรอบ) — กด "ดึงรายการ" ใหม่อีกครั้ง');
     const snapshot = payoutSnapshot_(cand, carry, o);
@@ -365,7 +427,7 @@ function backlogOf_(nt, lt, today) {
 /** รายการรอบทั้งหมด + กล่อง "ยังไม่ได้เบิก" (ตัวเลขรวม ไม่มีชื่อผู้รับ — ทุกบทบาทดูได้) */
 function apiPayoutList_(ctx, d) {
   const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
-  const rt = readTable_('PAYOUT_ROUNDS').rows, nt = readTable_('NOTICES').rows, lt = readTable_('LEDGER').rows;
+  const rt = readTable_('PAYOUT_ROUNDS').rows, nt = linkedNotices_(), lt = readTable_('LEDGER').rows;
   const rounds = rt.map(function (r) {
     return { round_id: r.round_id, fy: r.fy, pay_date: r.pay_date, cutoff_date: r.cutoff_date, round_type: r.round_type || '',
              seats: Number(r.seat_count), n_items: Number(r.n_items), n_excluded: Number(r.n_excluded),
@@ -397,7 +459,7 @@ function apiPayoutList_(ctx, d) {
 /** รายการค้างเบิก/ไม่เบิกรายเรื่อง (บทบาทที่เห็นข้อมูลคดี) */
 function apiPayoutBacklog_(ctx, d) {
   const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
-  const nt = readTable_('NOTICES').rows, lt = readTable_('LEDGER').rows;
+  const nt = linkedNotices_(), lt = readTable_('LEDGER').rows;
   const scope = scopeOfficer_(ctx.user);
   const bl = backlogOf_(nt, lt, today);
   const keep = function (o) { return !scope || o === scope; };
@@ -425,9 +487,10 @@ function apiPayoutNoclaim_(ctx, d) {
   return lockedEdit_(ctx, function () {
     const want = {}; uids.forEach(function (u) { want[u] = true; });
     const ts = now_(), who = (ctx.user.code + ' ' + (ctx.user.name || '')).trim();
+    const inRound = roundLinks_(readTable_('PAYOUT_ROUNDS').rows, readTable_('PAYOUT_ITEMS').rows);
     let n = 0;
     readTable_('NOTICES').rows.forEach(function (r) {
-      if (!want[r.notice_uid] || r.payout_round_id) return;
+      if (!want[r.notice_uid] || r.payout_round_id || inRound[r.notice_uid]) return;   // อยู่ในรอบยืนยันแล้ว ไม่ปิด
       if (undo) { if (!r.noclaim_at) return; r.noclaim_reason = ''; r.noclaim_by = ''; r.noclaim_at = ''; }
       else { r.noclaim_reason = reason; r.noclaim_by = who; r.noclaim_at = ts; }
       r.updated_at = ts; updateRow_('NOTICES', r._r, r); n++;
