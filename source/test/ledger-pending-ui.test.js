@@ -8,7 +8,7 @@ g.appendRows_('LEDGER',[{ledger_id:'DEMO-OLD',source:'PAY',pay_date:'2026-10-02'
 const web=path.join(__dirname,'../web'),errors=[],vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(e.message));
 const dom=new JSDOM(fs.readFileSync(path.join(web,'index.html'),'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,''),{url:'https://localhost/',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:vc});
 const w=dom.window,actions=[];w.NP_CONFIG={VERSION:'0.7.11',API_URL:'/LOCAL_TEST'};w.matchMedia=()=>({matches:true});w.scrollTo=()=>{};w.HTMLElement.prototype.scrollIntoView=()=>{};w.HTMLElement.prototype.scrollTo=()=>{};
-w.fetch=async(u,o)=>{const d=JSON.parse(o.body);actions.push(d.action);return{json:async()=>call(d.action,d)};};
+w.fetch=async(u,o)=>{const d=JSON.parse(o.body);assert.equal(d.client_version,require('../package.json').version);actions.push(d.action);return{json:async()=>call(d.action,d)};};
 w.eval(fs.readFileSync(path.join(web,'import-formats.js'),'utf8'));w.eval(fs.readFileSync(path.join(web,'app.js'),'utf8').replace(/\}\)\(\);\s*$/,'window.__T={S,go,enterApp};})();'));
 const tick=()=>new Promise(r=>setTimeout(r,100));
 (async()=>{await tick();const a=w.__T;a.S.token=login.token;a.S.user=login.user;a.S.fy='2570';a.enterApp();await tick();a.go('finance');await tick();
