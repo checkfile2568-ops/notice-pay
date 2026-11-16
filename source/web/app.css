@@ -483,3 +483,22 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 @media(max-width:1100px){#trackForm .row{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:860px){.nav button{white-space:nowrap}.workflow-steps{grid-template-columns:repeat(2,minmax(0,1fr))}.app-version{display:none}.side .brand h1{font-size:18px}#trackForm .row{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.workflow-intro{padding:18px}.workflow-intro h3 span{display:block}.workflow-steps{gap:7px}.workflow-steps span{padding:9px;font-size:12px}.comp-kpis{grid-template-columns:1fr}.comp-kpis .kpi{padding:18px}.brand h1{font-size:18px}.home-import .row .btn{flex:1 1 145px}#compForm{gap:12px}#compForm .btn{flex:1}.side .brand h1{font-size:17px}}
+
+/* 0.7.13 ตารางหมายเงินงบประมาณ เบิกจริง/ยังไม่เบิก — 3 คอลัมน์ พอดีจอมือถือ */
+.fc-tbl{width:100%;min-width:0!important;table-layout:fixed}
+.fc-tbl th,.fc-tbl td{white-space:normal;word-break:normal;overflow-wrap:anywhere;padding-left:8px;padding-right:8px}
+.fc-tbl th:first-child,.fc-tbl td:first-child{width:42%}
+.fc-tbl td .tiny{white-space:nowrap}
+.fc-tbl tfoot td{border-top:2px solid rgba(0,0,0,.08)}
+
+/* 0.7.13 หัวหน้าทุกเมนู: หัวเรื่องไม่ถูกบีบจนตัวอักษรเรียงแนวตั้ง — ปุ่มขึ้นบรรทัดใหม่เมื่อที่ไม่พอ */
+.top h2{flex:1 1 240px}
+.top>.row,.top>div{flex-wrap:wrap}
+@media (max-width:640px){.top h2{flex-basis:100%}.top>.row,.top>div{width:100%}}
+/* 0.7.13 ตารางหลายคอลัมน์บนมือถือ: เลื่อนซ้าย-ขวาแทนการบีบคอลัมน์จนข้อความเรียงแนวตั้ง */
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.wide-tbl{min-width:760px}
+.track-tbl{min-width:1080px}
+.wide-tbl th{white-space:nowrap}
+.wide-tbl td{min-width:96px}
+.wide-tbl td:first-child{min-width:120px}
