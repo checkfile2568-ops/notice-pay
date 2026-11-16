@@ -33,6 +33,7 @@ function routes_() {
     review_resolve:  { auth: true, roles: ['NOTICE', 'ADMIN'], fn: apiReviewResolve_ },
 
     calc_summary:    { auth: true, roles: ALL, fn: apiCalcSummary_ },
+    compensation_summary: { auth: true, roles: ALL, fn: apiCompensationSummary_ },
     calc_units:      { auth: true, roles: ALL, fn: apiCalcUnits_ },
     calc_run:        { auth: true, roles: ['NOTICE', 'FINANCE', 'ADMIN'], fn: apiCalcRun_ },
     notice_checks:   { auth: true, roles: WORK, fn: apiNoticeChecks_ },

@@ -18,12 +18,13 @@ function trackingData_(ctx, d) {
   const list = readTable_('NOTICES').rows.filter(function (n) {
     if (d.unit_id && n.budget_unit_id !== String(d.unit_id)) return false;
     if (officer && n.officer_id !== officer) return false;
+    if (d.area_id && String(n.area_id)!==String(d.area_id)) return false;
     if (fy && String(n.fy) !== fy) return false;
     if (type && n.pay_type !== type) return false;
     const date = parseDate_(n.delivered_date || n.issued_date) || '';
     if (from && (!date || date < from)) return false;
     if (to && (!date || date > to)) return false;
-    return !q || [n.case_no, n.case_ref, n.red_no, n.notice_no, n.recipient].some(function (v) { return normText_(v).replace(/\s+/g, '').toUpperCase().indexOf(q) >= 0; });
+    return !q || [n.case_no, n.case_ref, n.red_no, n.notice_no].some(function (v) { return normText_(v).replace(/\s+/g, '').toUpperCase().indexOf(q) >= 0; });
   }).map(function (n) {
     const hs = history[n.notice_uid] || [];
     const prior = hs.slice().sort(function(a,b) { return String(a.pay_date).localeCompare(String(b.pay_date)) || String(a.round_id).localeCompare(String(b.round_id)); });
@@ -39,17 +40,18 @@ function trackingData_(ctx, d) {
     const reference = n.calc_amount === '' || n.calc_amount === undefined ? null : Number(n.calc_amount);
     const actual = st === 'NOCLAIM' && n.pay_type === 'BUDGET' ? 0 : effAmount_(n), diff = st === 'NOCLAIM' || reference === null ? null : Math.round((actual - reference) * 100) / 100;
     return { notice_uid: n.notice_uid, fy: n.fy, pay_type: n.pay_type, case_no: n.case_no, notice_kind: n.notice_kind, recipient: n.recipient,
-      officer_id: n.officer_id, officer: (names[n.officer_id] || {}).name || n.officer_raw, tambon: n.tambon, issued_date: String(n.issued_date || '').slice(0, 10), delivered_date: String(n.delivered_date || '').slice(0, 10), reported_date: String(n.reported_date || '').slice(0, 10),
+      officer_id: n.officer_id, officer: (names[n.officer_id] || {}).name || n.officer_raw, tambon: n.tambon, amphoe:n.amphoe, area_id:n.area_id, issued_date: String(n.issued_date || '').slice(0, 10), delivered_date: String(n.delivered_date || '').slice(0, 10), reported_date: String(n.reported_date || '').slice(0, 10),
       reference: reference, amount: actual, difference: diff, source: n.pay_type === 'PAID' && n.payout_round_id && n.paid_amount !== '' ? 'ยอดจ่ายตามบัญชี' : n.pay_type === 'BUDGET' && n.court_at ? 'ราคาบัญชีศาล ประเภท 18' : 'ยอดระบบคำนวณ',
       status: st, status_th: TRACK_STATUS_TH_[st], round_id: r && r.status === 'CONFIRMED' ? r.round_id : '', round_date: r ? r.pay_date : '', payment_date: r ? r.payment_date || '' : '', payment_ref: r ? r.payment_ref || '' : '',
       unit_id: n.budget_unit_id || '', grouped_count: n.budget_unit_id ? (unitMembers[n.budget_unit_id] || []).length : 1, flags: n.flags || '', history: hs };
   }).filter(function (r) { return !status || r.status === status; });
-  const totals = { count: list.length, amount: 0, shortage: 0, excess: 0, shortage_n: 0, excess_n: 0, statuses: {} }, per = {};
+  const totals = { count: list.length, amount: 0, shortage: 0, excess: 0, shortage_n: 0, excess_n: 0, statuses: {} }, per = {}, perArea = {};
   list.forEach(function (r) {
     totals.amount += Math.round(r.amount * 100); totals.statuses[r.status] = (totals.statuses[r.status] || 0) + 1;
     if (r.difference < 0) { totals.shortage += Math.round(-r.difference * 100); totals.shortage_n++; }
     if (r.difference > 0) { totals.excess += Math.round(r.difference * 100); totals.excess_n++; }
     const p = per[r.officer_id] = per[r.officer_id] || { officer_id: r.officer_id, officer: r.officer, count: 0, amount: 0, shortage: 0, excess: 0 };
+    const a=perArea[r.area_id||'__unknown__']=perArea[r.area_id||'__unknown__']||{area_id:r.area_id||'',tambon:r.tambon||'ไม่ระบุพื้นที่',amphoe:r.amphoe||'',count:0,amount:0};a.count++;a.amount+=Math.round(r.amount*100);
     p.count++; p.amount += Math.round(r.amount * 100); p.shortage += Math.round(Math.max(0, -(r.difference || 0)) * 100); p.excess += Math.round(Math.max(0, r.difference || 0) * 100);
   });
   ['amount', 'shortage', 'excess'].forEach(function (k) { totals[k] /= 100; Object.keys(per).forEach(function (id) { per[id][k] /= 100; }); });
@@ -57,7 +59,8 @@ function trackingData_(ctx, d) {
   const controls={count:ledger.length,amount:0,unmatched_n:0,unmatched_amount:0}; ledger.forEach(function(l){controls.amount+=cents2_(l.amount);if(l.match!=='OK'){controls.unmatched_n++;controls.unmatched_amount+=cents2_(l.amount);}}); controls.amount/=100;controls.unmatched_amount/=100;
   const rr=Object.keys(rounds).map(function(k){return rounds[k];}).filter(function(r){return r.status==='CONFIRMED' && (!fy || String(r.fy)===fy) && (!type || r.round_type===(type==='BUDGET'?'FREE':'PAID'));});
   const rc={count:rr.length,amount:rr.reduce(function(a,r){if(!officer)return a+cents2_(r.total);let lines=[];try{lines=JSON.parse(r.lines_json||'[]');}catch(e){}return a+lines.filter(function(l){return l.officer_id===officer;}).reduce(function(t,l){return t+l.total_c;},0);},0)/100};
-  return { ledger_summary:controls,round_summary:rc,rows: list, totals: totals, officers: names, per_officer: Object.keys(per).map(function (id) { return per[id]; }), last_imports: lastImports_(), statuses: TRACK_STATUS_TH_, scope_officer: scope };
+  Object.keys(perArea).forEach(k=>perArea[k].amount/=100);
+  return { per_area:Object.keys(perArea).map(k=>perArea[k]),ledger_summary:controls,round_summary:rc,rows: list, totals: totals, officers: names, areas:readTable_('RATE_AREAS').rows.map(a=>({area_id:a.area_id,tambon:a.tambon_name,amphoe:a.amphoe_name})),per_officer: Object.keys(per).map(function (id) { return per[id]; }), last_imports: lastImports_(), statuses: TRACK_STATUS_TH_, scope_officer: scope };
 }
 function apiTracking_(ctx, d) {
   const out = trackingData_(ctx, d), page = Math.max(1, Math.floor(Number(d.page) || 1));
@@ -66,6 +69,36 @@ function apiTracking_(ctx, d) {
 function apiReports_(ctx, d) {
   if (d.report_mode === 'closeout') return apiCloseout_(ctx, d);
   const out = trackingData_(ctx, d); delete out.rows; return out;
+}
+/** Read saved confirmed-round splits only. Never recompute or write financial records. */
+function apiCompensationSummary_(ctx,d) {
+  const fy=String(d.fy||''),scope=scopeOfficer_(ctx.user),names=officerNames_(),per={},rounds=[];
+  if(fy&&!/^25\d{2}$/.test(fy))throw appErr_('BAD_REQUEST','ระบุปีงบประมาณ พ.ศ. 4 หลัก');
+  Object.keys(names).forEach(function(id){if(!scope||id===scope)per[id]={officer_id:id,name:names[id].name,color:names[id].color,rounds:0,paid_c:0,budget_c:0,c60:0,c40:0,paid60_c:0,pending60_c:0};});
+  function cents(v){const n=Number(v);if(v===undefined||v===null||v===''||!Number.isSafeInteger(n)||n<0)throw appErr_('DATA_REVIEW','ข้อมูลแบ่งยอดของรอบเดิมไม่ครบ กรุณาตรวจรายละเอียดรอบ');return n;}
+  readTable_('PAYOUT_ROUNDS').rows.filter(r=>r.status==='CONFIRMED'&&(!fy||String(r.fy)===fy)).forEach(function(r){
+    let lines;try{lines=JSON.parse(r.lines_json||'[]');}catch(e){throw appErr_('DATA_REVIEW','ข้อมูลแบ่งยอดของรอบเดิมอ่านไม่ได้');}
+    if(!Array.isArray(lines)||!lines.length)throw appErr_('DATA_REVIEW','รอบยืนยันยังไม่มีข้อมูลแบ่งยอดรายคน กรุณาตรวจรอบเดิม');
+    const paid=r.payment_status==='PAID',seen={},visible=lines.filter(l=>!scope||l.officer_id===scope);let total60=0;
+    visible.forEach(function(l){const id=String(l.officer_id||'');if(!id)throw appErr_('DATA_REVIEW','รอบเดิมมีรายการไม่ระบุผู้ส่ง');
+      const p=per[id]=per[id]||{officer_id:id,name:(names[id]||{}).name||id,color:(names[id]||{}).color||'#2e6b4f',rounds:0,paid_c:0,budget_c:0,c60:0,c40:0,paid60_c:0,pending60_c:0};
+      const c60=cents(l.c60),c40=cents(l.c40),pc=cents(l.paid_c),bc=cents(l.budget_c);if(c60+c40!==pc+bc)throw appErr_('DATA_REVIEW','ยอดแบ่งในรอบเดิมไม่ตรงกับฐานยอด');
+      p.paid_c+=pc;p.budget_c+=bc;p.c60+=c60;p.c40+=c40;p[paid?'paid60_c':'pending60_c']+=c60;total60+=c60;if(!seen[id]){p.rounds++;seen[id]=true;}
+    });
+    if(visible.length)rounds.push({round_id:r.round_id,fy:String(r.fy),pay_date:String(r.pay_date).slice(0,10),round_type:r.round_type,payment_status:paid?'PAID':'ROUND',payment_date:String(r.payment_date||'').slice(0,10),c60:total60/100,per_seat:scope?null:Number(r.per_seat)||0,carry_out:scope?null:Number(r.carry_out)||0});
+  });
+  const totals={paid:0,budget:0,c60:0,c40:0,paid60:0,pending60:0};
+  const officers=Object.keys(per).map(function(id){const p=per[id],o={officer_id:id,name:p.name,color:p.color,rounds:p.rounds};[['paid','paid_c'],['budget','budget_c'],['c60','c60'],['c40','c40'],['paid60','paid60_c'],['pending60','pending60_c']].forEach(function(pair){o[pair[0]]=p[pair[1]]/100;totals[pair[0]]+=p[pair[1]];});return o;});
+  Object.keys(totals).forEach(k=>totals[k]/=100);
+  return {fy:fy,scope_officer:scope,officers:officers,totals:totals,rounds:rounds.sort((a,b)=>b.pay_date.localeCompare(a.pay_date)),source:'CONFIRMED_ROUND_LINES'};
+}
+function verify079ReadOnly() {
+  const tables=['NOTICES','BUDGET_UNITS','LEDGER','PAYOUT_ROUNDS','PAYOUT_ITEMS','RATE_AREAS','RATE_BUDGET','CALC_RULES','CONFIG'];
+  const hash=()=>{DB_CACHE_=null;HEAD_CACHE_={};return digestJson_(tables.map(k=>readTable_(k).rows));},before=hash(),d=apiCompensationSummary_({user:{roles:['ADMIN']}},{fy:currentFy_()});
+  if(Math.round((d.totals.paid60+d.totals.pending60)*100)!==Math.round(d.totals.c60*100))throw new Error('Compensation status mismatch');
+  const first=d.officers[0];if(first){const own=apiCompensationSummary_({user:{roles:['COURIER'],officer_id:first.officer_id}},{fy:currentFy_()});if(own.officers.length!==1||own.totals.c60!==first.c60)throw new Error('Compensation scope mismatch');}
+  if(hash()!==before)throw new Error('Read-only verification changed data');
+  console.log(JSON.stringify({verification:'0.7.9',unchanged:true,compensation_status_correct:true,scope_correct:true}));
 }
 function apiRoundPayment_(ctx, d) {
   const ref = str_(d.payment_ref, 200), date = String(d.payment_date || '');
@@ -173,7 +206,7 @@ function closeoutData_(notices, rounds, payoutItems, names, fy, today, budgetUni
   totals.ready_amount /= 100;
   const officers = Object.keys(per).map(function(id) { per[id].ready_amount /= 100; return per[id]; }).sort(function(a,b) { return a.officer.localeCompare(b.officer, 'th'); });
   rows.sort(function(a,b) { return String(a.officer).localeCompare(String(b.officer), 'th') || String(a.case_no).localeCompare(String(b.case_no), 'th') || String(a.notice_uid).localeCompare(String(b.notice_uid)); });
-  return { report_mode: 'closeout', report_version: '0.7.8', fy: fy, from: from, to: to, fiscal_end: end, checked_at: now_(), today: today, expired: expired,
+  return { report_mode: 'closeout', report_version: '0.7.9', fy: fy, from: from, to: to, fiscal_end: end, checked_at: now_(), today: today, expired: expired,
     rows: rows, per_officer: officers, totals: totals, last_imports: lastImports_(), data_period: dashboardPeriod_(readTable_('IMPORT_BATCHES').rows, fy) };
 }
 

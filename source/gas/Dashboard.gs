@@ -110,8 +110,7 @@ function apiNoticeSearch_(ctx, d) {
   const out = readTable_('NOTICES').rows.filter(function (r) {
     if (scope && r.officer_id !== scope) return false;
     return String(r.case_no).toUpperCase().indexOf(q) >= 0 || String(r.case_ref).toUpperCase().indexOf(q) >= 0 ||
-           String(r.red_no).toUpperCase().indexOf(q) >= 0 || String(r.notice_no).toUpperCase() === q ||
-           String(r.recipient).replace(/\s+/g, '').indexOf(q) >= 0;
+           String(r.red_no).toUpperCase().indexOf(q) >= 0 || String(r.notice_no).toUpperCase() === q;
   }).slice(0, 100).map(function (r) {
     return { notice_uid: r.notice_uid, fy: r.fy, pay_type: r.pay_type, case_no: r.case_no, case_ref: r.case_ref, notice_no: r.notice_no,
              notice_kind: r.notice_kind, amount: r.amount_src, rate: r.rate_ref,
