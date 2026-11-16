@@ -132,6 +132,7 @@ tr:last-child td{border-bottom:none}
 .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:150px;padding:20px;text-align:center;cursor:pointer;border:2px dashed #A9C7B4}
 .drop.over{background:#DDF0E2}
 .chips{display:flex;gap:10px;flex-wrap:wrap}
+.chips .chip{max-width:100%;white-space:normal;word-break:normal;overflow-wrap:break-word}
 .chip{padding:10px 14px;border-radius:16px;border:none;cursor:pointer;font-weight:700;background:linear-gradient(160deg,#fff,#EEF5F0);box-shadow:var(--sh-btn);display:flex;flex-direction:column;align-items:flex-start;min-width:110px}
 .chip span{font-size:12px;color:var(--muted)}.chip b{font-size:22px}
 .chip.on{outline:3px solid var(--g)}
