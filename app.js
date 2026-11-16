@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.13';
+  const UI_VERSION = '0.7.14';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -209,6 +209,25 @@
   /** หมายเหตุของหมาย — ข้อที่ต้องเห็นชัดแสดงอักษรสีแดง */
   const flagHtml = (f) => String(f || '').split(';').filter(Boolean)
     .map((x) => '<span class="tiny ' + (FLAGS_RED.indexOf(x) >= 0 ? 'flag-r' : 'flag-a') + '">' + esc(x) + '</span>').join('<br>');
+  /** 0.7.14 สถานะรอบ 2 ขั้น: ยืนยันรอบ (ล็อกยอดแบ่ง) กับ บันทึกจ่ายจริง (มีหลักฐานการเงิน) */
+  const roundStatusHtml = (r) => {
+    if (r.status !== 'CONFIRMED') return '<span class="pchip pcx">ยกเลิก</span>';
+    return '<span class="pchip pok">ยืนยันรอบแล้ว</span><div class="tiny" style="margin-top:3px;white-space:nowrap">' +
+      (r.payment_status === 'PAID' ? '<span style="color:var(--g-ink);font-weight:700">✓ จ่ายจริง ' + esc(thDate(r.payment_date)) + '</span>' : '<span class="flag-up">ยังไม่บันทึกจ่าย</span>') + '</div>';
+  };
+  /** 0.7.14 สรุปเหนือตารางรอบ: กี่รอบบันทึกจ่ายแล้ว กี่รอบยังไม่บันทึก พร้อมยอดรวมและส่วนผู้ส่ง 60% */
+  const roundPaySummaryHtml = (rounds) => {
+    const ok = (rounds || []).filter((r) => r.status === 'CONFIRMED');
+    if (!ok.length) return '';
+    const paid = ok.filter((r) => r.payment_status === 'PAID'), wait = ok.filter((r) => r.payment_status !== 'PAID');
+    const sum = (a) => a.reduce((s, r) => s + Math.round(Number(r.total || 0) * 100), 0) / 100;
+    const six = (a) => a.reduce((s, r) => s + Math.round(Number(r.total || 0) * 60), 0) / 100;
+    return '<div class="row" style="gap:8px;flex-wrap:wrap;margin:0 0 10px">' +
+      '<span class="pchip pok">ยืนยันรอบแล้ว ' + num(ok.length) + ' รอบ · ' + baht2(sum(ok)) + ' ฿</span>' +
+      '<span class="pchip pok">บันทึกจ่ายจริงแล้ว ' + num(paid.length) + ' รอบ · ' + baht2(sum(paid)) + ' ฿</span>' +
+      (wait.length ? '<span class="pchip ph">ยังไม่บันทึกจ่าย ' + num(wait.length) + ' รอบ · ' + baht2(sum(wait)) + ' ฿ (ส่วนผู้ส่ง 60% ' + baht2(six(wait)) + ' ฿)</span>' : '') +
+      '</div>' + (wait.length ? '<p class="tiny muted" style="margin:-4px 2px 10px">“ยืนยันรอบแล้ว” = ล็อกยอดแบ่ง 60:40 แล้ว เบิกซ้ำไม่ได้ · “บันทึกจ่าย” = การเงินใส่หลักฐานจ่ายเงินจริง (เปิด “ดู / พิมพ์” › บันทึกหลักฐานจ่ายจริง)</p>' : '');
+  };
   /** สัญลักษณ์ "เคยยอดไม่ตรง" — ยอดที่ยืนยันแล้วไม่แสดงสีแดง แต่คงเครื่องหมายไว้ถาวร */
   const okMark = (ok) => '<span class="tiny flag-ok" title="ยืนยันโดย ' + esc(ok.by) + ' ' + esc(thDate(ok.at, true)) + '">◆ เคยยอดไม่ตรง · ยืนยันแล้ว</span>';
   /** ราคาไม่เท่าอัตราตำบล → คิดตามอัตราตำบล: ▲ เกิน (ยอดคำนวณตามอัตรา · ยอดจ่ายตรวจจากบัญชี) · ▼ ต่ำกว่า (อักษรสีแดง) */
@@ -1302,10 +1321,10 @@
         : '<tr><td colspan="7" class="muted small">ไม่มีรายการค้างเบิก</td></tr>') +
       '</tbody><tfoot><tr><td><b>รวม</b></td><td class="n"><b>' + num(T.pn) + '</b></td><td class="n"><b>' + baht2(T.p) + '</b></td><td class="n"><b>' + num(T.bn) + '</b></td><td class="n"><b>' + baht2(T.b) + '</b></td><td class="n"><b>' + num(T.h) + '</b></td><td></td></tr></tfoot></table></div>' +
       '<p class="tiny muted" style="margin:8px 2px 0">หมายเงิน = ส่งแล้วแต่ยังไม่อยู่ในบัญชีจ่ายเงิน · ยังไม่เข้าเกณฑ์: รอผลการส่ง ' + num(bk.wait || 0) + ' · รอตรวจ ' + num(bk.review || 0) + ' ฉบับ' + (d.closed_n ? ' · ปิด "ไม่เบิก" แล้ว ' + num(d.closed_n) + ' เรื่อง' : '') + '</p></div>' +
-      '<div class="clay panel"><h3>รอบเบิกที่ผ่านมา</h3>' + (d.rounds.length ? '<div class="tbl-wrap"><table><thead><tr><th>วันที่จ่าย</th><th>ประเภท</th><th class="n">รายการ</th><th class="n">ยังไม่เสนอ</th><th class="n">ยอดรวม</th><th class="n">เศษยกมา</th><th class="n">คนนั่ง</th><th class="n">ได้คนละ</th><th class="n">เศษยกไป</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+      '<div class="clay panel"><h3>รอบเบิกที่ผ่านมา</h3>' + roundPaySummaryHtml(d.rounds) + (d.rounds.length ? '<div class="tbl-wrap"><table><thead><tr><th>วันที่จ่าย</th><th>ประเภท</th><th class="n">รายการ</th><th class="n">ยังไม่เสนอ</th><th class="n">ยอดรวม</th><th class="n">เศษยกมา</th><th class="n">คนนั่ง</th><th class="n">ได้คนละ</th><th class="n">เศษยกไป</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
         d.rounds.map((r) => '<tr' + (r.status === 'CANCELLED' ? ' class="muted"' : '') + '><td>' + esc(thDate(r.pay_date)) + '</td><td>' + rChip(r.round_type) +
           '</td><td class="n">' + num(r.n_items) + '</td><td class="n">' + num(r.n_excluded) + '</td><td class="n"><b>' + baht2(r.total) + '</b></td><td class="n">' + baht2(r.carry_in) + '</td><td class="n">' + num(r.seats) + '</td><td class="n">' + baht2(r.per_seat) + '</td><td class="n">' + baht2(r.carry_out) +
-          '</td><td>' + (r.status === 'CONFIRMED' ? '<span class="pchip pok">ยืนยันแล้ว</span>' : '<span class="pchip pcx">ยกเลิก</span>') + '</td><td><button type="button" class="btn btn-sm" data-r="' + esc(r.round_id) + '">ดู / พิมพ์</button></td></tr>').join('') +
+          '</td><td>' + roundStatusHtml(r) + '</td><td><button type="button" class="btn btn-sm" data-r="' + esc(r.round_id) + '">ดู / พิมพ์</button></td></tr>').join('') +
         '</tbody></table></div>' : '<p class="small muted" style="margin:0">ยังไม่มีรอบเบิก</p>') +
       '<p class="tiny muted" style="margin:8px 2px 0">1 รอบ = 1 ประเภท 1 วันที่จ่าย · วันเดียวกันตั้งรอบหมายฟรีก่อน แล้วเศษยกไปรอบหมายเงิน · เศษยกต่อเนื่องตามลำดับวันที่ (ตั้งรอบย้อนหลังให้เรียงจากเก่าไปใหม่)</p></div>';
     if ($('#pNewF')) $('#pNewF').addEventListener('click', () => { S.payoutSub = 'new:FREE'; go('payout'); });
