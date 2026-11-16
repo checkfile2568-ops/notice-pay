@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.14';
+  const UI_VERSION = '0.7.15';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -176,7 +176,7 @@
       ov.querySelector('.ask-msg').textContent = String(msg);
       document.body.appendChild(ov);
       const inp = ov.querySelector('.ask-in'), ok = ov.querySelector('.ask-ok');
-      if (inp) inp.placeholder = String(opt.input || '');
+      if (inp) { inp.placeholder = String(opt.input || ''); if (opt.value) inp.value = String(opt.value); }
       const done = (v) => { ov.remove(); document.removeEventListener('keydown', key, true); if (last && last.focus) last.focus(); resolve(v); };
       const yes = () => {
         if (!inp) return done(true);
@@ -209,6 +209,10 @@
   /** หมายเหตุของหมาย — ข้อที่ต้องเห็นชัดแสดงอักษรสีแดง */
   const flagHtml = (f) => String(f || '').split(';').filter(Boolean)
     .map((x) => '<span class="tiny ' + (FLAGS_RED.indexOf(x) >= 0 ? 'flag-r' : 'flag-a') + '">' + esc(x) + '</span>').join('<br>');
+  /** 0.7.14 บัญชีจ่ายที่แบ่ง 60:40 นอกระบบแล้ว (ไม่ตั้งรอบ ไม่นับรอจับคู่) */
+  const outsideDatesHtml = (o, canUndo) => (o && o.dates && o.dates.length) ? '<div class="tiny muted" style="margin-top:6px">แบ่ง 60:40 นอกระบบแล้ว (ไม่ตั้งรอบ): ' +
+    o.dates.map((x) => '<b>' + esc(thDate(x.pay_date)) + '</b> · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + '&nbsp;฿ <span title="' + esc(x.by + ' ' + thDate(x.at, true)) + '">(' + esc(x.reason) + ')</span>' +
+      (canUndo ? ' <button type="button" class="btn btn-xs" data-outundo="' + esc(x.pay_date) + '">ยกเลิก</button>' : '')).join(' · ') + '</div>' : '';
   /** 0.7.14 สถานะรอบ 2 ขั้น: ยืนยันรอบ (ล็อกยอดแบ่ง) กับ บันทึกจ่ายจริง (มีหลักฐานการเงิน) */
   const roundStatusHtml = (r) => {
     if (r.status !== 'CONFIRMED') return '<span class="pchip pcx">ยกเลิก</span>';
@@ -244,7 +248,7 @@
     if (!C.API_URL || /วางลิงก์/.test(C.API_URL)) throw Object.assign(new Error('ยังไม่ได้ตั้งค่า API_URL ใน config.js'), { code: 'CONFIG' });
     const epoch = navEpoch;
     const payload = Object.assign({}, body || {});
-    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile'].includes(action) || (action === 'ledger_import' && payload.commit);
+    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside'].includes(action) || (action === 'ledger_import' && payload.commit);
     const retryKey = writing ? action + ':' + JSON.stringify(payload) : '';
     if (writing && !payload.request_id) { if (!requestKeys.has(retryKey)) requestKeys.set(retryKey, crypto.randomUUID()); payload.request_id = requestKeys.get(retryKey); }
     let res; const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 90000);
@@ -1312,7 +1316,8 @@
           '<div class="tiny muted">ราคาหมายฟรีตามบัญชีศาล: ' + (d.free18_at ? 'นำเข้าล่าสุด ' + esc(thDate(d.free18_at, true)) : '<span class="flag-r">ยังไม่นำเข้า — รอบหมายฟรีจะใช้ยอดที่ระบบคำนวณ</span>') + ' · ที่มา ' + esc(d.sources.FREE18) + '</div></div></div>' +
         '<div class="pinfo-r"><span class="pchip pm">นอกงบฯ</span><div><b>มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ</b>' +
           (d.pending_dates.length ? '<div class="pdates">' + d.pending_dates.map((x) => '<button type="button" class="btn btn-sm pdate" data-pd="' + esc(x.pay_date) + '"' + (d.can_create ? '' : ' disabled') + '>' + esc(thDate(x.pay_date)) + ' · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + '&nbsp;฿' + (x.none ? ' <span class="flag-r">รอยืนยันการจับคู่ ' + num(x.none) + '</span>' : '') + '</button>').join('') + '</div>'
-            : '<div class="small muted">ไม่มี — ดาวน์โหลดไฟล์ ' + esc(d.sources.PAY) + ' แล้วนำเข้าที่ "นำเข้าข้อมูล › บัญชีจ่ายเงินหมายมีเงิน"</div>') + '</div></div></div>' +
+            : '<div class="small muted">ไม่มี — ดาวน์โหลดไฟล์ ' + esc(d.sources.PAY) + ' แล้วนำเข้าที่ "นำเข้าข้อมูล › บัญชีจ่ายเงินหมายมีเงิน"</div>') +
+          outsideDatesHtml(d.outside, d.can_cancel) + '</div></div></div>' +
       '<div class="clay panel"><div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">รายการยังไม่เข้ารอบในระบบ</h3>' +
       '<span class="small muted">ส่งแล้ว ยังไม่เข้ารอบใด · รวม <b>' + baht2(T.p + T.b) + ' ฿</b>' + (d.can_detail ? ' <button type="button" class="btn btn-sm" id="pBl">ดูรายเรื่อง</button>' : '') + '</span></div>' +
       '<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th class="onm">ผู้ส่งหมาย</th><th class="n">หมายเงิน (เรื่อง)</th><th class="n">บาท</th><th class="n">หมายฟรี (เรื่อง)</th><th class="n">บาท</th><th class="n">เคยเลื่อน</th><th class="n">ค้างนานสุด</th></tr></thead><tbody>' +
@@ -1330,6 +1335,11 @@
     if ($('#pNewF')) $('#pNewF').addEventListener('click', () => { S.payoutSub = 'new:FREE'; go('payout'); });
     if ($('#pNewP')) $('#pNewP').addEventListener('click', () => { S.payoutSub = 'new:PAID'; go('payout'); });
     if ($('#pBl')) $('#pBl').addEventListener('click', () => { S.payoutSub = 'backlog'; go('payout'); });
+    m.querySelectorAll('[data-outundo]').forEach((b) => b.addEventListener('click', async () => {
+      if (!(await askBox('ยกเลิกการบันทึกว่าแบ่งนอกระบบ วันที่ ' + thDate(b.dataset.outundo) + ' — วันที่นี้จะกลับมาอยู่ในรายการรอตั้งรอบ'))) return;
+      b.disabled = true;
+      try { await api('ledger_outside', { pay_date: b.dataset.outundo, undo: true }); toast('ยกเลิกแล้ว'); go('payout'); } catch (x) { toast(x.message); b.disabled = false; }
+    }));
     m.querySelectorAll('.pdate').forEach((b) => b.addEventListener('click', () => { S.payoutSub = 'new:PAID:' + b.dataset.pd; go('payout'); }));
     m.querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => { S.payoutSub = 'round:' + b.dataset.r; go('payout'); }));
   };
@@ -1413,6 +1423,8 @@
       '<label class="pseat">หมายเหตุ (ถ้ามี)<input class="inp" id="pNote" maxlength="300" placeholder="เช่น เลื่อนจ่ายจากวันศุกร์"></label>' +
       (d.order_ok ? '' : '<p class="note r small">มีรอบที่ยืนยันแล้วหลังวันที่นี้ — ตั้งรอบย้อนหลังไม่ได้ (เศษยกจะคลาดเคลื่อน)</p>') +
       '<button type="button" class="btn btn-g" id="pOk" style="width:100%">ยืนยันรอบ</button>' +
+      (!free && d.can_outside ? '<div class="note small" style="margin-top:10px"><b>บัญชีวันนี้แบ่ง 60:40 นอกระบบไปแล้ว?</b><br><span class="tiny">เช่น งานเดือน ก.ย. ก่อนเริ่มระบบ · บันทึกแล้ววันที่นี้จะไม่อยู่ในรายการรอตั้งรอบและรอจับคู่ ยอดบัญชีคงเดิม ไม่สร้างรอบ ไม่คิดเศษยก · ยกเลิกได้</span>' +
+        '<button type="button" class="btn btn-sm" id="pOutside" style="width:100%;margin-top:8px">บันทึกว่าแบ่งจ่ายนอกระบบแล้ว</button></div>' : '') +
       (free ? '<button type="button" class="btn btn-sm" id="pDraft" style="width:100%;margin-top:8px">พิมพ์บัญชีหมายฟรีที่ขอเบิก (ร่าง)</button>' : '') +
       '<p class="tiny muted" style="margin:8px 2px 0">ที่มา: ' + esc(d.source) + ' · ยืนยันแล้วหมายในรอบถูกล็อก เบิกซ้ำไม่ได้ · ยกเลิกได้เฉพาะรอบล่าสุดโดยผู้ดูแลระบบ</p></aside></div>';
     const sug = {};
@@ -1465,6 +1477,14 @@
     if ($('#pSugAll')) $('#pSugAll').addEventListener('click', () => applySug(Object.keys(sug)));
     ['#pSeats', '#pCarry'].forEach((s) => $(s).addEventListener('input', recalc));
     if ($('#pDraft')) $('#pDraft').addEventListener('click', () => printClaim(d.items.filter((it) => !off.has(it.key)), names, d, true));
+    if ($('#pOutside')) $('#pOutside').addEventListener('click', async () => {
+      const tot = d.items.reduce((a, x) => a + x.amount_c, 0);
+      const reason = await askBox('บันทึกว่าบัญชีจ่ายวันที่ ' + thDate(d.pay_date) + ' (' + num(d.items.length) + ' เรื่อง · ' + cb(tot) + ' บาท) แบ่ง 60:40 นอกระบบแล้ว — ระบุเหตุผล', { input: 'ระบุเหตุผล', value: 'งานเดือน ก.ย. ก่อนเริ่มระบบ แบ่ง 60:40 นอกระบบแล้ว' });
+      if (!reason) return;
+      const b = $('#pOutside'); b.disabled = true;
+      try { const r = await api('ledger_outside', { pay_date: d.pay_date, reason: reason }); toast('บันทึกแล้ว · ' + thDate(r.pay_date) + ' ' + num(r.rows) + ' เรื่อง ' + baht2(r.amount) + ' บาท แบ่งนอกระบบ'); S.payoutSub = 'list'; go('payout'); }
+      catch (x) { toast(x.message); b.disabled = false; }
+    });
     $('#pOk').addEventListener('click', async () => {
       const inc = d.items.length - off.size, carryC = Math.round(Number($('#pCarry').value || 0) * 100);
       if (carryC !== carry0 && !$('#pCarryNote').value.trim()) { toast('กรุณาใส่เหตุผลที่แก้เศษยกมา'); $('#pCarryNote').focus(); return; }
@@ -1792,7 +1812,7 @@
         if(ticket!==seq||!m.isConnected)return;
         hash=d.reconcile_hash;
         if(!seeded){seeded=true;Object.keys(d.officers).forEach(id=>$('#lpOfficer').insertAdjacentHTML('beforeend','<option value="'+esc(id)+'">'+esc(d.officers[id].name)+'</option>'));}
-        box.innerHTML=pendingBreakdownHtml(d.pending_breakdown)+'<p class="note"><b>รอยืนยัน '+num(d.total_rows)+' รายการ · '+baht2(d.amount)+' บาท</b><br><span class="tiny">ยอดนี้คือยอดรายการที่รอยืนยันการจับคู่ อาจมีรอบแบ่งหรือจ่ายเงินไปแล้ว ห้ามนำไปบวกเป็นยอดค้างจ่าย</span></p>'+
+        box.innerHTML=pendingBreakdownHtml(d.pending_breakdown)+(d.outside&&d.outside.n?'<p class="tiny muted">ไม่นับบัญชีที่แบ่ง 60:40 นอกระบบแล้ว '+num(d.outside.n)+' รายการ · '+baht2(d.outside.amount)+' บาท ('+d.outside.dates.map(x=>esc(thDate(x.pay_date))).join(', ')+')</p>':'')+'<p class="note"><b>รอยืนยัน '+num(d.total_rows)+' รายการ · '+baht2(d.amount)+' บาท</b><br><span class="tiny">ยอดนี้คือยอดรายการที่รอยืนยันการจับคู่ อาจมีรอบแบ่งหรือจ่ายเงินไปแล้ว ห้ามนำไปบวกเป็นยอดค้างจ่าย</span></p>'+
           '<div class="tbl-wrap"><table style="min-width:900px"><thead><tr><th>วันที่จ่าย / รับเงิน</th><th>เลขคดี / ใบเสร็จ</th><th class="onm">ผู้ส่งหมาย</th><th class="n">ยอดบัญชี (บาท)</th><th>ผลตรวจ</th><th>รอบเดิม</th></tr></thead><tbody>'+d.rows.map(r=>'<tr><td class="small">จ่าย '+esc(thDate(r.pay_date))+'<br>รับ '+esc(thDate(r.received_date)||'ไม่ระบุ')+'</td><td><b>'+esc(r.case_no)+'</b><br><span class="tiny">ใบเสร็จ '+esc(r.receipt_no||'ไม่ระบุ')+'</span></td><td class="onm">'+esc(r.officer)+'</td><td class="n">'+baht2(r.amount)+'</td><td><b class="flag-a">รอยืนยัน</b><br><span class="small">'+esc(r.reason)+'</span></td><td class="small">'+esc(r.round_id||'ยังไม่มีรอบแบ่งในระบบ')+(r.round_id?'<br><span class="tiny muted">คงยอดรอบเดิม</span>':'')+'</td></tr>').join('')+(d.rows.length?'':'<tr><td colspan="6">ไม่มีรายการรอยืนยันตามตัวกรอง</td></tr>')+'</tbody></table></div>'+
           '<div class="row" style="margin-top:12px"><button type="button" class="btn btn-sm" id="lpPrev" '+(page<=1?'disabled':'')+'>← ก่อนหน้า</button><span>หน้า '+num(page)+'</span><button type="button" class="btn btn-sm" id="lpNext" '+(page*d.page_size>=d.total_rows?'disabled':'')+'>ถัดไป →</button><button type="button" class="btn btn-sm" id="lpReconcile">ตรวจจับคู่และบันทึกใหม่</button></div><p class="tiny muted">บันทึกเฉพาะการจับคู่ของวันที่ยังไม่เข้ารอบ เมื่อข้อมูลตรงกันจึงเชื่อมทะเบียน รายการที่ยังไม่ชัดเจนคงเป็นรอยืนยัน ไม่แก้ยอดเงินหรือรอบเดิม</p>';
         $('#lpPrev').onclick=()=>{page--;run();};$('#lpNext').onclick=()=>{page++;run();};
@@ -1864,9 +1884,9 @@
     }
     $('#closeBalance').oninput=paintBudget;
   }
-  function ledgerControlHtml(d){const l=d.ledger_summary||{},r=d.round_summary||{},bd=l.by_date||[],nr=bd.filter(x=>x.state!=='IN_ROUND');return pendingBreakdownHtml(l.pending_breakdown)+'<div class="clay panel"><h3>ยอดควบคุมจากบัญชีและรอบ</h3><p>บัญชีจ่ายเงินหมายมีเงิน '+num(l.count||0)+' รายการ · '+baht2(l.amount||0)+' บาท</p><p>ยังเชื่อมหมายไม่ครบ '+num(l.unmatched_n||0)+' รายการ · '+baht2(l.unmatched_amount||0)+' บาท</p><p>รอบยืนยันตามตัวกรอง '+num(r.count||0)+' รอบ · '+baht2(r.amount||0)+' บาท</p>'+
-    (nr.length?'<div class="note">'+nr.map(x=>'<b>'+esc(thDate(x.pay_date))+'</b> '+esc(x.state_th)+' · '+num(x.no_round_n)+' รายการ '+baht2(x.no_round_amount)+' บาท'+(x.unmatched_n?' · รอยืนยันการจับคู่ '+num(x.unmatched_n)+' รายการ':'')).join('<br>')+'</div>':'')+
-    (bd.length?'<details><summary class="small">บัญชีจ่ายแยกตามวันที่จ่าย ('+num(bd.length)+' วัน)</summary><div class="tbl-wrap"><table><thead><tr><th>วันที่จ่าย</th><th class="n">รายการ</th><th class="n">บาท</th><th class="n">รอยืนยัน</th><th>รอบแบ่งในระบบ</th></tr></thead><tbody>'+bd.map(x=>'<tr><td>'+esc(thDate(x.pay_date))+'</td><td class="n">'+num(x.rows)+'</td><td class="n">'+baht2(x.amount)+'</td><td class="n'+(x.unmatched_n?' flag-r':'')+'">'+num(x.unmatched_n)+'</td><td class="small '+(x.state==='IN_ROUND'?'flag-ok':'flag-r')+'">'+esc(x.state_th)+(x.round_ids.length?'<br><span class="tiny muted">'+esc(x.round_ids.join(', '))+'</span>':'')+'</td></tr>').join('')+'</tbody></table></div></details>':'')+
+  function ledgerControlHtml(d){const l=d.ledger_summary||{},r=d.round_summary||{},bd=l.by_date||[],nr=bd.filter(x=>x.state!=='IN_ROUND');return pendingBreakdownHtml(l.pending_breakdown)+'<div class="clay panel"><h3>ยอดควบคุมจากบัญชีและรอบ</h3><p>บัญชีจ่ายเงินหมายมีเงิน '+num(l.count||0)+' รายการ · '+baht2(l.amount||0)+' บาท</p><p>ยังเชื่อมหมายไม่ครบ '+num(l.unmatched_n||0)+' รายการ · '+baht2(l.unmatched_amount||0)+' บาท</p>'+(l.outside_n?'<p>แบ่ง 60:40 นอกระบบแล้ว (ไม่ตั้งรอบ) '+num(l.outside_n)+' รายการ · '+baht2(l.outside_amount)+' บาท</p>':'')+'<p>รอบยืนยันตามตัวกรอง '+num(r.count||0)+' รอบ · '+baht2(r.amount||0)+' บาท</p>'+
+    (nr.length?'<div class="note">'+nr.map(x=>'<b>'+esc(thDate(x.pay_date))+'</b> '+esc(x.state_th)+' · '+num(x.no_round_n)+' รายการ '+baht2(x.no_round_amount)+' บาท'+(x.unmatched_n&&x.state!=='OUTSIDE'?' · รอยืนยันการจับคู่ '+num(x.unmatched_n)+' รายการ':'')).join('<br>')+'</div>':'')+
+    (bd.length?'<details><summary class="small">บัญชีจ่ายแยกตามวันที่จ่าย ('+num(bd.length)+' วัน)</summary><div class="tbl-wrap"><table><thead><tr><th>วันที่จ่าย</th><th class="n">รายการ</th><th class="n">บาท</th><th class="n">รอยืนยัน</th><th>รอบแบ่งในระบบ</th></tr></thead><tbody>'+bd.map(x=>'<tr><td>'+esc(thDate(x.pay_date))+'</td><td class="n">'+num(x.rows)+'</td><td class="n">'+baht2(x.amount)+'</td><td class="n'+(x.unmatched_n&&x.state!=='OUTSIDE'?' flag-r':'')+'">'+num(x.unmatched_n)+'</td><td class="small '+(x.state==='IN_ROUND'?'flag-ok':x.state==='OUTSIDE'?'muted':'flag-r')+'">'+esc(x.state_th)+(x.round_ids.length?'<br><span class="tiny muted">'+esc(x.round_ids.join(', '))+'</span>':'')+'</td></tr>').join('')+'</tbody></table></div></details>':'')+
     '<p class="tiny muted">ยอดบัญชีที่ยังจับคู่ไม่ได้ยังคงอยู่ในยอดควบคุม ไม่ถูกลบออกจากบัญชีจ่าย</p></div>';}
   function budgetPendingHtml(d){const b=d.budget_pending;if(!b)return '';return '<div class="clay panel"><h3>หมายเงินงบประมาณคงค้าง ปีงบ '+esc(b.fy)+'</h3><div class="chips"><span class="chip flag-ok">พร้อมเสนอเบิก '+num(b.ready_n)+' ฉบับ · '+num(b.ready_units)+' หน่วย · <b>'+baht2(b.ready_amount)+' ฿</b></span><span class="chip">รอผลส่ง '+num(b.wait_n)+' ฉบับ</span><span class="chip">รอตรวจ '+num(b.review_n)+' ฉบับ</span><span class="chip">ไม่เบิกจ่าย '+num(b.noclaim_n)+' ฉบับ</span>'+(b.excluded_claimed!==null&&b.excluded_claimed!==undefined?'<span class="chip">เบิกแล้ว (ไม่นับคงค้าง) '+num(b.excluded_claimed)+' ฉบับ</span>':'')+'</div><p class="tiny muted">คิดแบบเดียวกับหน้า “การเงิน · ตรวจสอบก่อนเบิก” ('+esc(thDate(b.from))+' ถึง '+esc(thDate(b.to))+' ทั้งปีงบ ไม่ขึ้นกับตัวกรองพื้นที่/วันที่/สถานะ) · ยอดในทะเบียนด้านล่างรวมรายการที่เบิกแล้ว จึงใช้แทนยอดคงค้างไม่ได้</p></div>';}
   function statusAmountChips(d){const a=(d.totals||{}).status_amount||{},st=d.statuses||{};return Object.keys(a).filter(k=>(d.totals.statuses||{})[k]).map(k=>'<span class="chip">'+esc(st[k]||k)+' '+num(d.totals.statuses[k])+' · '+baht2(a[k])+' ฿</span>').join('');}
