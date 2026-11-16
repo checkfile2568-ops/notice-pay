@@ -59,7 +59,7 @@ function trackingData_(ctx, d) {
   });
   ['amount', 'shortage', 'excess'].forEach(function (k) { totals[k] /= 100; Object.keys(per).forEach(function (id) { per[id][k] /= 100; }); });
   Object.keys(totals.status_amount).forEach(function (k) { totals.status_amount[k] /= 100; });
-  const ledger = readTable_('LEDGER').rows.filter(function(l){return l.source==='PAY' && (!officer || l.officer_id===officer) && (!fy || fiscalYear_(String(l.pay_date),10)===fy);});
+  const ledger = ledgerChecked_(readTable_('LEDGER').rows, allNotices, officersAll_()).filter(function(l){return l.source==='PAY' && (!officer || l.officer_id===officer) && (!fy || fiscalYear_(String(l.pay_date),10)===fy);});
   const controls={count:ledger.length,amount:0,unmatched_n:0,unmatched_amount:0}; ledger.forEach(function(l){controls.amount+=cents2_(l.amount);if(l.match!=='OK'){controls.unmatched_n++;controls.unmatched_amount+=cents2_(l.amount);}}); controls.amount/=100;controls.unmatched_amount/=100;
   controls.by_date = ledgerByDate_(ledger, rounds);
   // 0.7.10 หมายฟรีคงค้าง: ใช้ตัวคำนวณเดียวกับหน้า "การเงิน · ตรวจสอบก่อนเบิก" (ยอดทะเบียนรวมรายการที่เบิกแล้ว ใช้แทนยอดคงค้างไม่ได้)

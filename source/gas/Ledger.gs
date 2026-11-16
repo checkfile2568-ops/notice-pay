@@ -32,26 +32,121 @@ function ledgerMatch_(rows, notices, officers, payType) {
     var k = normCase_(n.case_no) + '|' + NoticeImportFormat.recipient(n.case_no, n.recipient);
     (idx[k] = idx[k] || []).push(n);
   });
-  var used = {};
   return rows.map(function (r) {
     var cs = normCase_(String(r.case_no || '').split(/\r?\n/)[0]);
-    var off = resolveOfficer_(r.officer, offIdx);
+    var off = resolveOfficer_(r.officer || r.officer_raw, offIdx);
     var privateRecipient = NoticeImportFormat.recipient(cs, r.recipient);
     var whole = idx[cs + '|' + privateRecipient] || [];
     var names = whole.length ? [privateRecipient] : privateRecipient.split(/\s*,\s*/).filter(String);
-    var hits = [], unresolved = [], reasons = [], other = false, ambiguous = false;
+    var hits = [], unresolved = [], reasons = [], other = false, ambiguous = false, dateConflict = false;
     names.forEach(function (nm) {
       var all = idx[cs + '|' + nm] || [];
       var c = all.filter(function (n) { return n.pay_type === payType && (!n.officer_id || n.officer_id === off); });
       if (!c.length) { unresolved.push(nm); if (all.length) { other = true; reasons.push('ประเภทหรือผู้ส่งไม่ตรง'); } return; }
+      if (!off && payType === 'PAID') { unresolved.push(nm); reasons.push('ยังระบุผู้ส่งหมายไม่ได้'); return; }
+      if (payType === 'PAID' && r.pay_date) {
+        var valid = c.filter(function (n) { return !ledgerDateConflict_(r, n); });
+        if (!valid.length) { dateConflict = true; unresolved.push(nm); reasons.push('วันที่จ่ายเงินก่อนวันจ่ายหมายหรือวันส่งหมาย'); return; }
+        c = valid;
+      }
       var score = function (n) { return (r.tambon && normPlace_(n.tambon) === normPlace_(r.tambon) ? 2 : 0) + (r.notice_kind && kindOk_(r.notice_kind, {obj:n}) ? 1 : 0); };
       var max = Math.max.apply(null, c.map(score)), best = c.filter(function (n) { return score(n) === max; });
       if (best.length !== 1) { ambiguous = true; unresolved.push(nm); reasons.push('มีหมายหลายฉบับที่หลักฐานเท่ากัน'); return; }
-      var n = best[0]; used[n.notice_uid] = true; if (hits.indexOf(String(n.notice_uid)) < 0) hits.push(String(n.notice_uid));
+      var n = best[0]; if (hits.indexOf(String(n.notice_uid)) < 0) hits.push(String(n.notice_uid));
     });
-    var match = ambiguous ? 'AMBIGUOUS' : hits.length && unresolved.length ? 'PARTIAL' : hits.length ? 'OK' : other ? 'TYPE' : 'NONE';
+    var match = dateConflict ? 'DATE_CONFLICT' : ambiguous ? 'AMBIGUOUS' : hits.length && unresolved.length ? 'PARTIAL' : hits.length ? 'OK' : other ? 'TYPE' : 'NONE';
+    // Unresolved multi-recipient rows must not attach a partial set of notices to a full payment.
+    if (match !== 'OK') hits = [];
     return Object.assign({}, r, { case_no: cs, officer_id: off, notice_uids: hits, match: match, match_reason: reasons.join(' · '), unmatched_recipients: unresolved });
   });
+}
+
+/** Receipt/deposit date may precede service. Only compare known service dates to disbursement. */
+function ledgerDateConflict_(payment, notice) {
+  var pd = parseDate_(payment.pay_date);
+  if (!pd) return false;
+  return ['issued_date', 'delivered_date'].some(function (field) {
+    var date = parseDate_(notice[field]);
+    return !!date && date > pd;
+  });
+}
+
+function ledgerMatchReason_(r) {
+  return r.match_reason || ({ DATE_CONFLICT: 'วันที่จ่ายเงินก่อนวันจ่ายหมายหรือวันส่งหมาย', AMBIGUOUS: 'มีหมายหลายฉบับที่หลักฐานเท่ากัน', PARTIAL: 'จับคู่ได้ไม่ครบทุกฉบับในรายการ', TYPE: 'ประเภทหมายหรือผู้ส่งไม่ตรง', NONE: 'ยังไม่พบหมายตรงกับเลขคดี รหัสจับคู่ และผู้ส่ง' }[r.match]) || 'ข้อมูลยังไม่เพียงพอสำหรับยืนยันการจับคู่';
+}
+
+/** Re-evaluate open ledger rows. Confirmed dates and saved round links remain immutable. */
+function ledgerChecked_(rows, notices, officers) {
+  const lockedDates = {};
+  rows.forEach(function (r) { if (r.source === 'PAY' && r.round_id) lockedDates[r.pay_date] = true; });
+  const checked = ledgerMatch_(rows.filter(function (r) { return r.source === 'PAY'; }), notices, officers, 'PAID');
+  let i = 0;
+  return rows.map(function (r) {
+    if (r.source !== 'PAY') return Object.assign({}, r);
+    const m = checked[i++];
+    if (r.round_id || lockedDates[r.pay_date]) return Object.assign({}, r, { match_reason: r.match === 'OK' ? '' : ledgerMatchReason_(r) });
+    return Object.assign({}, r, { match: m.match, notice_uids: m.notice_uids.join(','), match_reason: m.match_reason });
+  });
+}
+
+function ledgerReconcileHash_() {
+  return digestJson_(['LEDGER', 'NOTICES', 'PAYOUT_ROUNDS', 'PAYOUT_ITEMS'].map(function (name) { return readTable_(name).rows; }));
+}
+
+function apiLedgerPending_(ctx, d) {
+  const fy = String(d.fy || ''), q = normText_(d.q || '').replace(/\s+/g, '').toUpperCase();
+  if (fy && !/^25\d{2}$/.test(fy)) throw appErr_('BAD_REQUEST', 'ระบุปีงบประมาณ พ.ศ. 4 หลัก');
+  const page = Math.max(1, Math.floor(Number(d.page) || 1)), names = officerNames_();
+  const ledger = ledgerChecked_(readTable_('LEDGER').rows, readTable_('NOTICES').rows, officersAll_());
+  const rows = ledger.filter(function (r) {
+    return r.source === 'PAY' && r.match !== 'OK' && (!fy || String(fiscalYear_(String(r.pay_date), 10)) === fy) &&
+      (!d.officer_id || r.officer_id === String(d.officer_id)) && (!q || normText_(r.case_no).replace(/\s+/g, '').toUpperCase().indexOf(q) >= 0);
+  }).sort(function (a, b) { return String(a.pay_date).localeCompare(String(b.pay_date)) || String(a.ledger_id).localeCompare(String(b.ledger_id)); });
+  return { status_th: 'รอยืนยัน', total_rows: rows.length, amount: rows.reduce(function (s, r) { return s + cents2_(r.amount); }, 0) / 100,
+    page: page, page_size: 50, reconcile_hash: ledgerReconcileHash_(), officers: names,
+    rows: rows.slice((page - 1) * 50, page * 50).map(function (r) { return { ledger_id: r.ledger_id, case_no: r.case_no, pay_date: r.pay_date,
+      received_date: r.received_date, receipt_no: r.receipt_no, officer: (names[r.officer_id] || {}).name || r.officer_id || 'ยังระบุไม่ได้',
+      amount: Number(r.amount), status_th: 'รอยืนยัน', reason: ledgerMatchReason_(r), round_id: r.round_id || '' }; }) };
+}
+
+/** Called through the existing journal. Change matching metadata only, never saved monetary fields. */
+function apiLedgerReconcile_(ctx, d) {
+  if (d.expected_hash && d.expected_hash !== ledgerReconcileHash_()) throw appErr_('STALE', 'ข้อมูลเปลี่ยนแล้ว กดตรวจรายการรอยืนยันอีกครั้ง');
+  const raw = readTable_('LEDGER').rows, checked = ledgerChecked_(raw, readTable_('NOTICES').rows, officersAll_());
+  const protectedHash = digestJson_(['NOTICES', 'BUDGET_UNITS', 'PAYOUT_ROUNDS', 'PAYOUT_ITEMS'].map(function (name) { return readTable_(name).rows; }));
+  const money = function (rows) { return rows.map(function (r) { return [r.ledger_id, r.source, r.pay_date, r.officer_id, r.officer_raw, r.case_no, r.recipient, r.receipt_no, r.received_date, r.amount, r.round_id, r.batch_id, r.created_at]; }); };
+  let changed = 0;
+  const out = raw.map(function (r, i) {
+    const m = checked[i];
+    if (r.source !== 'PAY') return r;
+    if (r.match === m.match && String(r.notice_uids || '') === m.notice_uids) return r;
+    changed++; return Object.assign({}, r, { match: m.match, notice_uids: m.notice_uids });
+  });
+  if (digestJson_(money(raw)) !== digestJson_(money(out))) throw appErr_('DATA_REVIEW', 'การตรวจจับคู่ต้องไม่เปลี่ยนข้อมูลบัญชีหรือยอดเงิน');
+  if (changed) rewriteTable_('LEDGER', out);
+  DB_CACHE_ = null; HEAD_CACHE_ = {};
+  if (protectedHash !== digestJson_(['NOTICES', 'BUDGET_UNITS', 'PAYOUT_ROUNDS', 'PAYOUT_ITEMS'].map(function (name) { return readTable_(name).rows; }))) throw appErr_('DATA_REVIEW', 'ข้อมูลรอบเดิมเปลี่ยนระหว่างตรวจจับคู่');
+  audit_(ctx.user.code, 'LEDGER_RECONCILE', '', { changed: changed, pending: checked.filter(function (r) { return r.source === 'PAY' && r.match !== 'OK'; }).length });
+  return { changed: changed, pending: checked.filter(function (r) { return r.source === 'PAY' && r.match !== 'OK'; }).length, amounts_unchanged: true };
+}
+
+function reconcileLedger0711() {
+  DB_CACHE_ = null; HEAD_CACHE_ = {};
+  const ctx = { action: 'ledger_reconcile', user: { code: 'OWNER_MAINTENANCE', roles: ['ADMIN'] } };
+  const d = { request_id: Utilities.getUuid() };
+  const result = operationWrite_(ctx, d, function () { return apiLedgerReconcile_(ctx, d); });
+  console.log(JSON.stringify({ migration: '0.7.11', result: result }));
+}
+
+function verify0711ReadOnly() {
+  const tables = ['NOTICES', 'LEDGER', 'BUDGET_UNITS', 'PAYOUT_ROUNDS', 'PAYOUT_ITEMS'];
+  const hash = function () { DB_CACHE_ = null; HEAD_CACHE_ = {}; return digestJson_(tables.map(function (name) { return readTable_(name).rows; })); };
+  const before = hash(), raw = readTable_('LEDGER').rows, checked = ledgerChecked_(raw, readTable_('NOTICES').rows, officersAll_());
+  const changes = raw.filter(function (r, i) { return r.source === 'PAY' && (r.match !== checked[i].match || String(r.notice_uids || '') !== checked[i].notice_uids); });
+  const pending = apiLedgerPending_({user:{roles:['ADMIN']}}, {});
+  if (hash() !== before) throw new Error('Read-only verification changed records');
+  console.log(JSON.stringify({ verification: '0.7.11', unchanged: true, reconcile_changes: changes.length, pending_count: pending.total_rows, pending_amount: pending.amount,
+    ledger_count: raw.length, ledger_amount: raw.reduce(function (s, r) { return s + cents2_(r.amount); }, 0) / 100 }));
 }
 
 /* ---------- ส่วน GAS ---------- */
@@ -141,7 +236,7 @@ function ledgerPay_(ctx, d, m, nt) {
   const res = { kind: 'PAY', kind_th: LEDGER_KINDS.PAY.th, source: LEDGER_KINDS.PAY.src, summary: ledgerSummary_(m), dates: dates,
                 officers: Object.keys(perOff).map(function (k) { return { officer_id: k, name: off[k] || k, amount: perOff[k] }; }),
                 samples_none: m.filter(function (r) { return r.match !== 'OK'; }).slice(0, 30).map(function (r) {
-                  return { pay_date: r.pay_date, case_no: r.case_no, recipient: r.recipient, received_date: r.received_date, amount: r.amount, match: r.match }; }) };
+                  return { pay_date: r.pay_date, case_no: r.case_no, recipient: r.recipient, received_date: r.received_date, amount: r.amount, match: r.match, match_reason: ledgerMatchReason_(r) }; }) };
   if (!d.commit) return res;
   const keep = lt.rows.slice();
   const transactionKey = ledgerTransactionKey_;
@@ -182,7 +277,7 @@ function ledgerFree_(ctx, d, m, nt) {
                            system_not_in_file: nt.rows.filter(function (n) { return n.pay_type === 'BUDGET' && byUid[n.notice_uid] === undefined; }).length },
                 changed: changed,
                 samples_none: m.filter(function (r) { return r.match !== 'OK'; }).slice(0, 30).map(function (r) {
-                  return { case_no: r.case_no, recipient: r.recipient, notice_kind: r.notice_kind, amount: r.amount, match: r.match }; }) };
+                  return { case_no: r.case_no, recipient: r.recipient, notice_kind: r.notice_kind, amount: r.amount, match: r.match, match_reason: ledgerMatchReason_(r) }; }) };
   if (!d.commit) return res;
   const ts = now_(), batch = batchLog_(ctx, d, 'FREE18', m.length, 'ราคาหมายฟรีตามบัญชีศาล');
   const ja = nt.head.indexOf('court_amount'), jt = nt.head.indexOf('court_at');

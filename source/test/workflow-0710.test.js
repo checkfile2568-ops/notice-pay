@@ -60,9 +60,11 @@ t('ทะเบียนหมายฟรีแสดงยอดคงค้�
 
 t('บัญชีจ่ายวันที่ไม่มีรอบแบ่ง แสดงชัดพร้อมจำนวนที่จับคู่ทะเบียนไม่ได้', () => {
   const d = fyStart.slice(0, 8) + '02';
+  // A matched fixture needs an actual matching notice, recipient code and sender.
+  g.appendRows_('NOTICES', [N('X2', {pay_type:'PAID',calc_amount:'700',calc_rule:'PAID'})]);
   g.appendRows_('LEDGER', [
     { ledger_id: 'LG1', source: 'PAY', pay_date: d, officer_id: 'OF01', case_no: 'X1/2569', amount: '650', match: 'NONE', round_id: '' },
-    { ledger_id: 'LG2', source: 'PAY', pay_date: d, officer_id: 'OF01', case_no: 'X2/2569', amount: '700', match: 'OK', notice_uids: 'H-PAID', round_id: '' },
+    { ledger_id: 'LG2', source: 'PAY', pay_date: d, officer_id: 'OF01', case_no: 'X2/2569', recipient: 'R1-X2', officer_raw: g.officersAll_().find(o=>o.officer_id==='OF01').name, amount: '700', match: 'OK', notice_uids: 'X2', round_id: '' },
     { ledger_id: 'LG3', source: 'PAY', pay_date: fyStart, officer_id: 'OF01', case_no: 'H-PAID/2569', amount: '600', match: 'OK', round_id: 'R-P' }
   ]);
   const by = C('reports', { fy }).ledger_summary.by_date, x = by.find(b => b.pay_date === d), y = by.find(b => b.pay_date === fyStart);
@@ -169,7 +171,7 @@ const a = w.__T, tick = (ms) => new Promise(r => setTimeout(r, ms || 60)), text 
   a.go('reports'); await tick(150);
   assert.ok(text().includes('มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ'));
   a.go('payout'); await tick(150);
-  assert.ok(text().includes('มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ')); assert.ok(text().includes('จับคู่ทะเบียนไม่ได้ 1'));
+  assert.ok(text().includes('มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ')); assert.ok(text().includes('รอยืนยันการจับคู่ 1'));
   assert.ok(!text().includes('is not defined'));
   console.log('✓ หน้าเว็บ: ข้อความสถานะจ่าย บันทึกจ่ายหลายรอบ ยอดคงค้างหมายฟรี และบัญชีจ่ายที่ไม่มีรอบ'); count++;
   dom.window.close();

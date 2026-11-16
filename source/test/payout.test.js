@@ -106,7 +106,7 @@ ok('รอบหมายเงิน: ยอดตามบัญชีจ่�
   rp = r.round.round_id;
   assert.strictEqual(r.round.total_paid, 1300); assert.strictEqual(r.round.pool40, 520); assert.strictEqual(r.round.carry_in, 4);
   assert.strictEqual(r.round.per_seat, 11); assert.strictEqual(r.round.carry_out, 7);              // (520+4) ÷ 47 = 11 เศษ 7
-  assert.match(r.items.filter((x) => x.case_list === 'X9/2569')[0].reason, /ไม่พบหมายในระบบ/);
+  assert.match(r.items.filter((x) => x.case_list === 'X9/2569')[0].reason, /รอยืนยันการจับคู่ทะเบียน/);
   const t = NT(); assert.strictEqual(t.T1.payout_round_id, rp); assert.strictEqual(t.T1.paid_amount, '500');
   assert.ok(g.readTable_('LEDGER').rows.filter((l) => l.pay_date === '2026-11-13').every((l) => l.round_id === rp));
   assert.strictEqual(C('dashboard', { fy: '2570' }).totals.money.paid, 450 + 500);

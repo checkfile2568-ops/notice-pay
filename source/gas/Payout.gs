@@ -193,11 +193,14 @@ function payoutPaidItems_(ledger, notices, opt) {
   ledger.forEach(function (l) { if (l.source === 'PAY') String(l.notice_uids || '').split(',').filter(String).forEach(function (u) { inLedger[u] = true; }); });
   var items = ledger.filter(function (l) { return l.source === 'PAY' && String(l.pay_date) === pd && !l.round_id; }).map(function (l) {
     var uids = String(l.notice_uids || '').split(',').filter(String);
+    var conflict = uids.some(function (u) { return byUid[u] && ledgerDateConflict_(l, byUid[u]); });
+    var match = conflict ? 'DATE_CONFLICT' : String(l.match || '');
+    if (match !== 'OK') uids = [];
     var amtC = cents2_(l.amount);
     var sysC = uids.reduce(function (s, u) { return s + (byUid[u] ? cents2_(byUid[u].calc_amount) : 0); }, 0);
     var it = { key: 'L:' + l.ledger_id, ledger_id: String(l.ledger_id), type: 'PAID', officer_id: String(l.officer_id || ('?' + (l.officer_raw || ''))), officer_raw: String(l.officer_raw || ''),
                amount_c: amtC, notice_uids: uids, case_list: String(l.case_no || ''), receipt_no: String(l.receipt_no || ''),
-               received_date: String(l.received_date || ''), match: String(l.match || ''), n: 1,
+               received_date: String(l.received_date || ''), match: match, match_reason: match === 'OK' ? '' : ledgerMatchReason_({match:match}), n: 1,
                delivered_date: uids.length && byUid[uids[0]] ? String(byUid[uids[0]].delivered_date || '').slice(0, 10) : '' };
     if (uids.length) { var dn = diffNote_(amtC, sysC, 'จ่ายจริง'); if (dn) it.diff = dn; }
     return it;
@@ -364,7 +367,7 @@ function apiPayoutConfirm_(ctx, d) {
       carry_note: carryNote }]);
     appendRows_('PAYOUT_ITEMS', cand.map(function (it) {
       const notes = [o.type === 'FREE' && excluded[it.key] ? PAYOUT_REASON_TH : '',
-                     it.match && it.match !== 'OK' ? 'ไม่พบหมายในระบบ' : '', it.diff ? it.diff.text : ''].filter(String);
+                     it.match && it.match !== 'OK' ? 'รอยืนยันการจับคู่ทะเบียน' : '', it.diff ? it.diff.text : ''].filter(String);
       return { round_id: rid, item_key: it.key, item_type: it.type, officer_id: it.officer_id, amount: b(it.amount_c),
                notice_uids: it.notice_uids.join(','), case_list: it.case_list, delivered_date: it.delivered_date || it.report_date || '',
                included: o.type === 'PAID' || !excluded[it.key], reason: notes.join(' · '), created_at: ts, notice_kind: it.notice_kind || '', tambon: it.tambon || '', reported_date: it.report_date || '', reference_amount: it.sys_c === undefined ? '' : b(it.sys_c) };
