@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.23';
+  const UI_VERSION = '0.7.24';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -285,7 +285,7 @@
     if (!C.API_URL || /วางลิงก์/.test(C.API_URL)) throw Object.assign(new Error('ยังไม่ได้ตั้งค่า API_URL ใน config.js'), { code: 'CONFIG' });
     const epoch = navEpoch;
     const payload = Object.assign({}, body || {});
-    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside','change_decide','adjust_void'].includes(action) || (action === 'ledger_import' && payload.commit);
+    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside','change_decide','change_decide_bulk','adjust_void'].includes(action) || (action === 'ledger_import' && payload.commit);
     const retryKey = writing ? action + ':' + JSON.stringify(payload) : '';
     if (writing && !payload.request_id) { if (!requestKeys.has(retryKey)) requestKeys.set(retryKey, crypto.randomUUID()); payload.request_id = requestKeys.get(retryKey); }
     // 0.7.22: งานบันทึกใหญ่ (เช่น นำเข้า) ใช้เวลาได้ถึงหลายนาที — รอได้นานกว่า และถ้าเซิร์ฟเวอร์ยังทำคำขอเดิมอยู่ (BUSY)
@@ -1262,7 +1262,7 @@
     const roundTxt = (g) => g.round ? 'อยู่ในรอบ' + esc(RTYPE_TH[g.round.round_type] || '') + ' วันที่ ' + esc(thDate(g.round.pay_date)) + (g.round.amount !== null ? ' · ยอดเดิม ' + baht2(g.round.amount) + ' บาท' : '') +
       (g.round.payment_status === 'PAID' ? ' · <b>จ่ายจริงแล้ว</b>' : '') : (g.locked_by ? 'ล็อกจาก' + esc(g.locked_by) : 'ล็อกแล้ว');
     const card = (g, i) => '<div class="clay panel chg" data-i="' + i + '">' +
-      '<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><b>' + esc(g.case_no || '—') + '</b><span class="small muted">' + esc(g.notice_kind) + '</span>' + typeChip(g.pay_type) +
+      '<div class="row" style="gap:8px;align-items:center;margin-bottom:6px">' + (d.can_decide ? '<label class="chg-pk" title="เลือกเรื่องนี้เพื่ออนุมัติพร้อมกัน"><input type="checkbox" class="chg-pick" aria-label="เลือก ' + esc(g.case_no || '') + '"></label>' : '') + '<b>' + esc(g.case_no || '—') + '</b><span class="small muted">' + esc(g.notice_kind) + '</span>' + typeChip(g.pay_type) +
         '<span class="small">' + oDot(names, g.officer_id) + esc(g.officer) + '</span></div>' +
       '<p class="small" style="margin:0 0 8px"><span class="pill a">' + roundTxt(g) + '</span></p>' +
       '<div class="tbl-wrap"><table><thead><tr><th>ข้อมูล</th><th>เดิม (ในรอบ)</th><th>ไฟล์ใหม่</th><th>ผลเมื่ออนุมัติ</th></tr></thead><tbody>' +
@@ -1279,6 +1279,10 @@
     const st = (a) => a.state === 'VOID' ? '<span class="pchip">ยกเลิก</span>' : a.state === 'APPLIED' ? '<span class="pchip pok">เข้ารอบ ' + esc(thDate(a.applied.pay_date)) + '</span>' : '<span class="pchip pm">รอรอบถัดไป</span>';
     m.innerHTML = top('รายการปรับปรุงรออนุมัติ') +
       '<div class="note">นำเข้าไฟล์ย้อนหลังแล้วข้อมูลต่างจากหมายที่อยู่ในรอบยืนยัน/จ่ายแล้ว — <b>ระบบไม่แก้รอบเดิม</b> · อนุมัติ = แก้ข้อมูลทั่วไปในหมาย (วันที่ ผล ชนิดหมาย บ้านเลขที่ หมู่) และถ้ามีผลต่อเงิน ให้ใส่ <b>ยอดปรับปรุง</b> ซึ่งเข้ารอบถัดไปของประเภทนั้น แบ่ง 60:40 ตามปกติ · ไม่อนุมัติ = เก็บข้อมูลเดิม (ต้องมีเหตุผล)</div>' +
+      (d.can_decide && d.pending.length > 1 ? '<div class="clay panel chg-bulk"><label class="row" style="gap:6px;align-items:center"><input type="checkbox" id="chgAll"> <b>เลือกทั้งหมด</b></label>' +
+        '<span class="small" id="chgN">ยังไม่ได้เลือก</span><input class="inp" id="chgNote" maxlength="200" placeholder="บันทึก (ถ้ามี) ใช้กับทุกเรื่องที่เลือก" aria-label="บันทึกสำหรับเรื่องที่เลือก">' +
+        '<button type="button" class="btn btn-g" id="chgBulk" disabled>อนุมัติที่เลือก</button>' +
+        '<p class="tiny muted" style="margin:0;flex-basis:100%">อีกทางหนึ่งนอกจากกดทีละเรื่อง · ยอดปรับปรุงที่กรอกไว้ในแต่ละเรื่องจะบันทึกไปด้วย · ถ้าเรื่องใดบันทึกไม่ได้ ระบบจะไม่บันทึกเลยสักเรื่อง</p></div>' : '') +
       (d.pending.length ? d.pending.map(card).join('') : '<div class="clay panel"><p class="small muted" style="margin:0">ไม่มีรายการรออนุมัติ</p></div>') +
       '<div class="clay panel"><h3>ยอดปรับปรุง (' + num(d.adjustments.length) + ')</h3>' + (d.adjustments.length ? '<div class="tbl-wrap"><table><thead><tr><th>เลขคดี</th><th class="onm">ผู้ส่งหมาย</th><th>รอบ</th><th class="n">บาท</th><th>เหตุผล</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
         d.adjustments.map((a) => '<tr><td>' + esc(a.case_no) + '<br><span class="tiny muted">จากรอบ ' + esc(a.source_round_id || '—') + '</span></td><td class="onm">' + oDot(names, a.officer_id) + esc(a.officer) + '</td><td class="small">' + esc(a.round_type_th) +
@@ -1305,6 +1309,44 @@
         toast(act === 'REJECT' ? 'ไม่อนุมัติแล้ว' : 'อนุมัติแล้ว' + (r.adj_id ? ' · ยอดปรับปรุงรอรอบถัดไป' : '')); go('changes');
       } catch (x) { toast(x.message); b.disabled = false; }
     }));
+    // 0.7.24 เลือกหลายเรื่อง → อนุมัติครั้งเดียว
+    const picks = () => Array.from(m.querySelectorAll('.chg-pick')).filter((x) => x.checked).map((x) => x.closest('.chg'));
+    const syncBulk = () => {
+      const p = picks(), all = m.querySelectorAll('.chg-pick'), b = $('#chgBulk');
+      m.querySelectorAll('.chg').forEach((c) => c.classList.toggle('picked', !!(c.querySelector('.chg-pick') || {}).checked));
+      if (!b) return;
+      const nChg = p.reduce((s, c) => s + d.pending[+c.dataset.i].changes.length, 0);
+      $('#chgN').textContent = p.length ? 'เลือก ' + num(p.length) + ' เรื่อง (' + num(nChg) + ' รายการข้อมูล)' : 'ยังไม่ได้เลือก';
+      b.disabled = !p.length; b.textContent = p.length ? 'อนุมัติที่เลือก (' + num(p.length) + ')' : 'อนุมัติที่เลือก';
+      $('#chgAll').checked = p.length > 0 && p.length === all.length; $('#chgAll').indeterminate = p.length > 0 && p.length < all.length;
+    };
+    m.querySelectorAll('.chg-pick').forEach((x) => x.addEventListener('change', syncBulk));
+    if ($('#chgAll')) $('#chgAll').addEventListener('change', (e) => { m.querySelectorAll('.chg-pick').forEach((x) => { x.checked = e.target.checked; }); syncBulk(); });
+    if ($('#chgBulk')) $('#chgBulk').addEventListener('click', async (e) => {
+      const b = e.currentTarget, shared = $('#chgNote').value.trim(), items = [];
+      let nAdj = 0, sumAdj = 0, nChg = 0;
+      for (const box of picks()) {
+        const g = d.pending[+box.dataset.i], f = (k) => box.querySelector('[data-f="' + k + '"]').value.trim();
+        const amt = f('amount').replace(/,/g, '').replace(/[−–]/g, '-'), note = f('note') || shared;
+        if (amt && !/^-?\d+(\.\d{1,2})?$/.test(amt)) { toast('ยอดปรับปรุงของ ' + g.case_no + ' ไม่ถูกต้อง'); box.scrollIntoView({ behavior: 'smooth' }); return; }
+        const money = amt && Number(amt) !== 0;
+        if (money && !note) { toast('ใส่เหตุผลของยอดปรับปรุง ' + g.case_no + ' (หรือบันทึกรวมด้านบน)'); box.querySelector('[data-f="note"]').focus(); return; }
+        if (money) { nAdj++; sumAdj += Math.round(Number(amt) * 100); }
+        nChg += g.changes.length;
+        items.push({ notice_uid: g.notice_uid, change_ids: g.changes.map((c) => c.change_id), note: f('note'),
+          adjust: money ? { amount: amt, round_type: f('round_type'), officer_id: f('officer_id'), reason: note } : null });
+      }
+      if (!items.length) return;
+      const msg = 'อนุมัติ ' + num(items.length) + ' เรื่อง (' + num(nChg) + ' รายการข้อมูล)\nรอบเดิมไม่เปลี่ยน' +
+        (nAdj ? '\nยอดปรับปรุง ' + num(nAdj) + ' เรื่อง รวม ' + baht2(sumAdj / 100) + ' บาท → รอบถัดไป' : '\nไม่มียอดปรับปรุง');
+      if (!(await askBox(msg))) return;
+      b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+      try {
+        const r = await api('change_decide_bulk', { items: items, decision: 'APPROVE', note: shared });
+        toast('อนุมัติแล้ว ' + num(r.decided_notices) + ' เรื่อง' + (r.adjustments ? ' · ยอดปรับปรุง ' + num(r.adjustments) + ' เรื่องรอรอบถัดไป' : '')); go('changes');
+      } catch (x) { toast(x.message); syncBulk(); }
+    });
+    syncBulk();
     m.querySelectorAll('[data-void]').forEach((b) => b.addEventListener('click', async () => {
       const reason = await askBox('เหตุผลที่ยกเลิกยอดปรับปรุงนี้ (ยังไม่เข้ารอบ)', { input: 'ระบุเหตุผล' }); if (!reason) return;
       try { await api('adjust_void', { adj_id: b.dataset.void, reason: reason }); toast('ยกเลิกยอดปรับปรุงแล้ว'); go('changes'); } catch (x) { toast(x.message); }

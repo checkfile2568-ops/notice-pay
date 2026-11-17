@@ -537,5 +537,10 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 .bt-tick{cursor:pointer;align-items:flex-start}.bt-tick input{margin-top:4px}
 /* 0.7.21 รายการปรับปรุงรออนุมัติ */
 .chg .adj-f{margin-top:12px;padding:12px;border-radius:14px;background:#F4F8F5}
+.chg-bulk{position:sticky;top:8px;z-index:5;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.chg-bulk .inp{flex:1;min-width:180px}
+.chg-pk{display:inline-flex;align-items:center;padding:4px}
+.chg-pk input,.chg-bulk input[type=checkbox]{width:22px;height:22px;accent-color:#2F7A55}
+.chg.picked{outline:2px solid #2F7A55;outline-offset:-2px}
 .chg .adj-f label{display:flex;flex-direction:column;gap:4px}
 .padj .pit .pcase{flex:1 1 auto}
