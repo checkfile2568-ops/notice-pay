@@ -1,0 +1,33 @@
+// 0.7.16 คู่มือนำเข้าไฟล์ในหน้านำเข้า: ซ่อนไว้ · กดเปิดแล้วแสดง · ปุ่มปิดได้ · ไม่แตะข้อมูล (ข้อมูลสมมติ)
+const assert = require('assert');
+const fs = require('fs'), path = require('path');
+const { g, call, props } = require('./harness');
+const { JSDOM } = require(process.env.NP_JSDOM_PATH || 'jsdom');
+g.setupSystem(); props.PRINTHUB_DB_ID = 'PH';
+const auth = call('login', { code: 'U001', pin: '1234' }).data;
+const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
+const dom = new JSDOM(html, { url: 'http://localhost/', runScripts: 'outside-only', pretendToBeVisual: true }), w = dom.window;
+w.NP_CONFIG = { VERSION: '0.7.17', API_URL: 'http://localhost/api', AREA_MAP_URL: 'https://checkfile2568-ops.github.io/MapLibre/view.html' }; w.matchMedia = () => ({ matches: false }); w.scrollTo = () => {}; w.HTMLElement.prototype.scrollIntoView = () => {};
+w.fetch = async (u, o) => { const d = JSON.parse(o.body); return { json: async () => call(d.action, d) }; };
+w.eval(fs.readFileSync(path.join(__dirname, '../web/import-formats.js'), 'utf8'));
+w.eval(fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8').replace(/\}\)\(\);\s*$/, 'window.__T={S,go,enterApp};})();'));
+const a = w.__T, tick = (ms) => new Promise(r => setTimeout(r, ms || 80)), $ = (q) => w.document.querySelector(q);
+(async () => {
+  await tick(); a.S.token = auth.token; a.S.user = auth.user; a.enterApp(); await tick(200);
+  a.go('import'); await tick(300);
+  const gd = $('#imGuide');
+  assert.ok(gd, 'มีคู่มือนำเข้าไฟล์');
+  assert.equal(gd.open, false, 'ซ่อนไว้ตอนเปิดหน้า');
+  assert.ok(gd.querySelector('summary').textContent.includes('คู่มือนำเข้าไฟล์'));
+  const t = gd.textContent;
+  ['ไฟล์ 50', 'ไฟล์ 42', 'ไฟล์ 18', 'ไฟล์ 30', 'ตรวจสอบก่อนนำเข้า', 'ยืนยันนำเข้า', 'นำเข้าไฟล์ถัดไป', 'ก่อนตั้งรอบแต่ละครั้ง', 'เฉพาะวันที่จ่ายของรอบนั้น', 'ไม่ต้องเลือก'].forEach(k => assert.ok(t.includes(k), 'มีคำว่า ' + k));
+  gd.open = true; assert.equal(gd.open, true);
+  $('#imGuideClose').click(); assert.equal(gd.open, false, 'ปุ่มปิดคู่มือทำงาน');
+  assert.ok($('.kind[data-k="ISSUE"]') && $('.kind[data-k="PAY"]'), 'การ์ดเลือกชนิดไฟล์ยังอยู่');
+  a.go('officers'); await tick(300);
+  const lk = w.document.querySelector('.area-map-link a');
+  assert.ok(lk, 'มีปุ่มเปิดแผนที่เขตหมาย');
+  assert.equal(lk.getAttribute('href'), 'https://checkfile2568-ops.github.io/MapLibre/view.html');
+  assert.equal(lk.getAttribute('target'), '_blank'); assert.ok(/noopener/.test(lk.getAttribute('rel')));
+  console.log('import-guide-0716: ผ่าน (คู่มือนำเข้า + ลิงก์แผนที่เขตหมาย)'); dom.window.close();
+})().catch(e => { console.error(e); dom.window.close(); process.exitCode = 1; });
