@@ -42,6 +42,7 @@ function routes_() {
     notice_confirm_date:   { auth: true, roles: ['NOTICE', 'FINANCE', 'ADMIN'], fn: apiNoticeConfirmDate_ },
 
     users_list:      { auth: true, roles: ADMIN, fn: apiUsersList_ },
+    audit_list:      { auth: true, roles: ADMIN, fn: apiAuditList_ },
     user_save:       { auth: true, roles: ADMIN, fn: apiUserSave_ },
     officer_save:    { auth: true, roles: ADMIN, fn: apiOfficerSave_ },
     config_list:     { auth: true, roles: ADMIN, fn: apiConfigList_ },

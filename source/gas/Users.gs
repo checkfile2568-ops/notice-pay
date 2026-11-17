@@ -107,3 +107,83 @@ function apiConfigList_(ctx) {
   return { config: readTable_('CONFIG').rows.map(function (r) { return { key: r.key, value: String(r.value), description: r.description }; }),
            rules: readTable_('CALC_RULES').rows.map(function (r) { return { rule_code: r.rule_code, mode: r.mode, description: r.description, doc_ref: r.doc_ref }; }) };
 }
+
+/* ---------- 0.7.17 ประวัติการใช้งาน (AUDIT) · ผู้ดูแลเท่านั้น · อ่านอย่างเดียว ยกเว้นล้างบันทึกเข้า/ออกระบบที่เกินระยะเก็บ ---------- */
+const AUDIT_GROUPS_ = {
+  LOGIN:  { th: 'เข้า/ออกระบบ', test: function (a) { return a === 'LOGIN' || a === 'LOGOUT'; } },
+  IMPORT: { th: 'นำเข้า/ตรวจข้อมูล', test: function (a) { return a === 'IMPORT' || a === 'CALC' || a === 'NOTICE_SPLIT' || /^REVIEW_/.test(a) || /^DATE_OK_/.test(a); } },
+  MONEY:  { th: 'รอบเบิก/การจ่ายเงิน', test: function (a) { return /^PAYOUT_/.test(a) || /^ROUND_PAYMENT/.test(a) || /^LEDGER_/.test(a); } },
+  ADMIN:  { th: 'ผู้ใช้/ตั้งค่า/ระบบ', test: function (a) { return /^(USER_SAVE|OFFICER_SAVE|SCHEMA_UPGRADE|SYSTEM)$/.test(a) || /PRIVACY|^ADMIN_/.test(a); } },
+  ERROR:  { th: 'ข้อผิดพลาด', test: function (a) { return a === 'ERROR'; } }
+};
+const AUDIT_ACTION_TH_ = { LOGIN: 'เข้าระบบ', LOGOUT: 'ออกจากระบบ', IMPORT: 'นำเข้าไฟล์', CALC: 'คำนวณยอด', NOTICE_SPLIT: 'แยกฉบับ',
+  PAYOUT_CONFIRM: 'ยืนยันรอบ', PAYOUT_CANCEL: 'ยกเลิกรอบ', ROUND_PAYMENT: 'บันทึกจ่ายจริง', ROUND_PAYMENT_BULK: 'บันทึกจ่ายจริงหลายรอบ',
+  LEDGER_PAY: 'บัญชีจ่ายเงิน', LEDGER_OUTSIDE: 'บันทึกแบ่งนอกระบบ', LEDGER_OUTSIDE_UNDO: 'ยกเลิกแบ่งนอกระบบ',
+  USER_SAVE: 'แก้ผู้ใช้/สิทธิ์', OFFICER_SAVE: 'แก้ผู้ส่งหมาย', SCHEMA_UPGRADE: 'ปรับโครงสร้างฐาน', SYSTEM: 'ระบบ', ERROR: 'ข้อผิดพลาด' };
+function auditGroupOf_(a) { const k = Object.keys(AUDIT_GROUPS_).filter(function (g) { return AUDIT_GROUPS_[g].test(a); })[0]; return k || 'OTHER'; }
+function auditDay_(v) { const s = String(v || ''); if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10); const d = new Date(v); return isNaN(d) ? '' : Utilities.formatDate(d, 'Asia/Bangkok', 'yyyy-MM-dd'); }
+function auditStamp_(v) { const s = String(v || ''); if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 19); const d = new Date(v); return isNaN(d) ? s : Utilities.formatDate(d, 'Asia/Bangkok', "yyyy-MM-dd'T'HH:mm:ss"); }
+
+/** ล้างเฉพาะบันทึกเข้า/ออกระบบที่เก่ากว่า AUDIT_LOGIN_KEEP_DAYS (ค่าเริ่มต้น 365 วัน) · ทำวันละครั้ง · บันทึกเงิน/นำเข้า/สิทธิ์ เก็บถาวร */
+function auditPurge_(userCode, todayIso) {
+  const today = todayIso || now_().slice(0, 10);
+  if (String(cfg_('AUDIT_PURGED_AT', '')).slice(0, 10) === today) return { removed: 0, skipped: true };
+  const keep = Math.max(30, cfgNum_('AUDIT_LOGIN_KEEP_DAYS', 365));
+  const cut = new Date(today + 'T00:00:00Z'); cut.setUTCDate(cut.getUTCDate() - keep);
+  const cutIso = cut.toISOString().slice(0, 10);
+  const lock = writeLock_();
+  try { lock.waitLock(20000); } catch (e) { return { removed: 0, skipped: true }; }
+  try {
+    const t = readTable_('AUDIT'), sh = sheet_('AUDIT'), head = headOf_('AUDIT');
+    const drop = t.rows.filter(function (r) { const a = String(r.action || ''); return (a === 'LOGIN' || a === 'LOGOUT') && auditDay_(r.at) && auditDay_(r.at) < cutIso; });
+    if (drop.length) {
+      const keepRows = t.rows.filter(function (r) { return drop.indexOf(r) < 0; });
+      const n = t.rows.length;
+      if (keepRows.length) sh.getRange(2, 1, keepRows.length, head.length).setValues(keepRows.map(function (r) { return toRow_('AUDIT', r); }));
+      sh.getRange(2 + keepRows.length, 1, n - keepRows.length, head.length).clearContent();
+    }
+    setCfg_('AUDIT_PURGED_AT', today);
+    if (drop.length) audit_(userCode, 'SYSTEM', 'AUDIT', 'ล้างบันทึกเข้า/ออกระบบที่เก่ากว่า ' + keep + ' วัน ' + drop.length + ' รายการ');
+    return { removed: drop.length, keep_days: keep, cut: cutIso };
+  } finally { lock.releaseLock(); }
+}
+
+function apiAuditList_(ctx, d) {
+  d = d || {};
+  const purge = auditPurge_(ctx.user.code);
+  const today = now_().slice(0, 10);
+  const def = new Date(today + 'T00:00:00Z'); def.setUTCDate(def.getUTCDate() - 30);
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(String(d.from || '')) ? String(d.from) : def.toISOString().slice(0, 10);
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(String(d.to || '')) ? String(d.to) : today;
+  const group = AUDIT_GROUPS_[d.group] || d.group === 'OTHER' ? String(d.group) : 'ALL';
+  const user = str_(d.user, 40), q = str_(d.q, 60).toLowerCase();
+  const limit = Math.min(500, Math.max(20, Number(d.limit) || 300));
+  const names = {};
+  try { readTable_('USERS').rows.forEach(function (u) { names[String(u.user_code)] = String(u.full_name || ''); }); } catch (e) {}
+  const inRange = readTable_('AUDIT').rows.map(function (r) {
+    const a = String(r.action || '');
+    return { at: auditStamp_(r.at), day: auditDay_(r.at), user_code: String(r.user_code || ''), action: a, group: auditGroupOf_(a),
+             target: String(r.target || '').slice(0, 120), detail: String(r.detail || '').slice(0, 300) };
+  }).filter(function (r) { return r.day && r.day >= from && r.day <= to; });
+  const counts = {}; Object.keys(AUDIT_GROUPS_).concat(['OTHER']).forEach(function (g) { counts[g] = 0; });
+  const per = {};
+  inRange.forEach(function (r) {
+    if (!user || r.user_code === user) counts[r.group]++;
+    if (r.action === 'LOGIN' && r.user_code) {
+      const p = per[r.user_code] || (per[r.user_code] = { user_code: r.user_code, name: names[r.user_code] || '', ok: 0, fail: 0, last_ok: '' });
+      if (/^สำเร็จ/.test(r.detail)) { p.ok++; if (r.at > p.last_ok) p.last_ok = r.at; } else p.fail++;
+    }
+  });
+  const rows = inRange.filter(function (r) {
+    return (group === 'ALL' || r.group === group) && (!user || r.user_code === user) &&
+      (!q || (r.action + ' ' + r.target + ' ' + r.detail).toLowerCase().indexOf(q) >= 0);
+  }).sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+  return {
+    from: from, to: to, group: group, user: user, total: rows.length, truncated: rows.length > limit,
+    rows: rows.slice(0, limit).map(function (r) { return Object.assign({ user_name: names[r.user_code] || '', action_th: AUDIT_ACTION_TH_[r.action] || r.action }, r); }),
+    counts: counts, groups: Object.keys(AUDIT_GROUPS_).map(function (g) { return { id: g, th: AUDIT_GROUPS_[g].th }; }).concat([{ id: 'OTHER', th: 'อื่น ๆ' }]),
+    per_user: Object.keys(per).map(function (k) { return per[k]; }).sort(function (a, b) { return a.last_ok < b.last_ok ? 1 : -1; }),
+    users: Object.keys(names).map(function (k) { return { code: k, name: names[k] }; }).sort(function (a, b) { return a.name < b.name ? -1 : 1; }),
+    keep_days: Math.max(30, cfgNum_('AUDIT_LOGIN_KEEP_DAYS', 365)), purged: purge.removed || 0
+  };
+}
