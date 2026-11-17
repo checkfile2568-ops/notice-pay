@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.19';
+  const UI_VERSION = '0.7.20';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -716,6 +716,7 @@
   /* ---------------------------------------------------------------- นำเข้าข้อมูล */
   const IM = {};
   let importEpoch = 0;
+  const IMPORT_META = () => IM.meta;
   function resetImport() { importEpoch++; Object.keys(IM).forEach((k) => { if (k !== 'meta') delete IM[k]; }); }
   const normH = (s) => String(s || '').replace(/[๐-๙]/g, (c) => String(c.charCodeAt(0) - 0x0E50)).replace(/\s+/g, '').toLowerCase();
 
@@ -724,7 +725,8 @@
     else api('import_templates').then((x) => { IM.meta = x; paintKinds(); }).catch(() => {});   // สถานะไฟล์ล่าสุด (ผู้อื่นอาจนำเข้าแล้ว)
     resetImport();
     m.innerHTML = top('นำเข้าไฟล์') + '<p class="privacy-note">🔒 ' + PRIVACY_TH + '</p>' + importGuideHtml() +
-      '<div class="clay panel"><h3>1 · เลือกชนิดไฟล์</h3><p class="small muted" style="margin:-4px 2px 10px"><span class="kdot ok"></span> สีเขียว = นำเข้าแล้ว (แสดงไฟล์ล่าสุด) · <span class="kdot"></span> สีเทา = ยังไม่เคยนำเข้า</p><div class="kinds">' +
+      batchPanelHtml() +
+      '<div class="clay panel"><h3><span class="small muted">หรือนำเข้าทีละไฟล์ ·</span> 1 · เลือกชนิดไฟล์</h3><p class="small muted" style="margin:-4px 2px 10px"><span class="kdot ok"></span> สีเขียว = นำเข้าแล้ว (แสดงไฟล์ล่าสุด) · <span class="kdot"></span> สีเทา = ยังไม่เคยนำเข้า</p><div class="kinds">' +
       '<button type="button" class="kind clay-mint" data-k="ISSUE"><b>ไฟล์จ่ายหมาย</b><span class="small">นำเข้าวันที่จ่ายหมาย — แบบรวมทุกคน หรือแยกรายคน · หมายใหม่จะมีสถานะ "จ่ายหมายแล้ว รอผล"</span>' +
         '<span class="howto">นำเข้าไฟล์เมนู <b>บัญชีหมาย</b> › ประเภท <b>50. บัญชีจ่ายหมาย พนักงานศาลนี้ส่ง (แบบรวม)</b> › เลือกวันที่ ถึงวันที่</span></button>' +
       '<button type="button" class="kind clay-mint" data-k="RESULT"><b>ไฟล์ผลหมาย</b><span class="small">นำเข้าวันอื่นได้ — หมายที่ส่งแล้วพร้อมวันที่ส่ง · ระบบจับคู่กับหมายเดิมแล้วเปลี่ยนเป็น "ส่งแล้ว"</span>' +
@@ -736,7 +738,7 @@
       '</div></div><div id="imFile"></div><div id="imMap"></div><div id="imPrev"></div>' +
       (IM.meta.start_fy ? '<p class="small" style="margin:0 6px 6px"><span class="period">เริ่มประมวลผลตั้งแต่ปีงบประมาณ ' + esc(IM.meta.start_fy) + ' (1 ต.ค. ' + esc(Number(IM.meta.start_fy) - 1) + ')</span> หมายที่จ่ายก่อนวันนี้ไม่นำเข้า</p>' : '') +
       '<p class="small muted" style="margin:0 6px">กฎการนำเข้าตามข้อกำหนดฉบับ 4.0 ข้อ 3: นำเข้าไฟล์เดิมซ้ำได้ ยอดไม่เพิ่ม · ไม่ลบข้อมูลที่ไม่อยู่ในไฟล์ล่าสุด · หมายที่เข้ารอบจ่าย/เบิกแล้วจะไม่ถูกเขียนทับ</p>';
-    paintKinds();
+    paintKinds(); bindBatch();
     const gd = $('#imGuide');
     if (gd) { $('#imGuideClose').addEventListener('click', () => { gd.open = false; gd.scrollIntoView({ block: 'nearest' }); }); }
     m.querySelectorAll('.kind').forEach((b) => b.addEventListener('click', () => {
@@ -795,12 +797,14 @@
   /* ---------- นำเข้าบัญชีการเงิน: บัญชีการจ่ายเงินให้เจ้าพนักงานศาล (PAY) · บัญชีจ่ายหมาย หมายฟรี ประเภท 18 (FREE18) ---------- */
   const TH_MON = { 'ม.ค.': 1, 'ก.พ.': 2, 'มี.ค.': 3, 'เม.ย.': 4, 'พ.ค.': 5, 'มิ.ย.': 6, 'ก.ค.': 7, 'ส.ค.': 8, 'ก.ย.': 9, 'ต.ค.': 10, 'พ.ย.': 11, 'ธ.ค.': 12 };
   const digits = (v) => String(v === null || v === undefined ? '' : v).replace(/[๐-๙]/g, c => String(c.charCodeAt(0)-0x0E50));
-  function thIso(v) {
-    return NoticeImportFormat.date(v, !!(IM.wb && IM.wb.Workbook && IM.wb.Workbook.WBProps && IM.wb.Workbook.WBProps.date1904)) || '';
+  function thIso(v, wb) {
+    wb = wb || IM.wb;
+    return NoticeImportFormat.date(v, !!(wb && wb.Workbook && wb.Workbook.WBProps && wb.Workbook.WBProps.date1904)) || '';
   }
   const amtOf = (v) => { const t=digits(v).trim().replace(/,/g,''); if(!/^\d+(?:\.\d{1,2})?$/.test(t)) throw new Error('จำนวนเงินไม่ถูกต้อง: '+String(v)); const n=Number(t); if(!Number.isFinite(n))throw new Error('จำนวนเงินไม่ถูกต้อง'); return n; };
   const firstLine = (v) => String(v || '').split(/\r?\n/)[0].trim();
-  function parseLedger(kind, aoa) {
+  function parseLedger(kind, aoa, wb) {
+    const thIsoW = (v) => thIso(v, wb);
     const text = (r) => r.map((c) => String(cellVal(c))).join(' ').replace(/\s+/g, ' ').trim();
     const need = kind === 'PAY' ? ['วันที่จ่าย', 'เลขดำที่', 'ส่งหมายถึงใคร', 'ราคา'] : ['เลขดำที่', 'หมายถึงใคร', 'ราคา', 'เจ้าของหมาย'];
     const hi = aoa.findIndex((r) => need.every((h) => r.some((c) => normH(c) === normH(h))));
@@ -818,9 +822,9 @@
         return;
       }
       if (seq < 0 || !/^\d+$/.test(digits(r[seq]).trim())) return;
-      if (kind === 'PAY' && r[col('วันที่รับเงิน')] && !thIso(r[col('วันที่รับเงิน')])) throw new Error('วันที่รับเงินแถว '+(rows.length+1)+' ไม่ถูกต้อง กรุณาใช้วัน/เดือน/ปี 4 หลัก');
-      if (kind === 'PAY') rows.push({ pay_date: thIso(r[col('วันที่จ่าย')]), case_no: firstLine(r[col('เลขดำที่')]), recipient: NoticeImportFormat.recipient(firstLine(r[col('เลขดำที่')]), r[col('ส่งหมายถึงใคร')]),
-        received_date: thIso(r[col('วันที่รับเงิน')]), receipt_no: String(r[col('เลขที่ใบเสร็จ')] || '').trim(), amount: amtOf(r[col('ราคา')]), officer: officer });
+      if (kind === 'PAY' && r[col('วันที่รับเงิน')] && !thIsoW(r[col('วันที่รับเงิน')])) throw new Error('วันที่รับเงินแถว '+(rows.length+1)+' ไม่ถูกต้อง กรุณาใช้วัน/เดือน/ปี 4 หลัก');
+      if (kind === 'PAY') rows.push({ pay_date: thIsoW(r[col('วันที่จ่าย')]), case_no: firstLine(r[col('เลขดำที่')]), recipient: NoticeImportFormat.recipient(firstLine(r[col('เลขดำที่')]), r[col('ส่งหมายถึงใคร')]),
+        received_date: thIsoW(r[col('วันที่รับเงิน')]), receipt_no: String(r[col('เลขที่ใบเสร็จ')] || '').trim(), amount: amtOf(r[col('ราคา')]), officer: officer });
       else rows.push({ case_no: firstLine(r[col('เลขดำที่')]), notice_kind: String(r[col('หมายอะไร')] || '').trim(), recipient: NoticeImportFormat.recipient(firstLine(r[col('เลขดำที่')]), r[col('หมายถึงใคร')]),
         tambon: String(r[col('ตำบล')] || '').trim(), amount: amtOf(r[col('ราคา')]), officer: String(r[col('เจ้าของหมาย')] || '').trim(), result: String(r[col('ผลการส่งหมาย')] || '').trim() });
     });
@@ -886,8 +890,10 @@
     if (v === null || v === undefined) return '';
     return typeof v === 'string' ? v.trim() : v;
   }
-  function loadSheet() {
-    const aoa = XLSX.utils.sheet_to_json(IM.wb.Sheets[IM.sheet], { header: 1, raw: true, defval: '' });
+  /** อ่านแผ่นงานแบบไม่แตะหน้าจอ (ใช้ทั้งนำเข้าทีละไฟล์และหลายไฟล์ 0.7.20) */
+  function sheetState(wb, sheet) {
+    const IM = { meta: IMPORT_META() };
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { header: 1, raw: true, defval: '' });
     const syn = IM.meta.fields.flatMap((x) => x.syn.map(normH));
     let best = 0, bestScore = -1;
     for (let r = 0; r < Math.min(15, aoa.length); r++) {
@@ -915,6 +921,10 @@
       const o = {}; IM.headers.forEach((h, i) => { o[h] = cellVal(r[i]); });
       IM.rows.push(o); IM.rowNos.push(best + k + 2);
     });
+    return IM;
+  }
+  function loadSheet() {
+    Object.assign(IM, sheetState(IM.wb, IM.sheet));
     autoMap();
     $('#fInfo').innerHTML = '<div class="row small" style="margin-top:12px"><span class="pill g">' + esc(IM.file.name) + '</span>' +
       '<label for="shSel">แผ่นงาน</label><select id="shSel" class="sel">' + IM.wb.SheetNames.map((s) => '<option' + (s === IM.sheet ? ' selected' : '') + '>' + esc(s) + '</option>').join('') + '</select>' +
@@ -924,7 +934,9 @@
     drawMap();
   }
 
-  function autoMap() {
+  function autoMap() { Object.assign(IM, mapState(IM.kind, IM.headers, IM.period)); }
+  function mapState(kind, headers, period) {
+    const IM = { meta: IMPORT_META(), kind: kind, headers: headers, period: period };
     const tpl = IM.meta.templates[IM.kind] || {};
     const used = {};
     IM.mapping = {};
@@ -940,6 +952,7 @@
     IM.keys = (tpl.key_fields && tpl.key_fields.length ? tpl.key_fields : IM.meta.default_keys).slice();
     IM.opts = { file_officer_id: '', default_pay_type: (tpl.options && tpl.options.default_pay_type) || '',
                 period_from: IM.period ? IM.period.from : '', period_to: IM.period ? IM.period.to : '' };
+    return { mapping: IM.mapping, keys: IM.keys, opts: IM.opts };
   }
 
   function drawMap() {
@@ -978,7 +991,8 @@
     $('#doPrev').addEventListener('click', doPreview);
   }
 
-  function importBody() {
+  function importBody() { return bodyOf(IM); }
+  function bodyOf(IM) {
     const map = {}; Object.keys(IM.mapping).forEach((k) => { if (IM.mapping[k]) map[k] = IM.mapping[k]; });
     // Remove party names locally, before any request; dates use the shared parser.
     const date1904 = !!(IM.wb && IM.wb.Workbook && IM.wb.Workbook.WBProps && IM.wb.Workbook.WBProps.date1904);
@@ -1051,6 +1065,182 @@
       $('#toHome').addEventListener('click', () => go('home'));
       $('#toCalc').addEventListener('click', () => go('calc'));
     } catch (e) { b.disabled = false; b.textContent = 'ยืนยันนำเข้า'; toast(e.message); }
+  }
+
+  /* ---------------------------------------------------------------- นำเข้าหลายไฟล์พร้อมกัน (0.7.20) */
+  /* เลือกหลายไฟล์ → ระบบรู้ชนิดเอง → ตรวจทุกไฟล์ → ป้าย 3 สีตามผลกระทบ → ยืนยันครั้งเดียว นำเข้าตามลำดับ 50 → 42 → 18 → 30
+   * ใช้ API เดิมทุกตัว (import_preview/import_commit/ledger_import) ด้วยข้อมูลชุดเดียวกับนำเข้าทีละไฟล์ จึงได้ยอดเท่ากัน
+   * ยอดที่ยืนยันรอบหรือจ่ายแล้วไม่เปลี่ยนทุกกรณี (ระบบล็อกฝั่งเซิร์ฟเวอร์) */
+  const BATCH_ORDER = ['ISSUE', 'RESULT', 'FREE18', 'PAY'];
+  const BATCH_KIND_TH = { ISSUE: '50 · จ่ายหมาย', RESULT: '42 · ผลหมาย', FREE18: '18 · ราคาหมายฟรี', PAY: '30 · บัญชีจ่ายเงิน' };
+  const BT = { files: [], epoch: 0 };
+  /** ชนิดไฟล์จากหัวตาราง (15 แถวแรกของแผ่นแรก) */
+  function detectImportKind(aoa) {
+    for (let r = 0; r < Math.min(15, aoa.length); r++) {
+      const H = (aoa[r] || []).map(normH), has = (h) => H.indexOf(normH(h)) >= 0;
+      if (!has('เลขดำที่')) continue;
+      if (has('วันที่จ่าย') && has('ส่งหมายถึงใคร')) return 'PAY';
+      if (has('เจ้าของหมาย') && has('หมายถึงใคร')) return 'FREE18';
+      if (has('ส่งหมายให้ใคร') && has('วันที่ส่งหมาย')) return 'RESULT';
+      if (has('หมายถึงใคร') && has('ผู้ส่งหมาย')) return 'ISSUE';
+    }
+    return '';
+  }
+  const fyStartIso = (iso) => { const m = String(iso || '').match(/^(\d{4})-(\d{2})/); if (!m) return ''; const y = +m[2] >= 10 ? +m[1] : +m[1] - 1; return y + '-10-01'; };
+  const todayIso = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  /** ป้าย 3 สี: green ซ้ำไม่เปลี่ยนยอด · amber มีรายการใหม่/แก้ไข (ยอดรอเบิก) · red ขัดกับรอบที่จ่ายแล้ว (ส่งไปรออนุมัติ ต้องติ๊กยืนยัน) */
+  function batchImpact(x) {
+    const p = x.preview || {};
+    if (x.kind === 'ISSUE' || x.kind === 'RESULT') {
+      const c = p.counts || {}, real = p.real || { CHANGED: c.CHANGED, HELD: c.HELD };
+      if (real.HELD) return 'red';
+      return (c.NEW || real.CHANGED || c.AMBIGUOUS || c.ERROR) ? 'amber' : 'green';
+    }
+    if (x.kind === 'PAY') return (p.dates || []).some((d) => !d.locked && (d.new_rows || d.changed_rows)) ? 'amber' : 'green';
+    return p.changed ? 'amber' : 'green';
+  }
+  /** ช่วงวันที่ของไฟล์ (ISO) · ย้อนหลัง = เริ่มก่อนวันสุดท้ายของไฟล์ชนิดเดียวกันที่เคยนำเข้า */
+  function batchPeriod(x) {
+    let from = '', to = '';
+    if (x.state && x.state.period) { from = thIso(x.state.period.from, x.wb); to = thIso(x.state.period.to, x.wb); }
+    if (x.ledger) {
+      from = thIso(x.ledger.period_from, x.wb) || from; to = thIso(x.ledger.period_to, x.wb) || to;
+      if (!from && x.kind === 'PAY') { const ds = x.ledger.rows.map((r) => r.pay_date).filter(Boolean).sort(); from = ds[0] || ''; to = ds[ds.length - 1] || ''; }
+    }
+    return { from: from, to: to };
+  }
+  function batchTags(x) {
+    const tags = [], last = ((IM.meta && IM.meta.last) || {})[x.kind];
+    if (x.period.from && last && last.to && x.period.from < String(last.to).slice(0, 10)) tags.push(['a', 'ย้อนหลัง · เคยนำเข้าถึง ' + thLong(last.to)]);
+    if (x.period.from && x.period.from < fyStartIso(todayIso())) tags.push(['b', 'มีช่วงปีงบก่อน']);
+    if (x.preview && x.preview.duplicate_file) tags.push(['g', 'ไฟล์เดิม เคยนำเข้าเมื่อ ' + thDate(x.preview.duplicate_file.at, true)]);
+    return tags;
+  }
+  const batchPanelHtml = () => '<div class="clay panel" id="bt"><h3>นำเข้าหลายไฟล์พร้อมกัน <span class="pill g" style="font-size:12px">ใหม่</span></h3>' +
+    '<p class="small muted" style="margin:-4px 2px 10px">เลือกไฟล์ 50 · 42 · 18 · 30 ได้พร้อมกัน ไม่ต้องเลือกชนิดก่อน · ช่วงวันที่ย้อนหลังได้ ระบบตรวจและแจ้งผลกระทบก่อนบันทึก · ยอดที่ยืนยันรอบ/จ่ายแล้วไม่เปลี่ยน</p>' +
+    '<label class="drop sunk" id="btDrop"><input type="file" id="btIn" accept=".xlsx,.xls,.csv" class="sr" multiple>' +
+    '<b>แตะเพื่อเลือกหลายไฟล์ หรือลากมาวางพร้อมกัน</b><span class="small muted">ระบบนำเข้าตามลำดับ 50 → 42 → 18 → 30 ให้เอง</span></label><div id="btList"></div></div>';
+  function bindBatch() {
+    const drop = $('#btDrop'); if (!drop) return;
+    $('#btIn').addEventListener('change', (e) => { if (e.target.files.length) batchRead(Array.from(e.target.files)); e.target.value = ''; });
+    ['dragover', 'dragenter'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+    drop.addEventListener('drop', (e) => e.dataTransfer.files.length && batchRead(Array.from(e.dataTransfer.files)));
+  }
+  async function batchRead(files) {
+    if (!window.XLSX) { toast('กำลังโหลดตัวอ่าน Excel กรุณาลองอีกครั้ง'); return; }
+    const ep = ++BT.epoch; BT.files = []; BT.done = false;
+    $('#btList').innerHTML = '<p class="small"><span class="spin"></span> กำลังอ่านและตรวจ ' + num(files.length) + ' ไฟล์…</p>';
+    for (const f of files) {
+      const x = { name: f.name, size: f.size, kind: '', status: 'wait', err: '', include: true, tick: false };
+      BT.files.push(x);
+      try {
+        const buf = await f.arrayBuffer();
+        const dig = await crypto.subtle.digest('SHA-256', buf);
+        x.file = { name: f.name, size: f.size, checksum: Array.from(new Uint8Array(dig)).map((b) => b.toString(16).padStart(2, '0')).join('') };
+        x.wb = XLSX.read(buf, { type: 'array', cellDates: false });
+        x.sheet = x.wb.SheetNames[0];
+        const aoa = XLSX.utils.sheet_to_json(x.wb.Sheets[x.sheet], { header: 1, raw: true, defval: '' });
+        x.kind = detectImportKind(aoa);
+        if (!x.kind) throw new Error('ไม่รู้จักชนิดไฟล์ — รองรับ 50 · 42 · 18 · 30');
+        if (x.kind === 'PAY' || x.kind === 'FREE18') {
+          const p = x.ledger = parseLedger(x.kind, aoa, x.wb);
+          const totOk = p.footer === null || Math.abs(p.footer - p.sum) < 0.005, nOk = p.footerN === null || p.footerN === p.rows.length;
+          if (!(totOk && nOk && !p.badDate && !p.grpBad.length && !p.wrongKind && p.rows.length > 0))
+            throw new Error(!totOk ? 'ยอดท้ายไฟล์ไม่ตรงผลรวมแถว' : !nOk ? 'จำนวนท้ายไฟล์ไม่ตรง' : p.badDate ? 'อ่านวันที่จ่ายไม่ได้ ' + p.badDate + ' แถว' : p.grpBad.length ? 'ยอดรายคนไม่ตรงหัวกลุ่ม' : p.wrongKind ? 'ชนิดไฟล์ไม่ตรงหัวรายงาน' : 'ไม่มีแถวข้อมูล');
+          const r = await api('ledger_import', { kind: x.kind, rows: p.rows, file: x.file, sheet: x.sheet, period_from: p.period_from, period_to: p.period_to });
+          x.preview = r;
+          x.body = { kind: x.kind, rows: p.rows, file: x.file, sheet: x.sheet, commit: true, period_from: p.period_from, period_to: p.period_to, preview_token: r.preview_token };
+          x.money = p.sum; x.rowsN = p.rows.length;
+        } else {
+          const st = x.state = sheetState(x.wb, x.sheet);
+          Object.assign(st, mapState(x.kind, st.headers, st.period), { kind: x.kind, wb: x.wb, sheet: x.sheet, file: x.file });
+          const need = ['case_no', 'officer'].concat(x.kind === 'ISSUE' ? ['notice_kind'] : ['delivered_date']).filter((f) => !st.mapping[f]);
+          if (need.length) throw new Error('จับคู่คอลัมน์อัตโนมัติไม่ครบ (' + need.join(', ') + ') — ใช้การ์ดนำเข้าทีละไฟล์ด้านล่าง');
+          const body = bodyOf(st), r = await api('import_preview', body);
+          x.preview = r; x.body = Object.assign({}, body, { preview_token: r.preview_token });
+          x.rowsN = r.rows_total; x.money = r.totals ? r.totals.PAID.amount : null;
+        }
+        x.period = batchPeriod(x); x.impact = batchImpact(x); x.status = 'ready';
+      } catch (e) { x.status = 'error'; x.err = e.message; x.include = false; }
+      x.wb = null; if (x.state) { x.state.wb = null; }
+      if (ep !== BT.epoch) return;
+    }
+    BT.files.sort((a, b) => (BATCH_ORDER.indexOf(a.kind) + 1 || 9) - (BATCH_ORDER.indexOf(b.kind) + 1 || 9) || String(a.period && a.period.from).localeCompare(String(b.period && b.period.from)));
+    drawBatch();
+  }
+  const IMPACT_TH = { green: ['g', '🟢 ซ้ำ ไม่เปลี่ยนยอด'], amber: ['a', '🟡 มีรายการใหม่/แก้ไข · เข้ายอดรอเบิก'], red: ['r', '🔴 ขัดกับรอบที่จ่ายแล้ว · ส่งไปรออนุมัติ'] };
+  function batchDetail(x) {
+    const p = x.preview || {};
+    if (x.kind === 'ISSUE' || x.kind === 'RESULT') {
+      const c = p.counts || {};
+      const real = p.real || { CHANGED: c.CHANGED, HELD: c.HELD };
+      return 'ใหม่ ' + num(c.NEW) + ' · เดิมตรงกัน ' + num((c.SAME || 0) + (c.CHANGED - real.CHANGED) + (c.HELD - real.HELD)) + ' · ปรับปรุง ' + num(real.CHANGED) + ' · ขัดกับรอบที่จ่ายแล้ว ' + num(real.HELD) + ' · รอตรวจ ' + num((c.AMBIGUOUS || 0) + (c.ERROR || 0)) + (c.OUTSIDE ? ' · ก่อนปีงบเริ่มระบบ ' + num(c.OUTSIDE) : '') +
+        (p.totals ? '<br>หมายมีเงิน ' + num(p.totals.PAID.n) + ' รายการ ' + num(p.totals.PAID.amount) + ' บาท · หมายฟรี ' + num(p.totals.BUDGET.n) + ' รายการ' : '');
+    }
+    if (x.kind === 'PAY') {
+      const ds = p.dates || [], lk = ds.filter((d) => d.locked), op = ds.filter((d) => !d.locked);
+      return num(x.rowsN) + ' เรื่อง ' + baht2(x.money) + ' บาท · จับคู่ได้ ' + num(p.summary && p.summary.ok) + ' · รอยืนยันการจับคู่ ' + num(p.summary && p.summary.none) +
+        '<br>วันที่จ่ายรอตั้งรอบ ' + num(op.length) + ' วัน · รายการใหม่ ' + num(op.reduce((a, d) => a + (d.new_rows || 0), 0)) + ' (' + baht2(op.reduce((a, d) => a + (d.new_amount || 0), 0)) + ' บาท)' +
+        (op.some((d) => d.changed_rows) ? ' · ยอดเปลี่ยน ' + num(op.reduce((a, d) => a + (d.changed_rows || 0), 0)) : '') + (lk.length ? ' · ตั้งรอบแล้ว ข้าม ไม่แก้ ' + num(lk.length) + ' วัน' : '');
+    }
+    const k = p.compare || {};
+    return num(x.rowsN) + ' เรื่อง ' + baht2(x.money) + ' บาท · ตรงยอดระบบ ' + num(k.same) + ' · ศาลคิดมากกว่า ' + num(k.court_more) + ' · น้อยกว่า ' + num(k.court_less) + (k.locked ? ' · เข้ารอบเบิกแล้ว (ไม่แก้) ' + num(k.locked) : '') + '<br>ราคาที่จะปรับจากครั้งก่อน ' + num(p.changed) + ' เรื่อง (เฉพาะหมายที่ยังไม่เข้ารอบ)';
+  }
+  function batchCanCommit() {
+    const on = BT.files.filter((x) => x.include && x.status === 'ready');
+    return on.length > 0 && on.every((x) => x.impact !== 'red' || x.tick);
+  }
+  function drawBatch() {
+    const rows = BT.files.map((x, i) => {
+      const imp = IMPACT_TH[x.impact] || ['r', ''];
+      const head = '<div class="row" style="gap:8px;align-items:center"><label class="row" style="gap:6px"><input type="checkbox" class="btInc" data-i="' + i + '"' + (x.include ? ' checked' : '') + (x.status !== 'ready' || BT.done ? ' disabled' : '') + '>' +
+        '<b>' + esc(BATCH_KIND_TH[x.kind] || 'ไม่รู้จักชนิด') + '</b></label><span class="small muted">' + esc(x.name) + '</span></div>';
+      if (x.status === 'error') return '<div class="bt-item bt-err">' + head + '<p class="note r" style="margin:6px 0 0">' + esc(x.err) + '</p></div>';
+      const tags = batchTags(x).map((t) => '<span class="pill ' + t[0] + '">' + esc(t[1]) + '</span>').join(' ');
+      return '<div class="bt-item bt-' + x.impact + '">' + head +
+        '<div class="small" style="margin:4px 0">' + (x.period.from ? 'ช่วงวันที่ ' + esc(thLong(x.period.from)) + ' – ' + esc(thLong(x.period.to)) : 'ไม่ระบุช่วงวันที่ (ข้อมูล ณ วันที่ส่งออก)') + ' ' + tags + '</div>' +
+        '<div class="row" style="gap:8px;align-items:center"><span class="pill ' + imp[0] + '">' + imp[1] + '</span></div>' +
+        '<p class="small" style="margin:6px 0 0">' + batchDetail(x) + '</p>' +
+        (x.result ? '<p class="note ' + (x.result.ok ? 'g' : 'r') + '" style="margin:8px 0 0">' + x.result.html + '</p>' : '') +
+        (x.impact === 'red' && !BT.done ? '<label class="note r bt-tick" style="display:flex;gap:8px;margin:8px 0 0"><input type="checkbox" class="btTick" data-i="' + i + '"' + (x.tick ? ' checked' : '') + '>' +
+          '<span>ยืนยันนำเข้าไฟล์นี้ — รายการที่ต่างจากรอบที่จ่ายแล้ว <b>ไม่แก้ยอด</b> ระบบบันทึกเป็นรายการปรับปรุงรออนุมัติ</span></label>' : '') + '</div>';
+    }).join('');
+    const ready = BT.files.filter((x) => x.status === 'ready'), on = ready.filter((x) => x.include);
+    $('#btList').innerHTML = '<div class="bt-list">' + rows + '</div>' +
+      (BT.done ? '<div class="row" style="margin-top:12px;gap:8px"><button type="button" class="btn btn-g" id="btCalc">ดูยอดค่าหมาย</button><button type="button" class="btn" id="btPay">รอบเบิก / วันจ่าย 60:40</button><button type="button" class="btn" id="btNew">นำเข้าชุดใหม่</button></div>'
+        : ready.length ? '<div class="row" style="margin-top:12px;gap:8px;align-items:center"><button type="button" class="btn btn-g" id="btGo"' + (batchCanCommit() ? '' : ' disabled') + '>ยืนยันนำเข้า ' + num(on.length) + ' ไฟล์</button>' +
+          '<span class="small muted">นำเข้าตามลำดับ 50 → 42 → 18 → 30 แล้วคำนวณยอดใหม่ · ยอดรอบที่ยืนยัน/จ่ายแล้วไม่เปลี่ยน' + (on.some((x) => x.impact === 'red' && !x.tick) ? ' · <b class="flag-r">ติ๊กยืนยันไฟล์สีแดงก่อน</b>' : '') + '</span></div>' +
+          (on.some((x) => x.kind === 'RESULT') && on.some((x) => x.kind === 'ISSUE') ? '<p class="tiny muted" style="margin:6px 2px 0">ไฟล์ผลหมายอาจจับคู่ได้มากกว่าผลตรวจนี้ เพราะระบบนำเข้าไฟล์จ่ายหมายในชุดเดียวกันก่อน — ดูผลจริงหลังนำเข้า</p>' : '') : '');
+    $('#btList').querySelectorAll('.btInc').forEach((c) => c.addEventListener('change', () => { BT.files[+c.dataset.i].include = c.checked; drawBatch(); }));
+    $('#btList').querySelectorAll('.btTick').forEach((c) => c.addEventListener('change', () => { BT.files[+c.dataset.i].tick = c.checked; drawBatch(); }));
+    if ($('#btGo')) $('#btGo').addEventListener('click', batchCommit);
+    if ($('#btCalc')) $('#btCalc').addEventListener('click', () => go('calc'));
+    if ($('#btPay')) $('#btPay').addEventListener('click', () => { S.payoutSub = 'list'; go('payout'); });
+    if ($('#btNew')) $('#btNew').addEventListener('click', () => { BT.files = []; BT.done = false; BT.epoch++; $('#btList').innerHTML = ''; });
+  }
+  async function batchCommit() {
+    if (!batchCanCommit()) return;
+    const b = $('#btGo'); b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังนำเข้า…';
+    const todo = BT.files.filter((x) => x.include && x.status === 'ready');
+    let stop = '';
+    for (const x of todo) {
+      if (stop) { x.result = { ok: false, html: 'ยังไม่นำเข้า (หยุดเพราะไฟล์ก่อนหน้าไม่สำเร็จ)' }; continue; }
+      try {
+        if (x.kind === 'PAY' || x.kind === 'FREE18') {
+          const r = await api('ledger_import', x.body);
+          x.result = { ok: true, html: '<b>นำเข้าแล้ว</b> ชุด ' + esc(r.batch_id) + ' · ' + num(r.imported) + ' รายการ' + (r.skipped_locked ? ' · ข้ามวันที่ตั้งรอบแล้ว ' + num(r.skipped_locked) : '') };
+        } else {
+          const r = await api('import_commit', x.body);
+          x.result = { ok: !(r.calc && r.calc.error), html: '<b>นำเข้าแล้ว</b> ชุด ' + esc(r.batch_id) + ' · ใหม่ ' + num(r.inserted) + ' · ปรับปรุง ' + num(r.updated) + ' · รออนุมัติแก้ ' + num(r.held_changes) + ' · รอตรวจ ' + num(r.review_rows) +
+            (r.review_auto_resolved ? ' · จับคู่แถวค้างให้แล้ว ' + num(r.review_auto_resolved) : '') + (r.calc && r.calc.error ? '<br>คำนวณค่าหมายไม่สำเร็จ: ' + esc(r.calc.error) : '') };
+        }
+      } catch (e) { x.result = { ok: false, html: 'ไม่สำเร็จ: ' + esc(e.message) }; stop = e.message; }
+    }
+    BT.done = true;
+    try { IM.meta = await api('import_templates'); paintKinds(); } catch (e2) { /* แสดงครั้งหน้า */ }
+    toast(stop ? 'นำเข้าไม่ครบ — ดูรายละเอียดในรายการ' : 'นำเข้าครบ ' + num(todo.length) + ' ไฟล์');
+    drawBatch();
   }
 
   /* ---------------------------------------------------------------- แถวรอตรวจ (0.6.3) */

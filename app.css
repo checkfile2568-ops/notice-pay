@@ -530,3 +530,8 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 @keyframes stSweep{from{clip-path:inset(0 0 0 100%)}to{clip-path:inset(0 0 0 0)}}
 .kpi,#offTbl tbody tr{cursor:default}
 @media (prefers-reduced-motion:reduce){.stbar-in.sweep{animation:none}}
+/* 0.7.20 นำเข้าหลายไฟล์พร้อมกัน */
+.bt-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.bt-item{border-radius:16px;padding:12px 14px;background:#fff;border-left:6px solid #cfd8d2;box-shadow:var(--sh-btn)}
+.bt-item.bt-green{border-left-color:#2e9b5f}.bt-item.bt-amber{border-left-color:#d9a400}.bt-item.bt-red{border-left-color:var(--red)}.bt-item.bt-err{border-left-color:var(--red);opacity:.9}
+.bt-tick{cursor:pointer;align-items:flex-start}.bt-tick input{margin-top:4px}
