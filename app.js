@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.20';
+  const UI_VERSION = '0.7.21';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -284,7 +284,7 @@
     if (!C.API_URL || /วางลิงก์/.test(C.API_URL)) throw Object.assign(new Error('ยังไม่ได้ตั้งค่า API_URL ใน config.js'), { code: 'CONFIG' });
     const epoch = navEpoch;
     const payload = Object.assign({}, body || {});
-    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside'].includes(action) || (action === 'ledger_import' && payload.commit);
+    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside','change_decide','adjust_void'].includes(action) || (action === 'ledger_import' && payload.commit);
     const retryKey = writing ? action + ':' + JSON.stringify(payload) : '';
     if (writing && !payload.request_id) { if (!requestKeys.has(retryKey)) requestKeys.set(retryKey, crypto.randomUUID()); payload.request_id = requestKeys.get(retryKey); }
     let res; const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 90000);
@@ -404,7 +404,7 @@
   /** 0.7.18 ข้อความแจ้งความเป็นส่วนตัว (ผู้ใช้กำหนด 17 พ.ย. 2569) */
   const PRIVACY_TH = 'ระบบไม่เก็บชื่อคู่ความ · ไม่รับคอลัมน์โจทก์/จำเลย';
   const viewerOnly = () => S.user && S.user.roles.length > 0 && S.user.roles.every((x) => x === 'VIEWER');
-  function navGroup(p) { return ['tracking','search','calc','overview'].includes(p) ? 'overview' : ['import','history','review'].includes(p) ? 'import' : ['finance','reports'].includes(p) ? (has('NOTICE','FINANCE','ADMIN')?'finance':'compensation') : ['settings','officers','users','audit'].includes(p) ? 'settings' : p; }
+  function navGroup(p) { return ['tracking','search','calc','overview'].includes(p) ? 'overview' : ['import','history','review','changes'].includes(p) ? 'import' : ['finance','reports'].includes(p) ? (has('NOTICE','FINANCE','ADMIN')?'finance':'compensation') : ['settings','officers','users','audit'].includes(p) ? 'settings' : p; }
   function pages() {
     return [
       {id:'home',th:'สถิติ',show:true},
@@ -420,7 +420,7 @@
   }
   function sectionTabs(p) {
     const g = navGroup(p); let links = [];
-    if (g === 'import') links = [['import','นำเข้าไฟล์ 4 แบบ'],['review','รายการรอตรวจ'],['history','ประวัติการนำเข้า']];
+    if (g === 'import') links = [['import','นำเข้าไฟล์ 4 แบบ'],['review','รายการรอตรวจ'],['changes','รายการปรับปรุงรออนุมัติ'],['history','ประวัติการนำเข้า']];
     if (g === 'overview') links = (viewerOnly()?[]:[['overview','รายการทั้ง 2 ประเภท']]).concat([['calc','ยอดอ้างอิงรายผู้ส่ง']]);
     if (g === 'finance') links = [['finance','ตรวจเงินงบประมาณ'],['tracking','ตรวจยอดทั้ง 2 ประเภท']];
     if (g === 'compensation') links = [['compensation','ค่าตอบแทนตามรอบ'],['reports','รายงานรวม']];
@@ -575,7 +575,7 @@
     const kpi = (lbl, v, cls) => '<div class="kpi clay ' + (cls || '') + '"><span>' + esc(lbl) + '</span><b data-count="' + Number(v || 0) + '">' + num(v) + '</b></div>';
     const notes = [];
     if (d.pending_review) notes.push('<div class="note">มีแถวรอตรวจสอบจากการนำเข้า ' + num(d.pending_review) + ' แถว' + (has('NOTICE', 'FINANCE', 'ADMIN') ? ' <button type="button" class="btn btn-xs" data-go="review">ไปที่แถวรอตรวจ</button>' : '') + '</div>');
-    if (d.pending_changes) notes.push('<div class="note">มีรายการแก้ไขหมายที่ล็อกแล้ว รออนุมัติ ' + num(d.pending_changes) + ' รายการ</div>');
+    if (d.pending_changes) notes.push('<div class="note">มีรายการแก้ไขหมายที่ล็อกแล้ว รออนุมัติ ' + num(d.pending_changes) + ' รายการ' + (has('NOTICE', 'FINANCE', 'ADMIN') ? ' <button type="button" class="btn btn-xs" data-go="changes">ไปที่รายการปรับปรุง</button>' : '') + '</div>');
     if (t.no_area) notes.push('<div class="note">หมาย ' + num(t.no_area) + ' ฉบับ ไม่พบตำบลในตารางอัตรา — ตรวจชื่อตำบล/อำเภอในไฟล์ต้นทาง</div>');
     if (t.adj_up || t.adj_dn) notes.push('<div class="note">หมายมีเงิน ' + num((t.adj_up || 0) + (t.adj_dn || 0)) + ' ฉบับ ราคาไม่เท่าอัตราตำบล — คิดตามอัตราตำบลแล้ว' + (t.adj_up ? ' · <span class="flag-up">▲ เกิน ' + num(t.adj_up) + '</span>' : '') + (t.adj_dn ? ' · <span class="flag-r">▼ ต่ำกว่า ' + num(t.adj_dn) + '</span>' : '') + ' (ดูที่หน้า "ยอดอ้างอิงรายผู้ส่ง")</div>');
     if (t.date_wait) notes.push('<div class="note r">หมาย ' + num(t.date_wait) + ' ฉบับ อาจจ่ายเดือน ก.ย. รอยืนยันวันที่จ่าย — ดูที่หน้า "ยอดอ้างอิงรายผู้ส่ง"</div>');
@@ -1245,6 +1245,64 @@
 
   /* ---------------------------------------------------------------- แถวรอตรวจ (0.6.3) */
   /* ระบบจับคู่ให้เองก่อนทุกครั้งที่นำเข้า · หน้านี้เหลือเฉพาะแถวที่ระบบตัดสินเองไม่ได้ ให้เลือกฉบับหรือปิดแถว */
+  /* ---------------------------------------------------------------- รายการปรับปรุงรออนุมัติ (0.7.21) */
+  /* นำเข้าย้อนหลังแล้วขัดกับหมายในรอบที่ยืนยัน/จ่ายแล้ว → รอบเดิมไม่ถูกแก้ · อนุมัติ = แก้ข้อมูลทั่วไปในหมาย + ยอดปรับปรุง (ถ้ามี) เข้ารอบถัดไป */
+  const ADJ_RT_TH = { FREE: 'รอบหมายเงินงบประมาณ (หมายฟรี)', PAID: 'รอบหมายเงินนอกงบประมาณ (หมายมีเงิน)' };
+  RENDER.changes = async (m) => {
+    const d = await api('change_list'), names = d.officers || {};
+    const offOpt = (sel) => Object.keys(names).sort().map((k) => '<option value="' + esc(k) + '"' + (k === sel ? ' selected' : '') + '>' + esc(names[k].name) + '</option>').join('');
+    const roundTxt = (g) => g.round ? 'อยู่ในรอบ' + esc(RTYPE_TH[g.round.round_type] || '') + ' วันที่ ' + esc(thDate(g.round.pay_date)) + (g.round.amount !== null ? ' · ยอดเดิม ' + baht2(g.round.amount) + ' บาท' : '') +
+      (g.round.payment_status === 'PAID' ? ' · <b>จ่ายจริงแล้ว</b>' : '') : (g.locked_by ? 'ล็อกจาก' + esc(g.locked_by) : 'ล็อกแล้ว');
+    const card = (g, i) => '<div class="clay panel chg" data-i="' + i + '">' +
+      '<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><b>' + esc(g.case_no || '—') + '</b><span class="small muted">' + esc(g.notice_kind) + '</span>' + typeChip(g.pay_type) +
+        '<span class="small">' + oDot(names, g.officer_id) + esc(g.officer) + '</span></div>' +
+      '<p class="small" style="margin:0 0 8px"><span class="pill a">' + roundTxt(g) + '</span></p>' +
+      '<div class="tbl-wrap"><table><thead><tr><th>ข้อมูล</th><th>เดิม (ในรอบ)</th><th>ไฟล์ใหม่</th><th>ผลเมื่ออนุมัติ</th></tr></thead><tbody>' +
+        g.changes.map((c) => '<tr><td>' + esc(c.field_th) + '</td><td>' + esc(c.field.includes('date') ? thDate(c.old_value) : c.old_value || '—') + '</td><td><b>' + esc(c.field.includes('date') ? thDate(c.new_value) : c.new_value || '—') + '</b></td><td class="small">' +
+          (c.money ? '<span class="flag-r">กระทบเงิน · ไม่แก้หมายเดิม ใช้ยอดปรับปรุง</span>' : '<span class="flag-ok">แก้ในหมาย · ไม่เปลี่ยนยอดที่จ่ายแล้ว</span>') + '</td></tr>').join('') +
+      '</tbody></table></div>' + '<p class="tiny muted" style="margin:6px 2px 0">จากการนำเข้าชุด ' + esc(g.changes[0].batch_id) + ' · ' + esc(thDate(g.changes[0].created_at, true)) + '</p>' +
+      (d.can_decide ? '<div class="adj-f"><b class="small">ยอดปรับปรุงในรอบถัดไป (ถ้ามี)</b>' +
+        '<div class="row" style="gap:8px;margin-top:6px"><label class="small">บาท (ปรับลดใส่ −)<input class="inp" data-f="amount" inputmode="decimal" placeholder="เช่น 150 หรือ -150"></label>' +
+        '<label class="small">รอบ<select class="sel" data-f="round_type"><option value="FREE"' + (g.pay_type !== 'PAID' ? ' selected' : '') + '>' + ADJ_RT_TH.FREE + '</option><option value="PAID"' + (g.pay_type === 'PAID' ? ' selected' : '') + '>' + ADJ_RT_TH.PAID + '</option></select></label>' +
+        '<label class="small">ผู้ส่งหมาย<select class="sel" data-f="officer_id">' + offOpt(g.officer_id) + '</select></label></div>' +
+        '<label class="small" style="display:block;margin-top:6px">เหตุผล / บันทึก<input class="inp" data-f="note" maxlength="200" placeholder="เช่น ตรวจกับรายงานแล้ว ผลส่งจริงวันที่ 4"></label>' +
+        '<div class="row" style="gap:8px;margin-top:10px"><button type="button" class="btn btn-g" data-act="APPROVE">อนุมัติ</button><button type="button" class="btn" data-act="REJECT">ไม่อนุมัติ</button></div></div>'
+        : '<p class="small muted" style="margin:8px 0 0">รอผู้ดูแลระบบตัดสิน</p>') + '</div>';
+    const st = (a) => a.state === 'VOID' ? '<span class="pchip">ยกเลิก</span>' : a.state === 'APPLIED' ? '<span class="pchip pok">เข้ารอบ ' + esc(thDate(a.applied.pay_date)) + '</span>' : '<span class="pchip pm">รอรอบถัดไป</span>';
+    m.innerHTML = top('รายการปรับปรุงรออนุมัติ') +
+      '<div class="note">นำเข้าไฟล์ย้อนหลังแล้วข้อมูลต่างจากหมายที่อยู่ในรอบยืนยัน/จ่ายแล้ว — <b>ระบบไม่แก้รอบเดิม</b> · อนุมัติ = แก้ข้อมูลทั่วไปในหมาย (วันที่ ผล ชนิดหมาย บ้านเลขที่ หมู่) และถ้ามีผลต่อเงิน ให้ใส่ <b>ยอดปรับปรุง</b> ซึ่งเข้ารอบถัดไปของประเภทนั้น แบ่ง 60:40 ตามปกติ · ไม่อนุมัติ = เก็บข้อมูลเดิม (ต้องมีเหตุผล)</div>' +
+      (d.pending.length ? d.pending.map(card).join('') : '<div class="clay panel"><p class="small muted" style="margin:0">ไม่มีรายการรออนุมัติ</p></div>') +
+      '<div class="clay panel"><h3>ยอดปรับปรุง (' + num(d.adjustments.length) + ')</h3>' + (d.adjustments.length ? '<div class="tbl-wrap"><table><thead><tr><th>เลขคดี</th><th class="onm">ผู้ส่งหมาย</th><th>รอบ</th><th class="n">บาท</th><th>เหตุผล</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+        d.adjustments.map((a) => '<tr><td>' + esc(a.case_no) + '<br><span class="tiny muted">จากรอบ ' + esc(a.source_round_id || '—') + '</span></td><td class="onm">' + oDot(names, a.officer_id) + esc(a.officer) + '</td><td class="small">' + esc(a.round_type_th) +
+          '</td><td class="n ' + (a.amount < 0 ? 'flag-r' : '') + '">' + baht2(a.amount) + '</td><td class="small">' + esc(a.reason) + (a.void_reason ? '<br><span class="tiny muted">ยกเลิก: ' + esc(a.void_reason) + '</span>' : '') + '</td><td>' + st(a) + '</td><td>' +
+          (d.can_decide && a.state === 'WAIT' ? '<button type="button" class="btn btn-xs" data-void="' + esc(a.adj_id) + '">ยกเลิก</button>' : '') + '</td></tr>').join('') + '</tbody></table></div>'
+        : '<p class="small muted" style="margin:0">ยังไม่มี</p>') + '</div>' +
+      (d.decided.length ? '<details class="clay panel"><summary>ตัดสินแล้ว (' + num(d.decided.length) + ' ล่าสุด)</summary><div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>เลขคดี</th><th>ข้อมูล</th><th>ไฟล์ใหม่</th><th>ผล</th><th>บันทึก</th><th>โดย</th></tr></thead><tbody>' +
+        d.decided.map((c) => '<tr><td>' + esc(c.case_no) + '</td><td>' + esc(c.field_th) + '</td><td>' + esc(c.new_value) + '</td><td>' + (c.status === 'APPROVED' ? '<span class="flag-ok">อนุมัติ</span>' : '<span class="flag-r">ไม่อนุมัติ</span>') + (c.adj_id ? '<br><span class="tiny">+ ยอดปรับปรุง</span>' : '') +
+          '</td><td class="small">' + esc(c.note) + '</td><td class="tiny">' + esc(c.decided_by) + '<br>' + esc(thDate(c.decided_at, true)) + '</td></tr>').join('') + '</tbody></table></div></details>' : '');
+    m.querySelectorAll('.chg [data-act]').forEach((b) => b.addEventListener('click', async () => {
+      const box = b.closest('.chg'), g = d.pending[+box.dataset.i], f = (k) => box.querySelector('[data-f="' + k + '"]').value.trim();
+      const act = b.dataset.act, amt = f('amount').replace(/,/g, '').replace(/[−–]/g, '-'), note = f('note');
+      if (act === 'REJECT' && !note) { toast('กรุณาใส่เหตุผลที่ไม่อนุมัติ'); box.querySelector('[data-f="note"]').focus(); return; }
+      if (amt && !/^-?\d+(\.\d{1,2})?$/.test(amt)) { toast('ยอดปรับปรุงไม่ถูกต้อง (บาท ทศนิยมไม่เกิน 2 ตำแหน่ง)'); return; }
+      if (act === 'APPROVE' && amt && Number(amt) !== 0 && !note) { toast('กรุณาใส่เหตุผลของยอดปรับปรุง'); box.querySelector('[data-f="note"]').focus(); return; }
+      const money = act === 'APPROVE' && amt && Number(amt) !== 0;
+      const msg = act === 'REJECT' ? 'ไม่อนุมัติ ' + g.changes.length + ' รายการของ ' + g.case_no + ' — คงข้อมูลเดิม' :
+        'อนุมัติ ' + g.changes.length + ' รายการของ ' + g.case_no + '\nรอบเดิมไม่เปลี่ยน' + (money ? '\nยอดปรับปรุง ' + baht2(Number(amt)) + ' บาท → ' + ADJ_RT_TH[f('round_type')] + ' ถัดไป · ' + oName(names, f('officer_id')) : '\nไม่มียอดปรับปรุง');
+      if (!(await askBox(msg))) return;
+      b.disabled = true;
+      try {
+        const r = await api('change_decide', { notice_uid: g.notice_uid, change_ids: g.changes.map((c) => c.change_id), decision: act, note: note,
+          adjust: money ? { amount: amt, round_type: f('round_type'), officer_id: f('officer_id'), reason: note } : null });
+        toast(act === 'REJECT' ? 'ไม่อนุมัติแล้ว' : 'อนุมัติแล้ว' + (r.adj_id ? ' · ยอดปรับปรุงรอรอบถัดไป' : '')); go('changes');
+      } catch (x) { toast(x.message); b.disabled = false; }
+    }));
+    m.querySelectorAll('[data-void]').forEach((b) => b.addEventListener('click', async () => {
+      const reason = await askBox('เหตุผลที่ยกเลิกยอดปรับปรุงนี้ (ยังไม่เข้ารอบ)', { input: 'ระบุเหตุผล' }); if (!reason) return;
+      try { await api('adjust_void', { adj_id: b.dataset.void, reason: reason }); toast('ยกเลิกยอดปรับปรุงแล้ว'); go('changes'); } catch (x) { toast(x.message); }
+    }));
+  };
+
   RENDER.review = async (m) => {
     const d = await api('review_open');
     const canAct = has('NOTICE', 'ADMIN');
@@ -1619,8 +1677,13 @@
   function drawPicker(box, d) {
     const names = d.officers, off = new Set(), free = d.round_type === 'FREE', targets = {};
     const byOff = {};
-    d.items.forEach((it) => { (byOff[it.officer_id] = byOff[it.officer_id] || []).push(it); });
-    const offIds = Object.keys(byOff).sort();
+    d.items.forEach((it) => { if (!it.adj) (byOff[it.officer_id] = byOff[it.officer_id] || []).push(it); });
+    const offIds = Object.keys(byOff).sort(), adjs = d.items.filter((it) => it.adj);   // 0.7.21 ยอดปรับปรุงจากรายการที่อนุมัติ
+    const adjRow = (it) => '<label class="pit padj-i" data-k="' + esc(it.key) + '"><input type="checkbox" checked data-k="' + esc(it.key) + '">' + oDot(names, it.officer_id) +
+      '<span class="pcase">' + esc(oName(names, it.officer_id)) + ' · ' + esc(it.case_list || '—') + ' <span class="tiny muted">' + esc(it.adj_reason) + '</span></span>' +
+      '<span class="tiny muted pdt">' + (it.source_round_id ? 'จากรอบ ' + esc(it.source_round_id) : '') + '</span>' +
+      (it.held ? '<span class="pchip ph" title="รอบ ' + esc(it.held.round_id) + '">เคยเลื่อน ' + esc(thDate(it.held.pay_date)) + '</span>' : '') +
+      '<span class="pnot">ยกไปรอบหน้า</span><b class="pamt' + (it.amount_c < 0 ? ' flag-r' : '') + '">' + cb(it.amount_c) + '</b></label>';
     const carry0 = Math.round((d.carry_in || 0) * 100);
     if (!d.items.length) {
       box.innerHTML = '<div class="clay panel"><p class="small muted" style="margin:0">' + (free ? 'ไม่มีหมายฟรีพร้อมเบิกตามเงื่อนไขนี้ (ยังไม่ส่ง ' + num(d.blocked.wait) + ' · ลงข้อมูลหลังวันที่กำหนด ' + num(d.blocked.late) + ' · รอตรวจ ' + num(d.blocked.review) + ')' : 'ไม่มีรายการในบัญชีจ่ายเงินของวันที่นี้ (อาจตั้งรอบไปแล้ว)') + '</p></div>';
@@ -1644,6 +1707,7 @@
       '<span class="small muted" data-sum="' + esc(id) + '"></span>' +
       (free ? '<span class="ptin"><input type="text" inputmode="decimal" class="inp" placeholder="ยอดใบแบ่งยอด" data-tg="' + esc(id) + '"><span class="tiny" data-tst="' + esc(id) + '"></span></span>' : '') + '</div>' +
       (free ? byOff[id].map(row).join('') : '<details class="pdet"><summary>ดูรายเรื่อง (' + num(byOff[id].length) + ')' + (byOff[id].some((x) => x.match !== 'OK') ? ' · <span class="flag-r">ต้องตรวจการเชื่อมโยง ' + num(byOff[id].filter((x) => x.match !== 'OK').length) + '</span>' : '') + '</summary>' + byOff[id].map(row).join('') + '</details>') + '</section>').join('') +
+      (adjs.length ? '<section class="clay panel padj"><h3>ยอดปรับปรุงจากรายการที่อนุมัติ (' + num(adjs.length) + ')</h3><p class="tiny muted" style="margin:0 0 8px">แบ่ง 60:40 รวมกับยอดของผู้ส่งในรอบนี้ · ติ๊กออก = ยกไปรอบหน้า · ไม่พิมพ์ในบัญชีที่ขอเบิกทางราชการ · รอบเดิมไม่ถูกแก้</p>' + adjs.map(adjRow).join('') + '</section>' : '') +
       (!free && unpaid.length ? '<section class="clay panel"><h3>ส่งแล้วแต่ไม่อยู่ในบัญชีจ่ายวันนี้ (' + num(unpaid.length) + ')</h3><p class="tiny muted" style="margin:0 0 8px">ลงข้อมูลก่อนวันที่จ่ายนี้ แต่ศาลยังไม่จ่าย — ค้างในรายการยังไม่เข้ารอบในระบบ ไปรอบหน้า</p><details class="pdet"><summary>ดูรายเรื่อง</summary>' +
         unpaid.map((u) => '<div class="pit out-i">' + oDot(names, u.officer_id) + '<span class="pcase">' + esc(u.case_no) + ' <span class="tiny muted">' + esc(u.notice_kind) + '</span></span><span class="tiny muted pdt">' + esc(oName(names, u.officer_id)) + ' · ลงข้อมูล ' + esc(thDate(u.report_date)) + '</span><b class="pamt">' + cb(u.amount_c) + '</b></div>').join('') + '</details></section>' : '') +
       '</div><aside class="clay panel psum"><h3>สรุปรอบ ' + esc(RTYPE_TH[d.round_type]) + ' · ' + esc(thDate(d.pay_date)) + '</h3><div id="pSplit"></div>' +
@@ -1665,7 +1729,9 @@
         if (it.type === 'PAID') { l.paid_c += it.amount_c; l.n_paid += it.n; } else { l.budget_c += it.amount_c; l.n_budget += it.n; } });
       const carryC = Math.round(Number($('#pCarry').value || 0) * 100);
       const sp = splitPreview(Object.keys(by).sort().map((k) => by[k]), $('#pSeats').value, d.policy, carryC);
-      $('#pSplit').innerHTML = splitTable(sp, names, { policyTh: d.policy_th, type: d.round_type });
+      const negOff = Object.keys(by).filter((k) => by[k].paid_c + by[k].budget_c < 0);
+      $('#pSplit').innerHTML = (negOff.length ? '<p class="note r small" style="margin:0 0 8px">ยอดปรับลดมากกว่ายอดของ ' + esc(negOff.map((k) => oName(names, k)).join(', ')) + ' ในรอบนี้ — ติ๊กยอดปรับปรุงออกเพื่อยกไปรอบหน้า</p>' : '') +
+        splitTable(sp, names, { policyTh: d.policy_th, type: d.round_type });
       $('#pCarryNoteL').classList.toggle('hidden', carryC === carry0);
       let anySug = false;
       offIds.forEach((id) => {
@@ -1686,7 +1752,7 @@
       });
       if ($('#pSugAll')) $('#pSugAll').disabled = !anySug;
       box.querySelectorAll('[data-sg]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); applySug([b.dataset.sg]); }));
-      $('#pOk').disabled = !inc.some((it) => it.amount_c > 0) || !(Number.isInteger(Number($('#pSeats').value)) && Number($('#pSeats').value) >= 1 && Number($('#pSeats').value) <= 1000) || !d.order_ok;
+      $('#pOk').disabled = negOff.length > 0 || !inc.some((it) => it.amount_c > 0) || !(Number.isInteger(Number($('#pSeats').value)) && Number($('#pSeats').value) >= 1 && Number($('#pSeats').value) <= 1000) || !d.order_ok;
       $('#pOk').textContent = 'ยืนยันรอบ · ' + cb(sp.total_c) + ' ฿';
     };
     const setOff = (it, out) => {
@@ -1706,7 +1772,7 @@
     }));
     if ($('#pSugAll')) $('#pSugAll').addEventListener('click', () => applySug(Object.keys(sug)));
     ['#pSeats', '#pCarry'].forEach((s) => $(s).addEventListener('input', recalc));
-    if ($('#pDraft')) $('#pDraft').addEventListener('click', () => printClaim(d.items.filter((it) => !off.has(it.key)), names, d, true));
+    if ($('#pDraft')) $('#pDraft').addEventListener('click', () => printClaim(d.items.filter((it) => !off.has(it.key) && !it.adj), names, d, true));
     if ($('#pOutside')) $('#pOutside').addEventListener('click', async () => {
       const tot = d.items.reduce((a, x) => a + x.amount_c, 0);
       const reason = await askBox('บันทึกว่าบัญชีจ่ายวันที่ ' + thDate(d.pay_date) + ' (' + num(d.items.length) + ' เรื่อง · ' + cb(tot) + ' บาท) แบ่ง 60:40 นอกระบบแล้ว — ระบุเหตุผล', { input: 'ระบุเหตุผล', value: 'งานเดือน ก.ย. ก่อนเริ่มระบบ แบ่ง 60:40 นอกระบบแล้ว' });
@@ -1790,7 +1856,7 @@
     $('#pPrint').addEventListener('click', () => printPayout(d));
     { const img = document.createElement('button'); img.className = 'btn btn-sm'; img.type = 'button'; img.id = 'pImage'; img.textContent = 'บันทึกเป็นรูป';
       $('#pPrint').after(img); img.onclick = async () => { img.disabled = true; try { await saveRoundImage(d); } catch (e) { toast(e.message || 'สร้างรูปไม่สำเร็จ'); } img.disabled = false; }; }
-    if ($('#pClaim')) $('#pClaim').addEventListener('click', () => printClaim(inc.map((it) => ({ officer_id: it.officer_id, case_list: it.case_list, notice_kind:it.notice_kind, tambon:it.tambon, report_date: it.reported_date || '', amount_c: Math.round(it.amount * 100) })), names, { pay_date: r.pay_date, cutoff: r.cutoff_date, source: r.source_label, round_id: r.round_id }, false));
+    if ($('#pClaim')) $('#pClaim').addEventListener('click', () => printClaim(inc.filter((it) => !/^A:/.test(String(it.key))).map((it) => ({ officer_id: it.officer_id, case_list: it.case_list, notice_kind:it.notice_kind, tambon:it.tambon, report_date: it.reported_date || '', amount_c: Math.round(it.amount * 100) })), names, { pay_date: r.pay_date, cutoff: r.cutoff_date, source: r.source_label, round_id: r.round_id }, false));
     if ($('#pCancel')) $('#pCancel').addEventListener('click', async () => {
       const reason = await askBox('เหตุผลที่ยกเลิกรอบนี้ (หมายในรอบจะกลับเป็นพร้อมเบิก)', { input: 'ระบุเหตุผล' }); if (!reason) return;
       try { await api('payout_cancel', { round_id: rid, reason: reason }); toast('ยกเลิกรอบแล้ว'); S.payoutSub = 'round:' + rid; go('payout'); } catch (x) { toast(x.message); }

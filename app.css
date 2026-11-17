@@ -535,3 +535,7 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 .bt-item{border-radius:16px;padding:12px 14px;background:#fff;border-left:6px solid #cfd8d2;box-shadow:var(--sh-btn)}
 .bt-item.bt-green{border-left-color:#2e9b5f}.bt-item.bt-amber{border-left-color:#d9a400}.bt-item.bt-red{border-left-color:var(--red)}.bt-item.bt-err{border-left-color:var(--red);opacity:.9}
 .bt-tick{cursor:pointer;align-items:flex-start}.bt-tick input{margin-top:4px}
+/* 0.7.21 รายการปรับปรุงรออนุมัติ */
+.chg .adj-f{margin-top:12px;padding:12px;border-radius:14px;background:#F4F8F5}
+.chg .adj-f label{display:flex;flex-direction:column;gap:4px}
+.padj .pit .pcase{flex:1 1 auto}
