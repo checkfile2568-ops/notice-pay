@@ -544,3 +544,16 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 .chg.picked{outline:2px solid #2F7A55;outline-offset:-2px}
 .chg .adj-f label{display:flex;flex-direction:column;gap:4px}
 .padj .pit .pcase{flex:1 1 auto}
+
+/* 0.7.25 ยอดประมาณการก่อนการเบิก — สีเทา (ยังไม่ใช่ยอดเบิกจริง) */
+.pill.est,.chip.est{background:#ECEDEA;color:#5F635D;border:1px dashed #A9ADA6}
+.est-amt{color:#6E726B}
+/* 0.7.25 เตรียมเบิก: ไม่เบิก (nc) */
+.pit .pnot-nc{color:#A32D2D}
+.pit.out .pnot-nc{display:none}
+.pit.out.nc .pnot-nc{display:block}.pit.out.nc .pnot:not(.pnot-nc){display:none}
+.pit.nc{background:#FBEDED}
+.pit .pnc{padding:2px 8px;font-size:12px;min-height:0}
+.pit.nc .pnc{background:#A32D2D;color:#fff}
+.pelse b{color:#A32D2D}
+.btn.btn-danger{background:#FBEDED;color:#A32D2D;border-color:#E9B8B8}
