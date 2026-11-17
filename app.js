@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.21';
+  const UI_VERSION = '0.7.22';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -280,6 +280,7 @@
   };
 
   /* ---------------------------------------------------------------- API */
+  const BUSY_RETRIES = 8, BUSY_WAIT_MS = Number(C.BUSY_WAIT_MS) || 15000;
   async function api(action, body) {
     if (!C.API_URL || /วางลิงก์/.test(C.API_URL)) throw Object.assign(new Error('ยังไม่ได้ตั้งค่า API_URL ใน config.js'), { code: 'CONFIG' });
     const epoch = navEpoch;
@@ -287,13 +288,20 @@
     const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside','change_decide','adjust_void'].includes(action) || (action === 'ledger_import' && payload.commit);
     const retryKey = writing ? action + ':' + JSON.stringify(payload) : '';
     if (writing && !payload.request_id) { if (!requestKeys.has(retryKey)) requestKeys.set(retryKey, crypto.randomUUID()); payload.request_id = requestKeys.get(retryKey); }
-    let res; const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 90000);
-    try {
-      res = await fetch(C.API_URL, { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action: action, token: S.token, client_version:UI_VERSION }, payload)) });
-    } catch (e) { throw Object.assign(new Error('เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่ ระบบจะตรวจคำขอเดิมก่อนบันทึกซ้ำ'), { code: 'NETWORK' }); } finally { clearTimeout(timer); }
+    // 0.7.22: งานบันทึกใหญ่ (เช่น นำเข้า) ใช้เวลาได้ถึงหลายนาที — รอได้นานกว่า และถ้าเซิร์ฟเวอร์ยังทำคำขอเดิมอยู่ (BUSY)
+    // ให้รอแล้วส่งคำขอเดิม (request_id เดิม) ซ้ำอัตโนมัติ เซิร์ฟเวอร์จะคืนผลเดิมโดยไม่บันทึกซ้ำ
     let j;
-    try { j = await res.json(); } catch (e) { throw Object.assign(new Error('ระบบตอบกลับไม่ถูกต้อง'), { code: 'BAD_RESPONSE' }); }
+    for (let attempt = 0; ; attempt++) {
+      let res; const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), writing ? 330000 : 90000);
+      try {
+        res = await fetch(C.API_URL, { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(Object.assign({ action: action, token: S.token, client_version:UI_VERSION }, payload)) });
+      } catch (e) { throw Object.assign(new Error('เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่ ระบบจะตรวจคำขอเดิมก่อนบันทึกซ้ำ'), { code: 'NETWORK' }); } finally { clearTimeout(timer); }
+      try { j = await res.json(); } catch (e) { throw Object.assign(new Error('ระบบตอบกลับไม่ถูกต้อง'), { code: 'BAD_RESPONSE' }); }
+      if (!(writing && !j.ok && j.code === 'BUSY' && attempt < BUSY_RETRIES)) break;
+      toast('ระบบกำลังบันทึกงานก่อนหน้า รอผลอัตโนมัติ… (' + (attempt + 1) + '/' + BUSY_RETRIES + ')');
+      await new Promise((ok) => setTimeout(ok, BUSY_WAIT_MS));
+    }
     if (!j.ok) {
       const err = Object.assign(new Error(j.msg || 'เกิดข้อผิดพลาด'), { code: j.code, extra: j.extra });
       if (S.token && /SESSION_EXPIRED|SESSION_REVOKED|NO_ACCESS/.test(j.code)) { toast(err.message); backToLogin(); }
