@@ -56,11 +56,15 @@ var NoticeImportFormat = (function () {
     }
     return h.map(function(x){return ('00000000'+(x>>>0).toString(16)).slice(-8);}).join('').toUpperCase();
   }
+  var HASH_MEMO = {}, HASH_MEMO_N = 0;
   function recipient(cs,v) {
     if (!text(v)) return '';
     return String(v).split(/\s*,\s*/).filter(function(x){return text(x);}).map(function(x){
       if (/^R1-[A-F0-9]{64}$/.test(x)) return x;
-      return 'R1-'+sha256('NoticePay/recipient/v1\n'+caseNo(cs)+'\n'+name(x));
+      var src='NoticePay/recipient/v1\n'+caseNo(cs)+'\n'+name(x);
+      if (HASH_MEMO.hasOwnProperty(src)) return HASH_MEMO[src];
+      if (++HASH_MEMO_N > 50000) { HASH_MEMO = {}; HASH_MEMO_N = 1; }   // 0.7.23: จำผลในคำขอเดียว — ผลเหมือนเดิมทุกตัวอักษร
+      return (HASH_MEMO[src] = 'R1-'+sha256(src));
     }).join(',');
   }
   function mapped(row,mapping,date1904) {
@@ -91,8 +95,11 @@ var NoticeImportFormat = (function () {
   var titleSource=TITLES.sort(function(a,b){return b.length-a.length;}).map(function(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\\\./g,'\\.\\s*').replace(/ /g,'\\s*');}).join('|');
   var nameWord=/^[A-Za-z\u0E00-\u0E7F][A-Za-z\u0E00-\u0E7F'’\-]*/;
   var nameStops=/^(รับแทน|ผู้รับ|จำเลย|โจทก์|ลงชื่อ|ส่งได้|ส่งไม่ได้|ไม่พบ|เสียชีวิต|ปฏิเสธ|วันที่|โทรศัพท์|โทร|ตาม|ที่|และ|โดย|ลงลายมือชื่อ|รวมเป็นเงิน)$/;
+  var TITLE_RE=new RegExp(titleSource,'gi');   // 0.7.23: สร้างครั้งเดียว (เดิมสร้างใหม่ทุกช่องข้อมูล)
   function nameMatches(value) {
-    var s=String(value==null?'':value),re=new RegExp(titleSource,'gi'),matches=[],m;
+    var s=String(value==null?'':value),re=TITLE_RE,matches=[],m;
+    re.lastIndex=0;
+    if(!s)return matches;
     while((m=re.exec(s))){
       var start=m.index,prev=s.slice(0,start);
       if(start&&/[A-Za-z0-9\u0E00-\u0E7F_]$/.test(prev))continue;
