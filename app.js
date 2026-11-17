@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.15';
+  const UI_VERSION = '0.7.17';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -209,6 +209,28 @@
   /** หมายเหตุของหมาย — ข้อที่ต้องเห็นชัดแสดงอักษรสีแดง */
   const flagHtml = (f) => String(f || '').split(';').filter(Boolean)
     .map((x) => '<span class="tiny ' + (FLAGS_RED.indexOf(x) >= 0 ? 'flag-r' : 'flag-a') + '">' + esc(x) + '</span>').join('<br>');
+  /** 0.7.16 คู่มือนำเข้าไฟล์ (ซ่อนไว้ กดเปิด/ปิด) — ข้อความอย่างเดียว ไม่แตะข้อมูล */
+  const importGuideHtml = () => '<details class="clay panel im-guide" id="imGuide"><summary>📘 คู่มือนำเข้าไฟล์ <span class="small muted">· ไฟล์ใด คืออะไร เลือกช่วงวันที่ และลำดับการทำ (กดเพื่อเปิด/ปิด)</span></summary>' +
+    '<div class="im-guide-body">' +
+    '<h4>ลำดับการนำเข้า 1 → 4</h4><p class="small muted">ช่วงวันที่ซ้อนกับครั้งก่อนได้ · นำเข้าไฟล์เดิมซ้ำ ยอดไม่เพิ่ม · นำเข้าสลับลำดับก็ได้ ระบบจับคู่ให้ภายหลัง</p>' +
+    '<ol class="im-steps">' +
+    '<li><b>ไฟล์ 50 · บัญชีจ่ายหมาย พนักงานศาลนี้ส่ง (แบบรวม)</b><br>คืออะไร: หมายที่จ่ายให้ผู้ส่ง — สร้างรายการหมายในระบบ<br>ส่งออกจาก: ระบบงานหมาย › บัญชีหมาย › ประเภท 50<br>ช่วงวันที่: <b>ตั้งแต่วันที่นำเข้าครั้งก่อน ถึงวันนี้</b></li>' +
+    '<li><b>ไฟล์ 42 · บัญชีผลการส่งคำคู่ความ ส่งโดยเจ้าพนักงาน</b><br>คืออะไร: ผลการส่งและวันที่ส่ง — หมายที่มีผลแล้วจึงพร้อมเบิก<br>ส่งออกจาก: ระบบงานหมาย › บัญชีหมาย › ประเภท 42<br>ช่วงวันที่: <b>ตั้งแต่วันที่นำเข้าครั้งก่อน ถึงวันนี้</b> (กรองตามวันที่รายงาน)</li>' +
+    '<li><b>ไฟล์ 18 · บัญชีจ่ายหมาย พนักงานศาลนี้ส่ง หมายฟรี</b><br>คืออะไร: ราคาหมายฟรีที่ศาลคิดรายเรื่อง (รวมหมายตามข้อ 7 แล้ว · 300 / 150 / 0 ต่างกันไปตามหมาย) — ใช้เป็นยอดเบิกในรอบหมายฟรี<br>ส่งออกจาก: ระบบงานหมาย › บัญชีหมาย › ประเภท 18<br>ช่วงวันที่: <b>ไม่ต้องเลือก</b> (ข้อมูล ณ วันที่ส่งออก) · <b>ส่งออกและนำเข้าใหม่ทุกครั้งก่อนตั้งรอบหมายฟรี</b></li>' +
+    '<li><b>ไฟล์ 30 · บัญชีการจ่ายเงินให้เจ้าพนักงานศาล (แบบหลายใบเสร็จ)</b><br>คืออะไร: หมายมีเงินที่จ่ายเงินจริง แยกตามวันที่จ่าย — ใช้ตั้งรอบหมายเงิน<br>ส่งออกจาก: ระบบงานหมาย › บัญชีเบิกจ่ายหมาย › ประเภท 30<br>ช่วงวันที่: <b>เฉพาะวันที่จ่ายของรอบนั้น</b> (เช่น วันศุกร์ที่จ่าย)</li>' +
+    '</ol>' +
+    '<h4>วิธีกด (ทุกไฟล์เหมือนกัน)</h4><ol class="im-steps">' +
+    '<li>หัวข้อ <b>1 · เลือกชนิดไฟล์</b> → กดการ์ดของไฟล์นั้น</li>' +
+    '<li>หัวข้อ <b>2 · เลือกไฟล์</b> → เลือกไฟล์ .xls ที่ส่งออกมา</li>' +
+    '<li>กด <b>ตรวจสอบก่อนนำเข้า</b> → ดูจำนวน ใหม่ / เดิมตรงกัน / เปลี่ยนแปลง / รอตรวจ และยอดเงินให้ตรงกับท้ายรายงาน (ยังไม่บันทึก)</li>' +
+    '<li>กด <b>ยืนยันนำเข้า</b> → ขึ้น "นำเข้าเรียบร้อย" ระบบตรวจจับคู่บัญชีจ่ายให้อัตโนมัติ</li>' +
+    '<li>กด <b>นำเข้าไฟล์ถัดไป</b> → ทำไฟล์ลำดับต่อไป</li></ol>' +
+    '<h4>ก่อนตั้งรอบแต่ละครั้ง</h4><div class="tbl-wrap"><table class="small"><thead><tr><th>รอบ</th><th>ต้องนำเข้า</th><th>ควรนำเข้าด้วย</th></tr></thead><tbody>' +
+    '<tr><td><b>หมายเงิน</b> (ปกติวันศุกร์)</td><td>30 ของวันที่จ่าย</td><td>50 · 42 ช่วงล่าสุด (ให้บัญชีจ่ายผูกกับหมายครบ)</td></tr>' +
+    '<tr><td><b>หมายฟรี</b> (เดือนละ 1–2 ครั้ง)</td><td>18 ชุดใหม่ · 42 ช่วงล่าสุด</td><td>50 ถ้ามีหมายจ่ายใหม่</td></tr></tbody></table></div>' +
+    '<p class="small muted">ไม่นำเข้า 50/42 ก่อน: รอบหมายเงินยังตั้งได้ตามไฟล์ 30 แต่จะมี "รอยืนยันการจับคู่" จนกว่าจะนำเข้า · รอบหมายฟรี หมายที่ยังไม่มีผลการส่งจะยังไม่พร้อมเบิก (รอรอบหน้า)</p>' +
+    '<div class="row" style="justify-content:flex-end"><button type="button" class="btn btn-sm" id="imGuideClose">ปิดคู่มือ ▲</button></div>' +
+    '</div></details>';
   /** 0.7.14 บัญชีจ่ายที่แบ่ง 60:40 นอกระบบแล้ว (ไม่ตั้งรอบ ไม่นับรอจับคู่) */
   const outsideDatesHtml = (o, canUndo) => (o && o.dates && o.dates.length) ? '<div class="tiny muted" style="margin-top:6px">แบ่ง 60:40 นอกระบบแล้ว (ไม่ตั้งรอบ): ' +
     o.dates.map((x) => '<b>' + esc(thDate(x.pay_date)) + '</b> · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + '&nbsp;฿ <span title="' + esc(x.by + ' ' + thDate(x.at, true)) + '">(' + esc(x.reason) + ')</span>' +
@@ -366,7 +388,7 @@
   const has = (...r) => S.user && S.user.roles.some((x) => r.indexOf(x) >= 0);
   /** บัญชีดูสถิติรวม (ไอดีเดียวของเจ้าหน้าที่ส่งหมาย) — ดูยอดทุกคน ไม่เห็นชื่อผู้รับ/รายละเอียดคดี */
   const viewerOnly = () => S.user && S.user.roles.length > 0 && S.user.roles.every((x) => x === 'VIEWER');
-  function navGroup(p) { return ['tracking','search','calc','overview'].includes(p) ? 'overview' : ['import','history','review'].includes(p) ? 'import' : ['finance','reports'].includes(p) ? (has('NOTICE','FINANCE','ADMIN')?'finance':'compensation') : ['settings','officers','users'].includes(p) ? 'settings' : p; }
+  function navGroup(p) { return ['tracking','search','calc','overview'].includes(p) ? 'overview' : ['import','history','review'].includes(p) ? 'import' : ['finance','reports'].includes(p) ? (has('NOTICE','FINANCE','ADMIN')?'finance':'compensation') : ['settings','officers','users','audit'].includes(p) ? 'settings' : p; }
   function pages() {
     return [
       {id:'home',th:'สถิติ',show:true},
@@ -386,7 +408,7 @@
     if (g === 'overview') links = (viewerOnly()?[]:[['overview','รายการทั้ง 2 ประเภท']]).concat([['calc','ยอดอ้างอิงรายผู้ส่ง']]);
     if (g === 'finance') links = [['finance','ตรวจเงินงบประมาณ'],['tracking','ตรวจยอดทั้ง 2 ประเภท']];
     if (g === 'compensation') links = [['compensation','ค่าตอบแทนตามรอบ'],['reports','รายงานรวม']];
-    if (g === 'settings') links = [['settings','ข้อมูลอ้างอิง'],['officers','ผู้ส่งหมายและอัตรา']].concat(has('ADMIN') ? [['users','ผู้ใช้และสิทธิ์']] : []);
+    if (g === 'settings') links = [['settings','ข้อมูลอ้างอิง'],['officers','ผู้ส่งหมายและอัตรา']].concat(has('ADMIN') ? [['users','ผู้ใช้และสิทธิ์'],['audit','ประวัติการใช้งาน']] : []);
     if (!links.length) return null;
     const el = document.createElement('div'); el.className = 'row section-tabs';
     links.forEach(([id,label]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-sm' + (id === p ? ' btn-g' : ''); b.textContent = label; b.onclick = () => go(id); el.appendChild(b); }); return el;
@@ -685,7 +707,7 @@
     if (!IM.meta) IM.meta = await api('import_templates');
     else api('import_templates').then((x) => { IM.meta = x; paintKinds(); }).catch(() => {});   // สถานะไฟล์ล่าสุด (ผู้อื่นอาจนำเข้าแล้ว)
     resetImport();
-    m.innerHTML = top('นำเข้าไฟล์') +
+    m.innerHTML = top('นำเข้าไฟล์') + importGuideHtml() +
       '<div class="clay panel"><h3>1 · เลือกชนิดไฟล์</h3><p class="small muted" style="margin:-4px 2px 10px"><span class="kdot ok"></span> สีเขียว = นำเข้าแล้ว (แสดงไฟล์ล่าสุด) · <span class="kdot"></span> สีเทา = ยังไม่เคยนำเข้า</p><div class="kinds">' +
       '<button type="button" class="kind clay-mint" data-k="ISSUE"><b>ไฟล์จ่ายหมาย</b><span class="small">นำเข้าวันที่จ่ายหมาย — แบบรวมทุกคน หรือแยกรายคน · หมายใหม่จะมีสถานะ "จ่ายหมายแล้ว รอผล"</span>' +
         '<span class="howto">นำเข้าไฟล์เมนู <b>บัญชีหมาย</b> › ประเภท <b>50. บัญชีจ่ายหมาย พนักงานศาลนี้ส่ง (แบบรวม)</b> › เลือกวันที่ ถึงวันที่</span></button>' +
@@ -699,6 +721,8 @@
       (IM.meta.start_fy ? '<p class="small" style="margin:0 6px 6px"><span class="period">เริ่มประมวลผลตั้งแต่ปีงบประมาณ ' + esc(IM.meta.start_fy) + ' (1 ต.ค. ' + esc(Number(IM.meta.start_fy) - 1) + ')</span> หมายที่จ่ายก่อนวันนี้ไม่นำเข้า</p>' : '') +
       '<p class="small muted" style="margin:0 6px">กฎการนำเข้าตามข้อกำหนดฉบับ 4.0 ข้อ 3: นำเข้าไฟล์เดิมซ้ำได้ ยอดไม่เพิ่ม · ไม่ลบข้อมูลที่ไม่อยู่ในไฟล์ล่าสุด · หมายที่เข้ารอบจ่าย/เบิกแล้วจะไม่ถูกเขียนทับ</p>';
     paintKinds();
+    const gd = $('#imGuide');
+    if (gd) { $('#imGuideClose').addEventListener('click', () => { gd.open = false; gd.scrollIntoView({ block: 'nearest' }); }); }
     m.querySelectorAll('.kind').forEach((b) => b.addEventListener('click', () => {
       m.querySelectorAll('.kind').forEach((x) => x.classList.toggle('on', x === b));
       resetImport(); IM.kind = b.dataset.k; drawFile();
@@ -1687,7 +1711,10 @@
     const admin = has('ADMIN');
     const groups = {};
     r.areas.forEach((a) => { (groups[a.amphoe_name] = groups[a.amphoe_name] || []).push(a); });
+    const mapUrl = /^https:\/\//.test(String(C.AREA_MAP_URL || '')) ? String(C.AREA_MAP_URL) : '';
     m.innerHTML = top('ผู้ส่งหมายและอัตรา') +
+      (mapUrl ? '<div class="clay panel area-map-link"><div><b>🗺 แผนที่เขตพื้นที่ส่งหมาย</b><div class="small muted">ระบบบริหารเขตพื้นที่งานส่งหมาย · ดูว่าผู้ส่งหมายแต่ละคนรับผิดชอบตำบลใด (หน้าแสดงผล อ่านอย่างเดียว)</div></div>' +
+        '<a class="btn btn-g" href="' + esc(mapUrl) + '" target="_blank" rel="noopener noreferrer">เปิดแผนที่เขตหมาย ↗</a></div>' : '') +
       '<div class="clay panel"><h3>ผู้ส่งหมาย ' + o.officers.length + ' คน</h3>' + (admin ? '<p class="small muted" style="margin:0 0 10px">"ชื่อเรียกอื่น" ใช้จับคู่ชื่อในไฟล์ Excel ที่สะกดต่างกัน คั่นด้วยจุลภาค</p>' : '') +
       '<div class="tbl-wrap"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>นามสกุล</th><th>ชื่อเรียกอื่น</th><th>บัญชีปริ้นฮับ</th><th class="n">ตำบล</th><th>อำเภอ</th>' + (admin ? '<th></th>' : '') + '</tr></thead><tbody>' +
       o.officers.map((x) => '<tr data-id="' + esc(x.officer_id) + '"><td>' + esc(x.officer_id) + '</td><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(x.color) + ';margin-right:6px"></span>' + esc(x.first_name) + '</td>' +
@@ -1710,6 +1737,35 @@
   };
 
   /* ---------------------------------------------------------------- ผู้ใช้และสิทธิ์ */
+  /* 0.7.17 ประวัติการใช้งาน (ผู้ดูแล) */
+  RENDER.audit = async (m, f) => {
+    f = f || S.auditF || {};
+    m.innerHTML = top('ประวัติการใช้งาน') + '<div class="clay panel"><p class="muted">กำลังโหลด…</p></div>';
+    let d; try { d = await api('audit_list', f); } catch (x) { m.innerHTML = top('ประวัติการใช้งาน') + '<div class="clay panel"><p class="note r">' + esc(x.message) + '</p></div>'; return; }
+    S.auditF = { from: d.from, to: d.to, group: d.group, user: d.user, q: f.q || '' };
+    const gName = {}; d.groups.forEach((g) => { gName[g.id] = g.th; });
+    const ts = (s) => { const v = String(s || ''); return v ? thDate(v.slice(0, 10)) + ' ' + v.slice(11, 16) + ' น.' : '—'; };
+    m.innerHTML = top('ประวัติการใช้งาน') +
+      '<div class="clay panel"><p class="small muted" style="margin:0 0 10px">บันทึกการกระทำสำคัญในระบบ (เข้าระบบ นำเข้าไฟล์ รอบเบิก บันทึกจ่าย แก้สิทธิ์ ข้อผิดพลาด) · ไม่บันทึกการเปิดดูหน้า · บันทึกเข้า/ออกระบบเก็บ ' + num(d.keep_days) + ' วัน รายการอื่นเก็บถาวร' + (d.purged ? ' · ล้างบันทึกเข้าระบบเก่า ' + num(d.purged) + ' รายการ' : '') + '</p>' +
+      '<form id="auF" class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">' +
+      '<label class="small">ตั้งแต่<br><input type="date" class="inp" name="from" value="' + esc(d.from) + '"></label>' +
+      '<label class="small">ถึง<br><input type="date" class="inp" name="to" value="' + esc(d.to) + '"></label>' +
+      '<label class="small">ผู้ใช้<br><select class="inp" name="user"><option value="">ทุกคน</option>' + d.users.map((u) => '<option value="' + esc(u.code) + '"' + (u.code === d.user ? ' selected' : '') + '>' + esc(u.name || u.code) + '</option>').join('') + '</select></label>' +
+      '<label class="small">ประเภท<br><select class="inp" name="group"><option value="ALL">ทั้งหมด</option>' + d.groups.map((g) => '<option value="' + esc(g.id) + '"' + (g.id === d.group ? ' selected' : '') + '>' + esc(g.th) + '</option>').join('') + '</select></label>' +
+      '<label class="small">ค้นคำ<br><input class="inp" name="q" maxlength="60" value="' + esc(S.auditF.q) + '" placeholder="เช่น เลขรอบ ชื่อไฟล์"></label>' +
+      '<button class="btn btn-g" type="submit">แสดง</button></form>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:12px">' + d.groups.filter((g) => d.counts[g.id]).map((g) => '<button type="button" class="pchip' + (g.id === 'ERROR' ? ' pcx' : ' pok') + '" data-aug="' + esc(g.id) + '">' + esc(g.th) + ' ' + num(d.counts[g.id]) + '</button>').join('') + '</div></div>' +
+      (d.per_user.length ? '<div class="clay panel"><h3>การเข้าระบบรายคน · ช่วงที่เลือก</h3><div class="tbl-wrap"><table><thead><tr><th>ผู้ใช้</th><th class="n">เข้าสำเร็จ</th><th class="n">ไม่สำเร็จ</th><th>เข้าล่าสุด</th></tr></thead><tbody>' +
+        d.per_user.map((p) => '<tr><td>' + esc(p.name || p.user_code) + '</td><td class="n">' + num(p.ok) + '</td><td class="n' + (p.fail ? ' flag-r' : '') + '">' + num(p.fail) + '</td><td>' + esc(ts(p.last_ok)) + '</td></tr>').join('') + '</tbody></table></div></div>' : '') +
+      '<div class="clay panel"><h3>รายการ ' + num(d.total) + (d.truncated ? ' <span class="small muted">(แสดงล่าสุด ' + num(d.rows.length) + ')</span>' : '') + '</h3>' +
+      (d.rows.length ? '<div class="tbl-wrap"><table class="wide-tbl"><thead><tr><th>วันเวลา</th><th>ผู้ใช้</th><th>ประเภท</th><th>การกระทำ</th><th>เป้าหมาย</th><th>รายละเอียด</th></tr></thead><tbody>' +
+        d.rows.map((r) => '<tr><td style="white-space:nowrap">' + esc(ts(r.at)) + '</td><td>' + esc(r.user_name || r.user_code || '—') + '</td><td class="small">' + esc(gName[r.group] || '') + '</td><td' + (r.group === 'ERROR' ? ' class="flag-r"' : '') + '>' + esc(r.action_th) + '</td><td class="small">' + esc(r.target) + '</td><td class="small">' + esc(r.detail) + '</td></tr>').join('') + '</tbody></table></div>'
+        : '<p class="muted">ไม่มีรายการตามตัวกรอง</p>') + '</div>';
+    const fm = $('#auF');
+    fm.addEventListener('submit', (e) => { e.preventDefault(); const x = Object.fromEntries(new FormData(fm).entries()); S.auditF = x; RENDER.audit(m, x); });
+    m.querySelectorAll('[data-aug]').forEach((b) => b.addEventListener('click', () => { const x = Object.assign({}, S.auditF, { group: b.dataset.aug }); RENDER.audit(m, x); }));
+  };
+
   RENDER.users = async (m) => {
     const [d, o] = await Promise.all([api('users_list'), api('officers_list')]);
     m.innerHTML = top('ผู้ใช้และสิทธิ์', '<label class="sr" for="uf">ค้นชื่อ</label><input id="uf" class="inp" placeholder="ค้นชื่อ / ส่วนงาน">') +
