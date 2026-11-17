@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.17';
+  const UI_VERSION = '0.7.18';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -387,6 +387,8 @@
   /* ================================================================ โครงแอป */
   const has = (...r) => S.user && S.user.roles.some((x) => r.indexOf(x) >= 0);
   /** บัญชีดูสถิติรวม (ไอดีเดียวของเจ้าหน้าที่ส่งหมาย) — ดูยอดทุกคน ไม่เห็นชื่อผู้รับ/รายละเอียดคดี */
+  /** 0.7.18 ข้อความแจ้งความเป็นส่วนตัว (ผู้ใช้กำหนด 17 พ.ย. 2569) */
+  const PRIVACY_TH = 'ระบบไม่เก็บชื่อคู่ความ · ไม่รับคอลัมน์โจทก์/จำเลย';
   const viewerOnly = () => S.user && S.user.roles.length > 0 && S.user.roles.every((x) => x === 'VIEWER');
   function navGroup(p) { return ['tracking','search','calc','overview'].includes(p) ? 'overview' : ['import','history','review'].includes(p) ? 'import' : ['finance','reports'].includes(p) ? (has('NOTICE','FINANCE','ADMIN')?'finance':'compensation') : ['settings','officers','users','audit'].includes(p) ? 'settings' : p; }
   function pages() {
@@ -490,7 +492,7 @@
       '<div class="pr-note"><b>หมายเหตุ</b> ๑. หมายมีเงินคิดตามราคาที่วางในบัญชีจ่ายหมาย กรณีราคาไม่เท่าอัตราตำบลคิดตามอัตราตำบล' + ((t.adj_up || t.adj_dn) ? ' (' + [t.adj_up ? '▲ เกินอัตรา ' + num(t.adj_up) + ' ฉบับ ส่วนเกิน ' + num(t.adj_up_baht) + ' บาท ไม่นำมาคิด' : '', t.adj_dn ? '▼ ต่ำกว่าอัตรา ' + num(t.adj_dn) + ' ฉบับ ปรับขึ้น ' + num(t.adj_dn_baht) + ' บาท' : ''].filter(Boolean).join(' · ') + ')' : '') + ' ๒. หมายฟรีคิดตามระเบียบ ก.บ.ศ. ว่าด้วยค่าตอบแทนฯ พ.ศ. ๒๕๖๒ ข้อ ๗ อำเภอเมืองลพบุรี ๓๐๐ บาท อำเภออื่นตามอัตราตำบล ' +
       '๓. ไม่รวมหมายที่ยังไม่มีวันที่ส่ง หมายที่รอยืนยัน และหมายก่อนเริ่มปีงบประมาณ ๔. ยอดนี้ยังไม่แบ่งส่วน ๖๐ : ๔๐ และแยกจากเอกสารเบิกจ่ายทางราชการ</div>' +
       '<div class="pr-sign"><div>ลงชื่อ ......................................................... ผู้จัดทำ<br>(' + esc(S.user ? S.user.name : '') + ')<br>ตำแหน่ง .........................................................</div>' +
-      '<div>ลงชื่อ ......................................................... ผู้ตรวจสอบ<br>(.........................................................)<br>ตำแหน่ง .........................................................</div></div>';
+      '<div>ลงชื่อ ......................................................... ผู้ตรวจสอบ<br>(.........................................................)<br>ตำแหน่ง .........................................................</div></div>' + '<p class="pr-privacy">' + PRIVACY_TH + '</p>';
     try { await Promise.race([document.fonts.load('16pt Sarabun'), new Promise((r) => setTimeout(r, 1500))]); } catch (e) { /* พิมพ์ด้วยฟอนต์สำรอง */ }
     const img = pa.querySelector('img');
     if (img && !img.complete) await new Promise((r) => { img.onload = img.onerror = r; setTimeout(r, 1500); });
@@ -707,7 +709,7 @@
     if (!IM.meta) IM.meta = await api('import_templates');
     else api('import_templates').then((x) => { IM.meta = x; paintKinds(); }).catch(() => {});   // สถานะไฟล์ล่าสุด (ผู้อื่นอาจนำเข้าแล้ว)
     resetImport();
-    m.innerHTML = top('นำเข้าไฟล์') + importGuideHtml() +
+    m.innerHTML = top('นำเข้าไฟล์') + '<p class="privacy-note">🔒 ' + PRIVACY_TH + '</p>' + importGuideHtml() +
       '<div class="clay panel"><h3>1 · เลือกชนิดไฟล์</h3><p class="small muted" style="margin:-4px 2px 10px"><span class="kdot ok"></span> สีเขียว = นำเข้าแล้ว (แสดงไฟล์ล่าสุด) · <span class="kdot"></span> สีเทา = ยังไม่เคยนำเข้า</p><div class="kinds">' +
       '<button type="button" class="kind clay-mint" data-k="ISSUE"><b>ไฟล์จ่ายหมาย</b><span class="small">นำเข้าวันที่จ่ายหมาย — แบบรวมทุกคน หรือแยกรายคน · หมายใหม่จะมีสถานะ "จ่ายหมายแล้ว รอผล"</span>' +
         '<span class="howto">นำเข้าไฟล์เมนู <b>บัญชีหมาย</b> › ประเภท <b>50. บัญชีจ่ายหมาย พนักงานศาลนี้ส่ง (แบบรวม)</b> › เลือกวันที่ ถึงวันที่</span></button>' +
@@ -1605,7 +1607,7 @@
     const pool = [['กองกลาง 40%', baht2(r.pool40)], ['เศษยกมาจากรอบก่อน', baht2(r.carry_in)], ['รวมกองกลาง', baht2(r.pool_total)],
       ['คนนั่งงาน ' + num(r.seats) + ' คน ได้คนละ', baht2(r.per_seat) + ' ฿', 1], ['จ่ายรวม (' + num(r.seats) + ' × ' + baht2(r.per_seat) + ')', baht2(r.paid_out)]]
       .concat(r.extra_one ? [['เศษให้ 1 คน', baht2(r.extra_one)]] : []).concat([['เศษยกไปรอบหน้า', baht2(r.carry_out)]]);
-    const H = 250 + RH * (d.lines.length + 2) + 40 + pool.length * 50 + 40 + 150;
+    const H = 250 + RH * (d.lines.length + 2) + 40 + pool.length * 50 + 40 + 185;
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
     const txt = (t, x, y, o) => { o = o || {}; g.font = (o.b ? '700 ' : '400 ') + (o.s || 26) + 'px ' + F; g.fillStyle = o.c || '#1d2b24'; g.textAlign = o.a || 'left'; g.fillText(String(t), x, y); };
@@ -1639,6 +1641,7 @@
     txt(r.payment_status === 'PAID' ? 'จ่ายเงินจริง ' + thDate(r.payment_date) + ' · หลักฐาน ' + (r.payment_ref || '') : 'สถานะ: ยืนยันรอบแล้ว · ยังไม่บันทึกหลักฐานจ่ายในระบบ', P, y, { s: 22, c: r.payment_status === 'PAID' ? '#2f7a4f' : '#8a5a00' });
     txt('วิธีปัดเศษ: ' + (r.policy_th || '—') + ' · ที่มา: ' + (r.source_label || '—'), P, y + 36, { s: 20, c: '#4b5d53' });
     txt('บัญชีคำนวณภายใน (ข้อตกลง 60:40) แยกจากเอกสารเบิกจ่ายทางราชการ · สร้างรูปเมื่อ ' + new Date().toLocaleString('th-TH'), P, y + 70, { s: 20, c: '#6b7b72' });
+    txt(PRIVACY_TH, P, y + 104, { s: 20, b: 1, c: '#2f6b4a' });
     const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
     if (!blob) throw new Error('สร้างรูปไม่สำเร็จ');
     const name = 'ใบแบ่งยอด-' + String(r.pay_date).slice(0, 10) + '-' + (free ? 'หมายฟรี' : 'หมายเงิน') + '.png';
@@ -1657,7 +1660,7 @@
   async function printArea(html) {
     let pa = document.getElementById('printArea');
     if (!pa) { pa = document.createElement('div'); pa.id = 'printArea'; document.body.appendChild(pa); }
-    pa.innerHTML = html;
+    pa.innerHTML = html + '<p class="pr-privacy">' + PRIVACY_TH + '</p>';
     try { await Promise.race([document.fonts.load('16pt Sarabun'), new Promise((res) => setTimeout(res, 1500))]); } catch (e) { /* ฟอนต์สำรอง */ }
     const img = pa.querySelector('img');
     if (img && !img.complete) await new Promise((res) => { img.onload = img.onerror = res; setTimeout(res, 1500); });

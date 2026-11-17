@@ -519,3 +519,7 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 /* 0.7.16 ปุ่มไปแผนที่เขตพื้นที่ส่งหมาย */
 .area-map-link{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .area-map-link .btn{text-decoration:none;white-space:nowrap}
+
+/* 0.7.18 ข้อความไม่เก็บชื่อคู่ความ */
+.privacy-note{font-size:13px;color:var(--g-ink,#2f6b4a);font-weight:600;margin:0 4px 10px}
+.pr-privacy{margin-top:10px;font-size:13pt;font-weight:700;text-align:center}
