@@ -502,3 +502,20 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 .wide-tbl th{white-space:nowrap}
 .wide-tbl td{min-width:96px}
 .wide-tbl td:first-child{min-width:120px}
+
+/* 0.7.16 คู่มือนำเข้าไฟล์ */
+.im-guide{padding:12px 16px}
+.im-guide>summary{cursor:pointer;font-weight:700;font-size:15px;list-style:none;padding:4px 2px}
+.im-guide>summary::-webkit-details-marker{display:none}
+.im-guide>summary::after{content:' ▼';font-size:12px;color:var(--muted)}
+.im-guide[open]>summary::after{content:' ▲'}
+.im-guide-body{margin-top:8px;line-height:1.65}
+.im-guide-body h4{margin:12px 0 4px;font-size:14px}
+.im-steps{margin:4px 0 8px;padding-left:22px}
+.im-steps li{margin:0 0 8px}
+.im-guide table{width:100%;border-collapse:collapse}
+.im-guide th,.im-guide td{padding:6px 8px;border-bottom:1px solid rgba(0,0,0,.06);text-align:left;vertical-align:top}
+
+/* 0.7.16 ปุ่มไปแผนที่เขตพื้นที่ส่งหมาย */
+.area-map-link{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.area-map-link .btn{text-decoration:none;white-space:nowrap}
