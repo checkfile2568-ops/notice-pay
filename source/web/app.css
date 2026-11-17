@@ -221,6 +221,7 @@ td .btn-s{white-space:nowrap}
 /* ---------- ลูกเล่น 0.4.2: แถบสีสถานะ · กราฟเส้น · ค้นด่วน · ใบสรุปพิมพ์ ---------- */
 .stbar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--sunk);box-shadow:var(--sh-in);margin:2px 0 4px;min-width:120px}
 .stbar i{display:block;height:100%}
+.stbar-in{display:flex;width:100%;height:100%}
 .stlegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:12px 2px 0;font-size:12px;color:var(--ink2)}
 .stlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
 .spark{display:block}
@@ -523,3 +524,9 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 /* 0.7.18 ข้อความไม่เก็บชื่อคู่ความ */
 .privacy-note{font-size:13px;color:var(--g-ink,#2f6b4a);font-weight:600;margin:0 4px 10px}
 .pr-privacy{margin-top:10px;font-size:13pt;font-weight:700;text-align:center}
+
+/* 0.7.19 แถบสถานะเลื่อนจากขวาไปซ้ายเมื่อเลื่อนเมาส์ผ่าน/กด (สัดส่วนคงเดิม) */
+.stbar-in.sweep{animation:stSweep .8s cubic-bezier(.2,.7,.2,1) both}
+@keyframes stSweep{from{clip-path:inset(0 0 0 100%)}to{clip-path:inset(0 0 0 0)}}
+.kpi,#offTbl tbody tr{cursor:default}
+@media (prefers-reduced-motion:reduce){.stbar-in.sweep{animation:none}}
