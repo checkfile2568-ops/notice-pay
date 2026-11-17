@@ -15,6 +15,11 @@ const a = w.__T, tick = (ms) => new Promise(r => setTimeout(r, ms || 80)), $ = (
 (async () => {
   await tick(); a.S.token = auth.token; a.S.user = auth.user; a.enterApp(); await tick(200);
   a.go('import'); await tick(300);
+  const PV = 'ระบบไม่เก็บชื่อคู่ความ · ไม่รับคอลัมน์โจทก์/จำเลย';
+  assert.ok($('#main .privacy-note') && $('#main .privacy-note').textContent.includes(PV), '0.7.18 ข้อความในหน้านำเข้า');
+  assert.ok(fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8').includes(PV), '0.7.18 ข้อความหน้าเข้าสู่ระบบ');
+  const appSrc = fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8');
+  assert.ok(/txt\(PRIVACY_TH,/.test(appSrc) && /pa\.innerHTML = html \+ '<p class="pr-privacy">' \+ PRIVACY_TH/.test(appSrc), '0.7.18 ท้ายรูปและใบพิมพ์');
   const gd = $('#imGuide');
   assert.ok(gd, 'มีคู่มือนำเข้าไฟล์');
   assert.equal(gd.open, false, 'ซ่อนไว้ตอนเปิดหน้า');
