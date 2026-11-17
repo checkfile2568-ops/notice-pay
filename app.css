@@ -250,6 +250,10 @@ td .btn-s{white-space:nowrap}
   .pr-note{font-size:14pt;margin-top:10pt}
   .pr-sign{display:flex;justify-content:space-between;gap:20pt;margin-top:28pt;text-align:center;font-size:16pt;page-break-inside:avoid}
   .pr-sign>div{flex:1}
+  .pr-kpi{margin:2pt 0 8pt}.pr-kpi td{text-align:center;width:25%}
+  .pr-chart{margin:4pt 0 8pt;page-break-inside:avoid}.pr-ch{font-size:14pt;font-weight:700}.pr-chart .ost-chart{width:150mm;max-width:100%;margin:0 auto}
+  .pr-ost{font-size:13pt}.pr-ost td,.pr-ost th{vertical-align:middle;padding:1pt 4pt}.pr-ost td:nth-child(2),.pr-ost th{white-space:nowrap}.pr-ost tr{page-break-inside:avoid}
+  .pr-sp{padding:1pt 2pt!important}.pr-sp svg{display:block;margin:0 auto}
 }
 
 /* ---------- 0.4.3: การ์ดค่อย ๆ ปรากฏ · วงแหวน 3 มิติ ---------- */
@@ -557,3 +561,32 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 .pit.nc .pnc{background:#A32D2D;color:#fff}
 .pelse b{color:#A32D2D}
 .btn.btn-danger{background:#FBEDED;color:#A32D2D;border-color:#E9B8B8}
+/* 0.7.26 รอบ 60/40 ตามใบเบิก */
+.pchip.pc{background:#E6E1F5;color:#4A3A86}
+.ctbl input.inp{width:100%;max-width:170px;text-align:right;padding:8px 10px;font-variant-numeric:tabular-nums}
+.ctbl input.cn{max-width:90px}
+.ctbl td.n{padding-top:4px;padding-bottom:4px}
+.inp.bad{border-color:#C0392B!important;background:#FFF3F1}
+.cimp{border:1px dashed #C9C4B5;background:#FBFAF6}
+@media (max-width:640px){.ctbl{min-width:0!important;width:100%}.ctbl th,.ctbl td{padding-left:4px!important;padding-right:4px!important}.ctbl input.cn{width:52px;max-width:52px;padding:8px 6px}.ctbl input.camt{width:104px;max-width:104px;padding:8px 6px}.ctbl th.n{white-space:normal;font-size:12px}}
+/* 0.7.26 สถิติเจ้าหน้าที่ส่งหมาย */
+.ost-chart{display:block;width:100%;max-width:760px;height:auto;margin:6px auto 0}
+.ost-chart .ost-v{font-size:15px;font-weight:700;fill:#1D3A2C;font-variant-numeric:tabular-nums}
+.ost-chart .ost-m{font-size:14px;fill:#3D5A4A;font-weight:600}
+.ost-chart .ost-s{font-size:12px;fill:#7A8A80}
+.spark-row{display:block;max-width:none}
+.ost-seg .btn{min-width:96px}
+#ostTbl tfoot td{border-top:2px solid #CFDCD2}
+.ost-sub{display:block;white-space:nowrap}
+.ost-msp{display:none}
+@media (max-width:640px){.ost-chart .ost-v{font-size:25px}.ost-chart .ost-m{font-size:23px}.ost-chart .ost-s{font-size:20px}.ost-seg .btn{min-width:0;flex:1}
+.ost-k{grid-template-columns:1fr 1fr;gap:10px}.ost-k .kpi b{font-size:20px}.ost-k .kpi small{font-size:11px}
+#ostTbl{min-width:0!important;width:100%}#ostTbl th,#ostTbl td{padding-left:4px!important;padding-right:4px!important}#ostTbl .ost-6{display:none}.ost-msp{display:flex;align-items:center;gap:6px;margin-top:4px}}
+/* 0.7.26 เส้นกราฟลากทีละจุด + จุด/ตัวเลขปรากฏตามเส้น (เฉพาะตอนเล่น · ภาพนิ่งและงานพิมพ์เห็นครบ) */
+.lnfx.anim .seg{stroke-dasharray:1;stroke-dashoffset:1;animation:lnseg var(--d,.25s) linear forwards;animation-delay:calc(var(--i) * var(--d,.25s))}
+.lnfx.anim .pt{opacity:0;animation:lnpt .18s ease-out forwards;animation-delay:calc(var(--i) * var(--d,.25s))}
+.lnfx.anim .ar{opacity:0;animation:lnpt .5s ease-out forwards;animation-delay:calc(5 * var(--d,.25s))}
+@keyframes lnseg{to{stroke-dashoffset:0}}@keyframes lnpt{to{opacity:1}}
+.ost-box{cursor:pointer}
+@media (prefers-reduced-motion:reduce){.lnfx.anim .seg,.lnfx.anim .pt,.lnfx.anim .ar{animation:none;opacity:1;stroke-dashoffset:0}}
+@media print{.lnfx .seg,.lnfx .pt,.lnfx .ar{animation:none!important;opacity:1!important;stroke-dashoffset:0!important}}

@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.25';
+  const UI_VERSION = '0.7.26';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -72,17 +72,19 @@
     const fmt = (v) => (money ? v.toLocaleString('th-TH', { minimumFractionDigits: v === end && end % 1 ? 2 : 0, maximumFractionDigits: v === end ? 2 : 0 }) : Math.round(v).toLocaleString('th-TH')) + suffix;
     const id = (el._cnt || 0) + 1; el._cnt = id;
     const t0 = performance.now(), dur = ms || 600;
-    const step = (t) => { if (el._cnt !== id) return; const p = Math.min(1, (t - t0) / dur); el.textContent = fmt(p < 1 ? end * (1 - Math.pow(1 - p, 3)) : end); if (p < 1) requestAnimationFrame(step); };
+    const step = (t) => { if (el._cnt !== id) return; const p = Math.min(1, (t - t0) / dur); el.textContent = p < 1 ? fmt(end * (1 - Math.pow(1 - p, 3))) : (el.dataset.final || fmt(end)); if (p < 1) requestAnimationFrame(step); };
     el.textContent = fmt(0); requestAnimationFrame(step);
   }
   /** 0.7.19 เลื่อนเมาส์ผ่าน/กด: การ์ดตัวเลข และแถวผู้ส่งหมาย → ตัวเลขวิ่งจาก 0 · แถบสถานะค่อย ๆ เลื่อนจากขวาไปซ้าย */
   function replayFx(box) {
     if (!box || reduceMotion()) return;
     const now = Date.now(); if (box._fxAt && now - box._fxAt < 700) return; box._fxAt = now;
-    box.querySelectorAll('[data-count],[data-rc]').forEach((el) => animCount(el, el.dataset.count !== undefined ? el.dataset.count : el.dataset.rc));
+    // 0.7.26 เส้นกราฟค่อย ๆ ลากทีละจุด (svg.lnfx) · ตัวเลขที่มี data-dl เริ่มนับเมื่อเส้นถึงจุดนั้น
+    box.querySelectorAll('svg.lnfx').forEach((sv) => { sv.classList.remove('anim'); void sv.getBoundingClientRect(); sv.classList.add('anim'); });
+    box.querySelectorAll('[data-count],[data-rc]').forEach((el) => { const run = () => animCount(el, el.dataset.count !== undefined ? el.dataset.count : el.dataset.rc); const dl = Number(el.dataset.dl || 0); if (dl) { clearTimeout(el._dlT); el._dlT = setTimeout(run, dl); } else run(); });
     box.querySelectorAll('.stbar-in').forEach((b) => { b.classList.remove('sweep'); void b.offsetWidth; b.classList.add('sweep'); });
   }
-  const FX_SEL = '.kpi, #offTbl tbody tr';
+  const FX_SEL = '.kpi, #offTbl tbody tr, .ost-box, #ostTbl tbody tr, #ostTbl tfoot tr';
   document.addEventListener('mouseover', (e) => { const t = e.target.closest && e.target.closest(FX_SEL); if (t && !(e.relatedTarget && t.contains(e.relatedTarget))) replayFx(t); });
   document.addEventListener('click', (e) => { const t = e.target.closest && e.target.closest(FX_SEL); if (t) replayFx(t); });
   /** สีสถานะเดียวกันทุกหน้าจอ: เทาอ่อน รอผล · เทา ยอดประมาณการก่อนการเบิก (0.7.25) · ฟ้า เบิกแล้วรอจ่าย · เขียว จ่ายแล้ว · แดง รอตรวจ */
@@ -285,7 +287,7 @@
     if (!C.API_URL || /วางลิงก์/.test(C.API_URL)) throw Object.assign(new Error('ยังไม่ได้ตั้งค่า API_URL ใน config.js'), { code: 'CONFIG' });
     const epoch = navEpoch;
     const payload = Object.assign({}, body || {});
-    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside','change_decide','change_decide_bulk','adjust_void','payout_draft'].includes(action) || (action === 'ledger_import' && payload.commit);
+    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside','change_decide','change_decide_bulk','adjust_void','payout_draft','claim_confirm'].includes(action) || (action === 'ledger_import' && payload.commit);
     const retryKey = writing ? action + ':' + JSON.stringify(payload) : '';
     if (writing && !payload.request_id) { if (!requestKeys.has(retryKey)) requestKeys.set(retryKey, crypto.randomUUID()); payload.request_id = requestKeys.get(retryKey); }
     // 0.7.22: งานบันทึกใหญ่ (เช่น นำเข้า) ใช้เวลาได้ถึงหลายนาที — รอได้นานกว่า และถ้าเซิร์ฟเวอร์ยังทำคำขอเดิมอยู่ (BUSY)
@@ -412,7 +414,7 @@
   /** 0.7.18 ข้อความแจ้งความเป็นส่วนตัว (ผู้ใช้กำหนด 17 พ.ย. 2569) */
   const PRIVACY_TH = 'ระบบไม่เก็บชื่อคู่ความ · ไม่รับคอลัมน์โจทก์/จำเลย';
   const viewerOnly = () => S.user && S.user.roles.length > 0 && S.user.roles.every((x) => x === 'VIEWER');
-  function navGroup(p) { return ['tracking','search','calc','overview'].includes(p) ? 'overview' : ['import','history','review','changes'].includes(p) ? 'import' : ['finance','reports'].includes(p) ? (has('NOTICE','FINANCE','ADMIN')?'finance':'compensation') : ['settings','officers','users','audit'].includes(p) ? 'settings' : p; }
+  function navGroup(p) { return p === 'ostats' ? 'home' : ['tracking','search','calc','overview'].includes(p) ? 'overview' : ['import','history','review','changes'].includes(p) ? 'import' : ['finance','reports'].includes(p) ? (has('NOTICE','FINANCE','ADMIN')?'finance':'compensation') : ['settings','officers','users','audit'].includes(p) ? 'settings' : p; }
   function pages() {
     return [
       {id:'home',th:'สถิติ',show:true},
@@ -428,6 +430,7 @@
   }
   function sectionTabs(p) {
     const g = navGroup(p); let links = [];
+    if (g === 'home') links = [['home','ภาพรวมสถิติ'],['ostats','สถิติเจ้าหน้าที่ส่งหมาย']];
     if (g === 'import') links = [['import','นำเข้าไฟล์ 4 แบบ'],['review','รายการรอตรวจ'],['changes','รายการปรับปรุงรออนุมัติ'],['history','ประวัติการนำเข้า']];
     if (g === 'overview') links = (viewerOnly()?[]:[['overview','รายการทั้ง 2 ประเภท']]).concat([['calc','ยอดอ้างอิงรายผู้ส่ง']]);
     if (g === 'finance') links = [['finance','ตรวจเงินงบประมาณ'],['tracking','ตรวจยอดทั้ง 2 ประเภท']];
@@ -698,6 +701,214 @@
   }
 
   /* ---------------------------------------------------------------- ค้นหาหมาย */
+  /* ---------- 0.7.26 สถิติเจ้าหน้าที่ส่งหมาย: เลือกหมายฟรี/หมายมีเงิน · ช่วงวันที่ · จำนวน ยอดเงิน · เรียงสูง↔ต่ำ · 6 เดือนย้อนหลัง ---------- */
+  const OST_KEY = 'np_ostats_v2';
+  const ostToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+  const ostFyStart = (iso) => { const y = Number(iso.slice(0, 4)), mo = Number(iso.slice(5, 7)); return (mo >= 10 ? y : y - 1) + '-10-01'; };
+  const ostMonthTh = (k) => { const MO = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; return MO[Number(k.slice(5, 7)) - 1] + ' ' + String((Number(k.slice(0, 4)) + 543) % 100).padStart(2, '0'); };
+  const ostShift = (iso, months) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + months); return d.toISOString().slice(0, 10); };
+  /** เส้นกราฟเล็กแบบเดิม (สีเขียว จุดท้าย) 6 เดือน */
+  function spark6(vals, months, unit) {
+    const a = vals.map(Number), mx = Math.max(1, ...a);
+    const pts = a.map((v, i) => (2 + i * 13) + ',' + (19 - v / mx * 16).toFixed(1)).join(' ');
+    const lab = months.map((k, i) => ostMonthTh(k) + ' ' + (unit === 'บาท' ? baht(a[i]) : num(a[i]))).join(', ');
+    return '<svg class="spark lnfx" style="--d:.12s" viewBox="0 0 70 22" width="70" height="22" role="img" aria-label="6 เดือนย้อนหลัง (' + unit + '): ' + esc(lab) + '"><title>' + esc(lab) + '</title>' +
+      lnSegs(a.map((v, i) => [2 + i * 13, 19 - v / mx * 16]), 1.8) +
+      (a.length ? '<circle class="pt" style="--i:' + (a.length - 1) + '" cx="' + (2 + (a.length - 1) * 13) + '" cy="' + (19 - a[a.length - 1] / mx * 16).toFixed(1) + '" r="2.4" fill="#2E6B4F"/>' : '') + '</svg>';
+  }
+  /** เส้นกราฟแบ่งเป็นช่วงจุดต่อจุด (ลากทีละช่วงเมื่อเล่นภาพเคลื่อนไหว · ภาพนิ่ง/พิมพ์เห็นเส้นเต็ม) */
+  function lnSegs(xy, w) {
+    return xy.slice(1).map((p, i) => '<path class="seg" pathLength="1" style="--i:' + i + '" d="M' + xy[i][0].toFixed(1) + ' ' + xy[i][1].toFixed(1) + 'L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + '" fill="none" stroke="#2E6B4F" stroke-width="' + w + '" stroke-linecap="round"/>').join('');
+  }
+  /** กราฟเส้น 6 เดือนย้อนหลัง พร้อมตัวเลขทุกจุด */
+  function ostChart(d, metric) {
+    const vals = d.totals.months.map((x) => metric === 'n' ? x.n : x.amount), mx = Math.max(1, ...vals);
+    const W = 640, H = 236, L = 56, R = 56, Tp = 40, B = 52, step = (W - L - R) / Math.max(1, vals.length - 1);
+    const xy = vals.map((v, i) => [L + i * step, Tp + (1 - v / mx) * (H - Tp - B)]);
+    const fmt = (v) => metric === 'n' ? num(v) : baht(v);
+    const grid = [0, 0.5, 1].map((f) => '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + (Tp + f * (H - Tp - B)).toFixed(1) + '" y2="' + (Tp + f * (H - Tp - B)).toFixed(1) + '" stroke="#DCE6DE" stroke-dasharray="3 4"/>').join('');
+    const area = 'M' + xy.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L') + ' L' + xy[xy.length - 1][0].toFixed(1) + ',' + (H - B) + ' L' + L + ',' + (H - B) + 'Z';
+    return '<svg class="ost-chart lnfx" style="--d:.28s" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc('6 เดือนย้อนหลัง ' + d.months.map((k, i) => ostMonthTh(k) + ' ' + fmt(vals[i])).join(', ')) + '">' + grid +
+      '<path class="ar" d="' + area + '" fill="#2E6B4F" opacity=".08"/>' + lnSegs(xy, 3) +
+      xy.map((p, i) => '<circle class="pt" style="--i:' + i + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="' + (i === xy.length - 1 ? 5.5 : 4) + '" fill="' + (i === xy.length - 1 ? '#2E6B4F' : '#fff') + '" stroke="#2E6B4F" stroke-width="2.4"/>' +
+        '<text x="' + p[0].toFixed(1) + '" y="' + (p[1] - 12).toFixed(1) + '" text-anchor="middle" class="ost-v pt" style="--i:' + i + '" data-rc="' + vals[i] + '" data-dl="' + (i * 280) + '"' + (metric === 'n' ? '' : ' data-money="1"') + ' data-final="' + esc(fmt(vals[i])) + '">' + esc(fmt(vals[i])) + '</text>' +
+        '<text x="' + p[0].toFixed(1) + '" y="' + (H - B + 22) + '" text-anchor="middle" class="ost-m">' + esc(ostMonthTh(d.months[i])) + '</text>' +
+        '<text x="' + p[0].toFixed(1) + '" y="' + (H - B + 40) + '" text-anchor="middle" class="ost-s">' + esc(metric === 'n' ? baht(d.totals.months[i].amount) + ' ฿' : num(d.totals.months[i].n) + ' ฉบับ') + '</text>').join('') + '</svg>';
+  }
+  /** 6 เดือนในบรรทัดเดียว: เส้นสีเขียวและตัวเลขแต่ละเดือนอยู่ตรงกัน (จุดอยู่เหนือตัวเลขของเดือนนั้น) */
+  function sparkRow(vals, months, unit, opt) {
+    opt = opt || {};
+    const a = vals.map(Number), mx = Math.max(1, ...a), CW = opt.cw || 60, W = CW * a.length, H = opt.h || 46;
+    const fmt = (v) => unit === 'บาท' ? baht(v) : num(v);
+    const pts = a.map((v, i) => [CW * i + CW / 2, 5 + (1 - v / mx) * 16]);
+    const lab = months.map((k, i) => ostMonthTh(k) + ' ' + fmt(a[i])).join(', ');
+    return '<svg class="spark-row lnfx" style="--d:.12s" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="6 เดือนย้อนหลัง (' + unit + '): ' + esc(lab) + '"><title>' + esc(lab) + '</title>' +
+      lnSegs(pts, 2) +
+      pts.map((p, i) => '<circle class="pt" style="--i:' + i + '" cx="' + p[0] + '" cy="' + p[1].toFixed(1) + '" r="' + (i === pts.length - 1 ? 3.2 : 2.2) + '" fill="' + (i === pts.length - 1 ? '#2E6B4F' : '#fff') + '" stroke="#2E6B4F" stroke-width="1.6"/>' +
+        '<text class="pt" style="--i:' + i + ';font-variant-numeric:tabular-nums" x="' + p[0] + '" y="' + (H - 6) + '" text-anchor="middle" font-size="' + (opt.fs || 12) + '" fill="#4b5d53">' + esc(fmt(a[i])) + '</text>').join('') + '</svg>';
+  }
+  async function ostSavePng(blob, name, msg) {
+    const file = typeof File === 'function' ? new File([blob], name, { type: 'image/png' }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    toast(msg);
+  }
+  const ostTitle = (d) => 'สถิติเจ้าหน้าที่ส่งหมาย · ' + ({ BUDGET: 'หมายฟรี (เงินงบประมาณ)', PAID: 'หมายมีเงิน (นอกงบประมาณ)', ALL: 'รวม 2 ประเภท' }[d.pay_type] || '');
+  const ostSub = (d) => 'ช่วงวันที่ ' + dLong(d.from) + ' ถึง ' + dLong(d.to) + ' · นับตาม' + (d.basis === 'issued' ? 'วันที่จ่ายหมาย' : 'วันที่ส่งหมาย');
+  /** พิมพ์ A4: หัวเอกสาร · สรุป · กราฟ 6 เดือน · ตารางรายคนพร้อมเส้น 6 เดือน */
+  async function printOstats(d, metric, order) {
+    loadSarabun();
+    const unit = metric === 'n' ? 'ฉบับ' : 'บาท', mval = (o) => o.months.map((x) => metric === 'n' ? x.n : x.amount), t = d.totals;
+    const rows = order.map((o, i) => '<tr><td class="c">' + (i + 1) + '</td><td>' + esc(o.name) + '</td><td class="n">' + num(o.n) + '</td><td class="n">' + num(o.n_delivered) + '</td><td class="n">' + baht2(o.amount) + '</td><td class="c pr-sp">' + sparkRow(mval(o), d.months, unit, { cw: 46, h: 36, fs: 10 }) + '</td></tr>').join('');
+    await printArea('<div class="pr-head"><img src="court-seal.webp" alt=""><div class="pr-court">ศาลจังหวัดลพบุรี</div>' +
+      '<div class="pr-title">' + esc(ostTitle(d)) + '</div><div class="pr-sub">' + esc(ostSub(d)) + '</div></div>' +
+      '<table class="pr-tbl pr-kpi"><tbody><tr><td>จำนวนหมาย<br><b>' + num(t.n) + ' ฉบับ</b></td><td>ส่งแล้ว<br><b>' + num(t.n_delivered) + ' ฉบับ</b></td><td>ยอดเงิน<br><b>' + baht2(t.amount) + ' บาท</b></td><td>เฉลี่ยต่อคน<br><b>' + baht2(d.officers.length ? t.amount / d.officers.length : 0) + ' บาท</b></td></tr></tbody></table>' +
+      '<div class="pr-chart"><div class="pr-ch">6 เดือนย้อนหลัง (' + esc(metric === 'n' ? 'จำนวนฉบับ' : 'ยอดเงิน บาท') + ') ถึง ' + esc(ostMonthTh(d.months[5])) + '</div>' + ostChart(d, metric) + '</div>' +
+      '<table class="pr-tbl pr-ost"><thead><tr><th>ที่</th><th>ผู้ส่งหมาย</th><th>จำนวน</th><th>ส่งแล้ว</th><th>ยอดเงิน (บาท)</th><th>6 เดือน (' + unit + ')</th></tr></thead><tbody>' + rows +
+      '<tr class="pr-sum"><td></td><td><b>รวม</b></td><td class="n"><b>' + num(t.n) + '</b></td><td class="n"><b>' + num(t.n_delivered) + '</b></td><td class="n"><b>' + baht2(t.amount) + '</b></td><td class="c pr-sp">' + sparkRow(mval(t), d.months, unit, { cw: 46, h: 36, fs: 10 }) + '</td></tr></tbody></table>' +
+      '<div class="pr-note">ยอดเงินหมายฟรีที่ยังไม่เบิกเป็นยอดประมาณการก่อนการเบิก · หมายที่ปิด "ไม่เบิก" หรือพ้นปีงบนับจำนวนแต่ไม่นับยอด · พิมพ์เมื่อ ' + esc(new Date().toLocaleString('th-TH')) + '</div>');
+  }
+  /** รูป PNG ขนาด A4 (1240×1754) วาดจากข้อมูลครบทุกแถว ไม่ถ่ายหน้าจอ */
+  async function pngOstats(d, metric, order) {
+    loadSarabun();
+    try { await Promise.race([Promise.all([document.fonts.load('400 28px Sarabun'), document.fonts.load('700 28px Sarabun')]), new Promise((res) => setTimeout(res, 2000))]); } catch (e) { /* ฟอนต์สำรอง */ }
+    const unit = metric === 'n' ? 'ฉบับ' : 'บาท', mval = (o) => o.months.map((x) => metric === 'n' ? x.n : x.amount), t = d.totals;
+    const fmt = (v) => metric === 'n' ? num(v) : baht(v);
+    const W = 1240, P = 56, RH = 68, F = '"Sarabun","TH Sarabun New","Noto Sans Thai",sans-serif';
+    const H = Math.max(1754, 760 + RH * (order.length + 1) + 210);
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d'); if (!g) throw new Error('เบราว์เซอร์นี้ไม่รองรับการสร้างรูป PNG');
+    const txt = (s, x, y, o) => { o = o || {}; g.font = (o.b ? '700 ' : '400 ') + (o.s || 24) + 'px ' + F; g.fillStyle = o.c || '#1d2b24'; g.textAlign = o.a || 'left'; g.fillText(String(s), x, y); };
+    const G = '#2E6B4F';
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e7f2ea'; g.fillRect(0, 0, W, 190);
+    const seal = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = C.SEAL_URL || 'court-seal.webp'; setTimeout(() => res(null), 1500); });
+    if (seal) { try { g.drawImage(seal, P, 36, 112, 112); } catch (e) { /* ข้ามตรา */ } }
+    const tx = seal ? P + 136 : P;
+    txt('ศาลจังหวัดลพบุรี', tx, 70, { s: 28, b: 1, c: '#2f6b4a' });
+    txt(ostTitle(d), tx, 114, { s: 34, b: 1 });
+    txt(ostSub(d), tx, 154, { s: 22, c: '#4b5d53' });
+    // สรุป 4 ช่อง
+    const kp = [['จำนวนหมาย', num(t.n) + ' ฉบับ', '#E4F3E8'], ['ส่งแล้ว', num(t.n_delivered) + ' ฉบับ', '#EEF5DE'], ['ยอดเงิน', baht2(t.amount) + ' ฿', '#FDF0CF'], ['เฉลี่ยต่อคน', baht2(d.officers.length ? t.amount / d.officers.length : 0) + ' ฿', '#DCEAF8']];
+    const kw = (W - 2 * P - 3 * 16) / 4;
+    kp.forEach((k, i) => { const x = P + i * (kw + 16); g.fillStyle = k[2]; g.fillRect(x, 220, kw, 118); txt(k[0], x + 20, 260, { s: 22, c: '#4b5d53' }); txt(k[1], x + 20, 312, { s: 34, b: 1 }); });
+    // กราฟ 6 เดือน
+    let y0 = 370;
+    txt('6 เดือนย้อนหลัง (' + (metric === 'n' ? 'จำนวนฉบับ' : 'ยอดเงิน บาท') + ') ถึง ' + ostMonthTh(d.months[5]), P, y0 + 10, { s: 26, b: 1 });
+    const vals = t.months.map((x) => metric === 'n' ? x.n : x.amount), mx = Math.max(1, ...vals);
+    const cL = P + 60, cR = W - P - 60, cT = y0 + 64, cB = y0 + 270, step = (cR - cL) / 5;
+    const xy = vals.map((v, i) => [cL + i * step, cT + (1 - v / mx) * (cB - cT)]);
+    g.strokeStyle = '#DCE6DE'; g.lineWidth = 1.5; g.setLineDash([6, 8]);
+    [0, 0.5, 1].forEach((f) => { g.beginPath(); g.moveTo(cL, cT + f * (cB - cT)); g.lineTo(cR, cT + f * (cB - cT)); g.stroke(); });
+    g.setLineDash([]);
+    g.fillStyle = 'rgba(46,107,79,.08)'; g.beginPath(); g.moveTo(xy[0][0], cB); xy.forEach((p) => g.lineTo(p[0], p[1])); g.lineTo(xy[5][0], cB); g.closePath(); g.fill();
+    g.strokeStyle = G; g.lineWidth = 5; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); xy.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke();
+    xy.forEach((p, i) => {
+      g.beginPath(); g.arc(p[0], p[1], i === 5 ? 9 : 7, 0, Math.PI * 2); g.fillStyle = i === 5 ? G : '#fff'; g.fill(); g.lineWidth = 4; g.strokeStyle = G; g.stroke();
+      txt(fmt(vals[i]), p[0], p[1] - 20, { s: 26, b: 1, a: 'center' });
+      txt(ostMonthTh(d.months[i]), p[0], cB + 40, { s: 24, b: 1, a: 'center', c: '#3D5A4A' });
+      txt(metric === 'n' ? baht(t.months[i].amount) + ' ฿' : num(t.months[i].n) + ' ฉบับ', p[0], cB + 72, { s: 20, a: 'center', c: '#7A8A80' });
+    });
+    // ตารางรายคน
+    let y = cB + 120;
+    const SPX = 720, CW = (W - P - 16 - SPX) / 6;
+    const cols = [['ที่', P + 12, 'left'], ['ผู้ส่งหมาย', P + 70, 'left'], ['จำนวน', 430, 'right'], ['ส่งแล้ว', 540, 'right'], ['ยอดเงิน (บาท)', 700, 'right']];
+    g.fillStyle = '#f1f5f2'; g.fillRect(P, y - 38, W - 2 * P, RH - 4);
+    cols.forEach((c) => txt(c[0], c[1], y, { s: 22, b: 1, a: c[2], c: '#4b5d53' }));
+    txt('6 เดือน (' + unit + ')', SPX + 3 * CW, y, { s: 22, b: 1, a: 'center', c: '#4b5d53' });
+    const rowSpark = (vs, yy) => {
+      const m2 = Math.max(1, ...vs), pts = vs.map((v, i) => [SPX + CW * i + CW / 2, yy - 22 + (1 - v / m2) * 20]);
+      g.strokeStyle = G; g.lineWidth = 2.6; g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke();
+      pts.forEach((p, i) => { g.beginPath(); g.arc(p[0], p[1], i === 5 ? 4.5 : 3.2, 0, Math.PI * 2); g.fillStyle = i === 5 ? G : '#fff'; g.fill(); g.lineWidth = 2; g.stroke(); txt(fmt(vs[i]), p[0], yy + 24, { s: 16, a: 'center', c: '#4b5d53' }); });
+    };
+    order.forEach((o, i) => {
+      y += RH; if (i % 2) { g.fillStyle = '#f4f8f5'; g.fillRect(P, y - 36, W - 2 * P, RH); }
+      txt(i + 1, cols[0][1], y, { s: 24 }); txt(o.name, cols[1][1], y, { s: 24 });
+      txt(num(o.n), cols[2][1], y, { s: 24, a: 'right' }); txt(num(o.n_delivered), cols[3][1], y, { s: 24, a: 'right' }); txt(baht2(o.amount), cols[4][1], y, { s: 24, b: 1, a: 'right' });
+      rowSpark(mval(o), y);
+    });
+    y += RH; g.fillStyle = '#b9d0c1'; g.fillRect(P, y - 38, W - 2 * P, 2);
+    txt('รวม', cols[1][1], y, { s: 26, b: 1 }); txt(num(t.n), cols[2][1], y, { s: 26, b: 1, a: 'right' }); txt(num(t.n_delivered), cols[3][1], y, { s: 26, b: 1, a: 'right' }); txt(baht2(t.amount), cols[4][1], y, { s: 26, b: 1, a: 'right' });
+    rowSpark(mval(t), y);
+    y += 84;
+    txt('ยอดเงินหมายฟรีที่ยังไม่เบิกเป็นยอดประมาณการก่อนการเบิก · หมายที่ปิด "ไม่เบิก" หรือพ้นปีงบนับจำนวนแต่ไม่นับยอด', P, y, { s: 20, c: '#4b5d53' });
+    txt('สร้างรูปเมื่อ ' + new Date().toLocaleString('th-TH'), P, y + 34, { s: 20, c: '#6b7b72' });
+    txt(PRIVACY_TH, P, y + 68, { s: 20, b: 1, c: '#2f6b4a' });
+    const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
+    if (!blob) throw new Error('สร้างรูปไม่สำเร็จ');
+    await ostSavePng(blob, 'สถิติเจ้าหน้าที่ส่งหมาย-' + d.pay_type + '-' + d.from + '-' + d.to + '.png', 'บันทึกรูป PNG แล้ว');
+  }
+  RENDER.ostats = async (m) => {
+    let st = null; try { st = JSON.parse(localStorage.getItem(OST_KEY) || 'null'); } catch (e) { st = null; }
+    const td = ostToday();
+    st = Object.assign({ type: 'BUDGET', from: ostFyStart(td), to: td, basis: 'issued', metric: 'amount' }, st || {});
+    const saveSt = () => { try { localStorage.setItem(OST_KEY, JSON.stringify(st)); } catch (e) { /* ใช้ต่อได้ */ } };
+    const TYPES = [['BUDGET', 'หมายฟรี'], ['PAID', 'หมายมีเงิน'], ['ALL', 'รวม']];
+    m.innerHTML = top('สถิติเจ้าหน้าที่ส่งหมาย', '<div class="row" style="gap:8px"><button type="button" class="btn btn-g btn-sm" id="oPrint" disabled>พิมพ์ A4</button><button type="button" class="btn btn-sm" id="oPng" disabled>บันทึก PNG</button></div>') +
+      '<div class="clay panel ost-ctl">' +
+        '<div class="row ost-seg" role="group" aria-label="ประเภทหมาย">' + TYPES.map(([k, t]) => '<button type="button" class="btn btn-sm" data-t="' + k + '" aria-pressed="false">' + t + '</button>').join('') + '</div>' +
+        '<div class="pform" style="margin-top:12px"><label>วันที่เริ่ม<input type="date" class="inp" id="oFrom"></label><label>วันที่สิ้นสุด<input type="date" class="inp" id="oTo"></label>' +
+          '<label>นับตามวันที่<select class="inp" id="oBasis"><option value="issued">วันที่จ่ายหมาย</option><option value="delivered">วันที่ส่งหมาย</option></select></label></div>' +
+        '<div class="row ost-quick" style="gap:6px;margin-top:10px"><button type="button" class="btn btn-xs" data-q="m0">เดือนนี้</button><button type="button" class="btn btn-xs" data-q="m3">3 เดือน</button><button type="button" class="btn btn-xs" data-q="m6">6 เดือน</button><button type="button" class="btn btn-xs" data-q="fy">ปีงบนี้</button></div></div>' +
+      '<div id="oBody"><div class="clay panel"><span class="spin"></span> <span class="muted">กำลังโหลด…</span></div></div>';
+    const paint = () => {
+      m.querySelectorAll('.ost-seg [data-t]').forEach((b) => { const on = b.dataset.t === st.type; b.classList.toggle('btn-g', on); b.setAttribute('aria-pressed', String(on)); });
+      $('#oFrom').value = st.from; $('#oTo').value = st.to; $('#oBasis').value = st.basis;
+    };
+    let ticket = 0;
+    const load = async () => {
+      const my = ++ticket; paint(); saveSt();
+      if (!st.from || !st.to || st.from > st.to) { $('#oBody').innerHTML = '<div class="clay panel"><p class="note r">วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด</p></div>'; return; }
+      let d; try { d = await api('officer_stats', { pay_type: st.type, from: st.from, to: st.to, basis: st.basis }); }
+      catch (e) { if (my === ticket) $('#oBody').innerHTML = '<div class="clay panel"><p class="note r">' + esc(e.message) + '</p></div>'; return; }
+      if (my !== ticket) return;
+      const t = d.totals, tName = (TYPES.find((x) => x[0] === d.pay_type) || [])[1], unit = st.metric === 'n' ? 'ฉบับ' : 'บาท';
+      const mval = (o) => o.months.map((x) => st.metric === 'n' ? x.n : x.amount);
+      const kt = (cls, lbl, v, sub, money) => '<div class="kpi clay kt ' + cls + '"><span>' + esc(lbl) + '</span><b data-count="' + Number(v || 0) + '"' + (money ? ' data-money="1" data-suffix="&nbsp;฿" data-final="' + baht2(v) + '&nbsp;฿"' : '') + '>' + (money ? baht2(v) + '&nbsp;฿' : num(v)) + '</b><small>' + sub + '</small></div>';
+      $('#oBody').innerHTML =
+        '<div class="bn4 ost-k">' + kt('k-all', 'จำนวนหมาย · ' + tName, t.n, 'ฉบับ · ' + esc(thDate(d.from)) + ' – ' + esc(thDate(d.to))) +
+          kt('k-paid', 'ยอดเงิน', t.amount, 'ตามข้อมูลในระบบ ก่อนแบ่ง 60/40', true) +
+          kt('k-done', 'ส่งแล้ว', t.n_delivered, 'ฉบับ · ' + (t.n ? pctOf(t.n_delivered, t.n) : '0%') + ' ของทั้งหมด') +
+          kt('k-free', 'เฉลี่ยต่อคน', d.officers.length ? t.amount / d.officers.length : 0, num(d.officers.length) + ' คน', true) + '</div>' +
+        '<div class="clay panel ost-box" id="oChartBox"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">6 เดือนย้อนหลัง <span class="small muted">ถึง ' + esc(ostMonthTh(d.months[5])) + '</span></h3>' +
+          '<div class="row" style="gap:6px" role="group" aria-label="แสดงค่า"><button type="button" class="btn btn-xs' + (st.metric === 'amount' ? ' btn-g' : '') + '" data-mt="amount">ยอดเงิน</button><button type="button" class="btn btn-xs' + (st.metric === 'n' ? ' btn-g' : '') + '" data-mt="n">จำนวน</button></div></div>' +
+          ostChart(d, st.metric) + '</div>' +
+        '<div class="clay panel" id="oTblBox"><h3>' + (d.scope_officer ? 'หมายของฉัน' : 'แยกรายผู้ส่งหมาย') + '</h3><div class="tbl-wrap"><table id="ostTbl"><thead><tr><th class="onm">ผู้ส่งหมาย</th>' +
+          '<th class="n" data-sort>จำนวน (ฉบับ)</th><th class="n" data-sort>ยอดเงิน (บาท)</th><th class="ost-6">6 เดือน (' + unit + ')</th></tr></thead><tbody>' +
+          (d.officers.length ? d.officers.map((o) => '<tr data-oid="' + esc(o.officer_id) + '"><td class="onm">' + oDot({ [o.officer_id]: o }, o.officer_id) + esc(o.name) + '<span class="ost-msp">' + spark6(mval(o), d.months, unit) + '<span class="tiny muted">' + esc(ostMonthTh(d.months[5])) + ' ' + (st.metric === 'n' ? num(mval(o)[5]) : baht(mval(o)[5])) + '</span></span></td>' +
+            '<td class="n" data-v="' + o.n + '"><b data-rc="' + o.n + '">' + num(o.n) + '</b><span class="tiny muted ost-sub">ส่งแล้ว <span data-rc="' + o.n_delivered + '">' + num(o.n_delivered) + '</span></span></td>' +
+            '<td class="n" data-v="' + o.amount + '"><b data-rc="' + o.amount + '" data-money="1" data-final="' + baht2(o.amount) + '">' + baht2(o.amount) + '</b></td>' +
+            '<td class="ost-6">' + sparkRow(mval(o), d.months, unit) + '</td></tr>').join('')
+            : '<tr><td colspan="4" class="muted small">ไม่มีข้อมูลในช่วงนี้</td></tr>') +
+          '</tbody><tfoot><tr><td><b>รวม</b></td><td class="n"><b data-rc="' + t.n + '">' + num(t.n) + '</b><span class="tiny muted ost-sub">ส่งแล้ว <span data-rc="' + t.n_delivered + '">' + num(t.n_delivered) + '</span></span></td><td class="n"><b data-rc="' + t.amount + '" data-money="1" data-final="' + baht2(t.amount) + '">' + baht2(t.amount) + '</b></td><td class="ost-6">' + sparkRow(mval(t), d.months, unit) + '</td></tr></tfoot></table></div>' +
+          '<p class="tiny muted" style="margin:8px 2px 0">กดลูกศร ▲ เรียงจากมากไปน้อย · ▼ จากน้อยไปมาก · นับตาม' + (d.basis === 'issued' ? 'วันที่จ่ายหมาย' : 'วันที่ส่งหมาย') +
+            ' · ยอดเงินหมายฟรีที่ยังไม่เบิกเป็นยอดประมาณการก่อนการเบิก · หมายที่ปิด "ไม่เบิก" หรือพ้นปีงบนับจำนวนแต่ไม่นับยอด</p></div>';
+      const tbl = $('#ostTbl'); if (st.sc !== undefined) { tbl.dataset.sc = st.sc; tbl.dataset.sd = st.sd; } else { tbl.dataset.sc = '2'; tbl.dataset.sd = 'desc'; }
+      sortable(tbl);
+      tbl.querySelectorAll('.srt button').forEach((b) => b.addEventListener('click', () => { st.sc = tbl.dataset.sc; st.sd = tbl.dataset.sd; saveSt(); }));
+      m.querySelectorAll('[data-mt]').forEach((b) => b.addEventListener('click', () => { st.metric = b.dataset.mt; load(); }));
+      glueThai($('#oBody'));
+      S.ostLast = { d: d, metric: st.metric }; $('#oPrint').disabled = false; $('#oPng').disabled = false;
+      // ภาพเคลื่อนไหว: การ์ดเล่นทันที · กราฟและตารางเล่นเมื่อเลื่อนมาถึง (กด/เลื่อนเมาส์ผ่านเพื่อเล่นซ้ำ)
+      m.querySelectorAll('#oBody .kpi').forEach((k) => replayFx(k));
+      const playIn = (el) => { if ('IntersectionObserver' in window) { const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { io.disconnect(); replayFx(el); } }), { threshold: 0.15 }); io.observe(el); } else replayFx(el); };
+      playIn($('#oChartBox')); playIn($('#oTblBox'));
+    };
+    const order = () => { const L = S.ostLast; const ids = Array.from(m.querySelectorAll('#ostTbl tbody tr')).map((r) => r.dataset.oid); const by = {}; L.d.officers.forEach((o) => { by[o.officer_id] = o; }); return ids.map((id) => by[id]).filter(Boolean); };
+    $('#oPrint').addEventListener('click', () => { const L = S.ostLast; if (L) printOstats(L.d, L.metric, order()); });
+    $('#oPng').addEventListener('click', async () => { const L = S.ostLast; if (!L) return; const b = $('#oPng'); b.disabled = true; try { await pngOstats(L.d, L.metric, order()); } catch (e) { toast(e.message || 'สร้างรูปไม่สำเร็จ'); } b.disabled = false; });
+    m.querySelectorAll('.ost-seg [data-t]').forEach((b) => b.addEventListener('click', () => { st.type = b.dataset.t; load(); }));
+    $('#oFrom').addEventListener('change', (e) => { st.from = e.target.value; load(); });
+    $('#oTo').addEventListener('change', (e) => { st.to = e.target.value; load(); });
+    $('#oBasis').addEventListener('change', (e) => { st.basis = e.target.value; load(); });
+    m.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {
+      const td2 = ostToday(), q = b.dataset.q;
+      st.to = td2; st.from = q === 'fy' ? ostFyStart(td2) : ostShift(td2, q === 'm0' ? 0 : -(Number(q.slice(1)) - 1)); load();
+    }));
+    await load();
+  };
+
   RENDER.search = (m) => {
     m.innerHTML = top('ค้นหาหมาย') +
       '<form class="clay panel row" id="sf"><label class="sr" for="sq">เลขคดีหรือเลขหมาย</label>' +
@@ -1642,15 +1853,16 @@
     S.payoutSub = 'list';
     if (/^new:/.test(sub)) return payoutNew(m, sub.split(':')[1], sub.split(':')[2]);
     if (sub === 'backlog') return payoutBacklog(m);
+    if (sub === 'claim') return payoutClaim(m);
     if (/^round:/.test(sub)) return payoutRound(m, sub.slice(6));
     const d = await api('payout_list');
     const names = d.officers, bl = d.backlog;
     const T = bl.reduce((a, b) => ({ pn: a.pn + b.paid_n, p: a.p + b.paid, bn: a.bn + b.budget_n, b: a.b + b.budget, h: a.h + b.held_n }), { pn: 0, p: 0, bn: 0, b: 0, h: 0 });
     const bk = d.blocked || {}, lf = d.last_free;
-    m.innerHTML = top('รอบเบิก 60/40', d.can_create ? '<div class="row" style="gap:8px"><button type="button" class="btn btn-g" id="pNewF">เตรียมเบิกหมายฟรี</button><button type="button" class="btn btn-g" id="pNewP">+ รอบหมายเงิน</button></div>' : '') +
+    m.innerHTML = top('รอบเบิก 60/40', d.can_create ? '<div class="row" style="gap:8px"><button type="button" class="btn btn-g" id="pNewC">+ ตั้งรอบตามใบเบิก</button><button type="button" class="btn" id="pNewF">เตรียมเบิกหมายฟรี</button><button type="button" class="btn" id="pNewP">+ รอบหมายเงิน</button></div>' : '') +
       '<div class="clay panel pinfo">' +
         '<div class="pinfo-r"><span class="pchip pf">งบประมาณ</span><div><b>' + (lf ? 'เบิกหมายฟรีล่าสุด ' + esc(thDate(lf.pay_date)) : 'ยังไม่เคยเบิกหมายฟรีในระบบ') + '</b>' +
-          (lf ? '<span class="small muted"> · ลงข้อมูลถึง ' + esc(thDate(lf.cutoff)) + ' · ' + baht2(lf.total) + '&nbsp;฿</span>' : '') +
+          (lf ? '<span class="small muted">' + (lf.cutoff ? ' · ลงข้อมูลถึง ' + esc(thDate(lf.cutoff)) : '') + ' · ' + baht2(lf.total) + '&nbsp;฿</span>' : '') +
           '<div class="tiny muted">ราคาหมายฟรีตามบัญชีศาล: ' + (d.free18_at ? 'นำเข้าล่าสุด ' + esc(thDate(d.free18_at, true)) : '<span class="flag-r">ยังไม่นำเข้า — รอบหมายฟรีจะใช้ยอดที่ระบบคำนวณ</span>') + ' · ที่มา ' + esc(d.sources.FREE18) + '</div></div></div>' +
         '<div class="pinfo-r"><span class="pchip pm">นอกงบฯ</span><div><b>มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ</b>' +
           (d.pending_dates.length ? '<div class="pdates">' + d.pending_dates.map((x) => '<button type="button" class="btn btn-sm pdate" data-pd="' + esc(x.pay_date) + '"' + (d.can_create ? '' : ' disabled') + '>' + esc(thDate(x.pay_date)) + ' · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + '&nbsp;฿' + (x.none ? ' <span class="flag-r">รอยืนยันการจับคู่ ' + num(x.none) + '</span>' : '') + '</button>').join('') + '</div>'
@@ -1665,11 +1877,12 @@
       '</tbody><tfoot><tr><td><b>รวม</b></td><td class="n"><b>' + num(T.pn) + '</b></td><td class="n"><b>' + baht2(T.p) + '</b></td><td class="n"><b>' + num(T.bn) + '</b></td><td class="n"><b>' + baht2(T.b) + '</b></td><td class="n"><b>' + num(T.h) + '</b></td><td></td></tr></tfoot></table></div>' +
       '<p class="tiny muted" style="margin:8px 2px 0">หมายเงิน = ส่งแล้วแต่ยังไม่อยู่ในบัญชีจ่ายเงิน · ยังไม่เข้าเกณฑ์: รอผลการส่ง ' + num(bk.wait || 0) + ' · รอตรวจ ' + num(bk.review || 0) + ' ฉบับ' + (d.closed_n ? ' · ปิด "ไม่เบิก" แล้ว ' + num(d.closed_n) + ' เรื่อง' : '') + '</p></div>' +
       '<div class="clay panel"><h3>รอบเบิกที่ผ่านมา</h3>' + roundPaySummaryHtml(d.rounds) + (d.rounds.length ? '<div class="tbl-wrap"><table><thead><tr><th>วันที่จ่าย</th><th>ประเภท</th><th class="n">รายการ</th><th class="n">ยังไม่เสนอ</th><th class="n">ยอดรวม</th><th class="n">เศษยกมา</th><th class="n">คนนั่ง</th><th class="n">ได้คนละ</th><th class="n">เศษยกไป</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
-        d.rounds.map((r) => '<tr' + (r.status === 'CANCELLED' ? ' class="muted"' : '') + '><td>' + esc(thDate(r.pay_date)) + '</td><td>' + rChip(r.round_type) +
+        d.rounds.map((r) => '<tr' + (r.status === 'CANCELLED' ? ' class="muted"' : '') + '><td>' + esc(thDate(r.pay_date)) + '</td><td>' + rChip(r.round_type) + (r.from_claim ? ' <span class="pchip pc">ตามใบเบิก</span>' : '') +
           '</td><td class="n">' + num(r.n_items) + '</td><td class="n">' + num(r.n_excluded) + '</td><td class="n"><b>' + baht2(r.total) + '</b></td><td class="n">' + baht2(r.carry_in) + '</td><td class="n">' + num(r.seats) + '</td><td class="n">' + baht2(r.per_seat) + '</td><td class="n">' + baht2(r.carry_out) +
           '</td><td>' + roundStatusHtml(r) + '</td><td><button type="button" class="btn btn-sm" data-r="' + esc(r.round_id) + '">ดู / พิมพ์</button></td></tr>').join('') +
         '</tbody></table></div>' : '<p class="small muted" style="margin:0">ยังไม่มีรอบเบิก</p>') +
       '<p class="tiny muted" style="margin:8px 2px 0">1 รอบ = 1 ประเภท 1 วันที่จ่าย · วันเดียวกันตั้งรอบหมายฟรีก่อน แล้วเศษยกไปรอบหมายเงิน · เศษยกต่อเนื่องตามลำดับวันที่ (ตั้งรอบย้อนหลังให้เรียงจากเก่าไปใหม่)</p></div>';
+    if ($('#pNewC')) $('#pNewC').addEventListener('click', () => { S.payoutSub = 'claim'; go('payout'); });
     if ($('#pNewF')) $('#pNewF').addEventListener('click', () => { S.payoutSub = 'new:FREE'; go('payout'); });
     if ($('#pNewP')) $('#pNewP').addEventListener('click', () => { S.payoutSub = 'new:PAID'; go('payout'); });
     if ($('#pBl')) $('#pBl').addEventListener('click', () => { S.payoutSub = 'backlog'; go('payout'); });
@@ -1681,6 +1894,116 @@
     m.querySelectorAll('.pdate').forEach((b) => b.addEventListener('click', () => { S.payoutSub = 'new:PAID:' + b.dataset.pd; go('payout'); }));
     m.querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => { S.payoutSub = 'round:' + b.dataset.r; go('payout'); }));
   };
+
+  /* ---------- 0.7.26 รอบ 60/40 ตามใบเบิก: กรอกยอดรายคนจากใบเบิกจริง → แบ่ง 60:40 ÷ N → สะสมเป็นรอบ ---------- */
+  const CLAIM_DRAFT_KEY = 'np_claim_draft_v1';
+  const claimDraftGet = () => { try { return JSON.parse(localStorage.getItem(CLAIM_DRAFT_KEY) || 'null'); } catch (e) { return null; } };
+  const claimDraftSet = (v) => { try { if (v) localStorage.setItem(CLAIM_DRAFT_KEY, JSON.stringify(v)); else localStorage.removeItem(CLAIM_DRAFT_KEY); } catch (e) { /* ไม่มีที่เก็บ ใช้ต่อได้ */ } };
+  /** บาท → สตางค์ แบบเข้มงวด (ตรงกับ claimCents_ ฝั่งเซิร์ฟเวอร์) · ว่าง = 0 · ผิด = null */
+  function claimCents(v) {
+    const s = String(v == null ? '' : v).replace(/,/g, '').trim();
+    if (s === '') return 0;
+    const mm = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(s);
+    if (!mm) return null;
+    const c = Number(mm[1]) * 100 + Number(((mm[2] || '') + '00').slice(0, 2));
+    return c > 1000000000 ? null : c;
+  }
+  async function payoutClaim(m) {
+    const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+    const st = Object.assign({ type: 'FREE', date: today, ref: '', seats: '', amt: {}, n: {} }, claimDraftGet() || {});
+    let init = null;
+    m.innerHTML = top('ตั้งรอบ 60/40 ตามใบเบิก', '<button type="button" class="btn btn-sm" id="pBack">← กลับ</button>') +
+      '<div class="clay panel"><div class="pform">' +
+        '<label>ประเภทใบเบิก<select class="inp" id="cType"><option value="FREE">หมายฟรี (เงินงบประมาณ)</option><option value="PAID">หมายเงิน (นอกงบประมาณ)</option></select></label>' +
+        '<label>วันที่จ่าย<input type="date" class="inp" id="cDate" required></label>' +
+        '<label>คนนั่งงาน (N)<input type="number" class="inp" id="cSeats" min="1" max="1000" step="1" inputmode="numeric" required></label>' +
+        '<label>เลขที่ / อ้างอิงใบเบิก<input class="inp" id="cRef" maxlength="100" placeholder="ไม่บังคับ"></label>' +
+      '</div><div id="cInfo" class="small" style="margin-top:10px"></div></div>' +
+      '<div class="clay panel cimp"><div class="row" style="justify-content:space-between;align-items:center;gap:10px"><div><b>นำเข้าแบบ 25 (บัญชีค่าใช้จ่ายส่งหมาย)</b> <span class="pchip ph">เร็ว ๆ นี้</span>' +
+        '<div class="tiny muted">เมื่อพิสูจน์ไฟล์แล้ว ปุ่มนี้จะเติมยอดและจำนวนเรื่องรายคนให้เอง และผูกเลขหมายที่เบิก · ตอนนี้กรอกยอดจากใบเบิกด้านล่าง</div></div>' +
+        '<button type="button" class="btn btn-sm" disabled>นำเข้าแบบ 25</button></div></div>' +
+      '<div class="clay panel"><h3>ยอดรายคนตามใบเบิก</h3><div class="tbl-wrap"><table class="ctbl"><thead><tr><th class="onm">ผู้ส่งหมาย</th><th class="n">จำนวนเรื่อง</th><th class="n">ยอดใบเบิก (บาท)</th></tr></thead>' +
+        '<tbody id="cRows"><tr><td colspan="3" class="muted small">กำลังโหลด…</td></tr></tbody><tfoot><tr><td><b>รวม</b></td><td class="n"><b id="cSumN">0</b></td><td class="n"><b id="cSum">0.00</b></td></tr></tfoot></table></div>' +
+        '<p class="tiny muted" style="margin:8px 2px 0">ยอดในใบเบิกเป็นยอดจริงของรอบนี้ · คนที่ไม่มีในใบเบิกเว้นว่าง</p></div>' +
+      '<div class="clay panel"><h3>ผลแบ่ง 60:40</h3><div id="cSplit"></div>' +
+        '<div class="row" style="gap:8px;margin-top:12px"><button type="button" class="btn btn-g" id="cGo">ยืนยันตั้งรอบ</button><button type="button" class="btn btn-sm" id="cClear">ล้างค่าที่กรอก</button></div></div>';
+    $('#pBack').addEventListener('click', () => { S.payoutSub = 'list'; go('payout'); });
+    $('#cType').value = st.type; $('#cDate').value = st.date; $('#cSeats').value = st.seats; $('#cRef').value = st.ref;
+    const save = () => claimDraftSet({ type: st.type, date: st.date, ref: st.ref, seats: st.seats, amt: st.amt, n: st.n });
+    const read = () => {
+      let bad = 0; const lines = [];
+      m.querySelectorAll('#cRows tr[data-o]').forEach((tr) => {
+        const id = tr.dataset.o, ia = $('.camt', tr), inn = $('.cn', tr);
+        const c = claimCents(ia.value), nv = String(inn.value || '').trim(), n = nv === '' ? 0 : Number(nv);
+        const okN = Number.isInteger(n) && n >= 0 && n <= 100000;
+        ia.classList.toggle('bad', c === null || (c === 0 && n > 0)); inn.classList.toggle('bad', !okN);
+        if (c === null || !okN || (c === 0 && n > 0)) { bad++; return; }
+        if (c > 0) lines.push({ officer_id: id, c: c, n: n });
+      });
+      return { lines: lines, bad: bad };
+    };
+    const calc = () => {
+      if (!init) return null;
+      const r = read(), free = st.type === 'FREE';
+      const sl = r.lines.map((l) => ({ officer_id: l.officer_id, paid_c: free ? 0 : l.c, budget_c: free ? l.c : 0, n_paid: free ? 0 : l.n, n_budget: free ? l.n : 0 }));
+      const seats = Number(st.seats);
+      const sp = splitPreview(sl, Number.isInteger(seats) && seats >= 1 ? seats : 0, init.policy, init.carry_in_c);
+      $('#cSum').textContent = cb(sp.total_c); $('#cSumN').textContent = num(r.lines.reduce((a, l) => a + l.n, 0));
+      $('#cSplit').innerHTML = (sp.seats ? '' : '<div class="note">กรอกจำนวนคนนั่งงาน (N) เพื่อคำนวณคนละเท่าใด</div>') + splitTable(sp, init.names, { policyTh: init.policy_th, type: st.type }) +
+        (r.bad ? '<div class="note r" style="margin-top:8px">มีช่องที่กรอกไม่ถูกต้อง ' + num(r.bad) + ' ช่อง (ตัวเลข ทศนิยมไม่เกิน 2 ตำแหน่ง · มีจำนวนเรื่องต้องมียอด)</div>' : '');
+      return { sp: sp, bad: r.bad, lines: r.lines };
+    };
+    const load = async () => {
+      $('#cInfo').innerHTML = '<span class="muted">กำลังโหลด…</span>';
+      try { init = await api('claim_init', { round_type: st.type, pay_date: st.date }); } catch (e) { $('#cInfo').innerHTML = '<span class="flag-r">' + esc(e.message) + '</span>'; return; }
+      if (st.seats === '' && init.seats) { st.seats = String(init.seats); $('#cSeats').value = st.seats; }
+      const cf = init.carry_from;
+      $('#cInfo').innerHTML = '<div>เศษยกมา <b>' + cb(init.carry_in_c) + ' ฿</b>' + (cf ? ' <span class="muted">จากรอบ ' + esc(cf.type === 'FREE' ? 'หมายฟรี' : 'หมายเงิน') + ' ' + esc(thDate(cf.pay_date)) + '</span>' : ' <span class="muted">(ยอดตั้งต้น)</span>') + ' · วิธีปัด ' + esc(init.policy_th) + '</div>' +
+        (init.order_ok ? '' : '<div class="flag-r">วันที่นี้อยู่ก่อนรอบล่าสุด (' + esc(String(init.last_key).replace('|1', ' หมายฟรี').replace('|2', ' หมายเงิน')) + ') — ตั้งรอบได้เฉพาะต่อท้ายรอบล่าสุด</div>') +
+        (init.same_date.length ? '<div class="flag-up">มีรอบ' + (st.type === 'FREE' ? 'หมายฟรี' : 'หมายเงิน') + 'วันที่นี้แล้ว ' + num(init.same_date.length) + ' รอบ (' + init.same_date.map((x) => baht2(x.total) + ' ฿').join(', ') + ') — ระวังตั้งซ้ำ</div>' : '');
+      $('#cRows').innerHTML = init.officers.map((o) => '<tr data-o="' + esc(o.officer_id) + '"><td class="onm">' + oDot(init.names, o.officer_id) + esc(o.name || o.officer_id) + '</td>' +
+        '<td class="n"><input class="inp cn" inputmode="numeric" maxlength="6" value="' + esc(st.n[o.officer_id] || '') + '" aria-label="จำนวนเรื่อง ' + esc(o.name) + '"></td>' +
+        '<td class="n"><input class="inp camt" inputmode="decimal" maxlength="14" value="' + esc(st.amt[o.officer_id] || '') + '" aria-label="ยอดตามใบเบิก ' + esc(o.name) + '" placeholder="0.00"></td></tr>').join('');
+      m.querySelectorAll('#cRows input').forEach((inp) => inp.addEventListener('input', () => {
+        const id = inp.closest('tr').dataset.o; (inp.classList.contains('camt') ? st.amt : st.n)[id] = inp.value; save(); calc();
+      }));
+      calc();
+    };
+    $('#cType').addEventListener('change', (e) => { st.type = e.target.value; save(); load(); });
+    $('#cDate').addEventListener('change', (e) => { st.date = e.target.value || today; save(); load(); });
+    $('#cSeats').addEventListener('input', (e) => { st.seats = e.target.value; save(); calc(); });
+    $('#cRef').addEventListener('input', (e) => { st.ref = e.target.value; save(); });
+    $('#cClear').addEventListener('click', async () => {
+      if (!(await askBox('ล้างยอดและจำนวนเรื่องที่กรอกทั้งหมด?'))) return;
+      st.amt = {}; st.n = {}; st.ref = ''; $('#cRef').value = ''; save(); load();
+    });
+    $('#cGo').addEventListener('click', async () => {
+      const r = calc(); if (!r) return;
+      const seats = Number(st.seats);
+      if (!(Number.isInteger(seats) && seats >= 1 && seats <= 1000)) { toast('กรอกจำนวนคนนั่งงาน (N) 1–1000 คน'); $('#cSeats').focus(); return; }
+      if (r.bad) { toast('แก้ช่องที่กรอกไม่ถูกต้องก่อน'); return; }
+      if (!r.lines.length) { toast('ยังไม่ได้กรอกยอดตามใบเบิก'); return; }
+      if (!init.order_ok) { toast('วันที่นี้อยู่ก่อนรอบล่าสุด — ตั้งรอบไม่ได้'); return; }
+      const sp = r.sp, tname = st.type === 'FREE' ? 'หมายฟรี' : 'หมายเงิน';
+      const ok = await askBox('ยืนยันตั้งรอบ ' + tname + ' ตามใบเบิก วันที่ ' + thDate(st.date) + '\n• ผู้ส่ง ' + num(r.lines.length) + ' คน ยอดรวม ' + cb(sp.total_c) + ' บาท' +
+        '\n• ผู้ส่ง 60% ' + cb(sp.c60) + ' · กองกลาง 40% ' + cb(sp.pool40_c) + ' + เศษยกมา ' + cb(sp.carry_in_c) +
+        '\n• คนนั่งงาน ' + num(seats) + ' คน ได้คนละ ' + cb(sp.per_seat_c) + ' บาท · เศษยกไป ' + cb(sp.carry_out_c));
+      if (!ok) return;
+      const body = { round_type: st.type, pay_date: st.date, seats: seats, claim_ref: st.ref, expect_total_c: sp.total_c, expect_carry_c: init.carry_in_c,
+                     lines: r.lines.map((l) => ({ officer_id: l.officer_id, amount: (l.c / 100).toFixed(2), n: l.n })) };
+      if (init.same_date.length) {
+        if (!(await askBox('มีรอบ' + tname + 'วันที่ ' + thDate(st.date) + ' อยู่แล้ว ' + num(init.same_date.length) + ' รอบ\nยืนยันว่าเป็นใบเบิกคนละชุด (ไม่ใช่ตั้งซ้ำ)?'))) return;
+        body.allow_same_date = true;
+      }
+      const b = $('#cGo'); b.disabled = true;
+      try {
+        const x = await api('claim_confirm', body);
+        claimDraftSet(null); toast('ตั้งรอบแล้ว · คนนั่งงานได้คนละ ' + baht2(x.round.per_seat) + ' บาท');
+        S.payoutSub = 'round:' + x.round.round_id; go('payout');
+      } catch (e) { toast(e.message); b.disabled = false; if (/STALE|เศษยกมา/.test(String(e.code || '') + e.message)) load(); }
+    });
+    load();
+  }
 
   async function payoutNew(m, type, pd) {
     const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
@@ -1931,17 +2254,18 @@
       (it.reason && it.reason !== 'ยังไม่เสนอเบิกจ่าย' ? '<br><span class="tiny ' + (/ไม่พบ|▼/.test(it.reason) ? 'flag-r' : 'flag-up') + '">' + esc(String(it.reason).replace(/^ยังไม่เสนอเบิกจ่าย · /, '')) + '</span>' : '') +
       '</td><td>' + esc(thDate(it.delivered_date)) + '</td><td class="n">' + baht2(it.amount) + '</td></tr>').join('');
     m.innerHTML = top('รอบ' + (RTYPE_TH[r.round_type] || '') + ' วันที่ ' + thDate(r.pay_date), '<div class="row" style="gap:8px"><button type="button" class="btn btn-sm" id="pBack">← รายการรอบ</button><button type="button" class="btn btn-g btn-sm" id="pPrint">พิมพ์ใบแบ่งยอด 60:40</button>' +
-      (free && inc.length ? '<button type="button" class="btn btn-sm" id="pClaim">พิมพ์บัญชีหมายฟรีที่เบิก</button>' : '') +
+      (free && inc.length && !r.from_claim ? '<button type="button" class="btn btn-sm" id="pClaim">พิมพ์บัญชีหมายฟรีที่เบิก</button>' : '') +
       (d.can_cancel ? '<button type="button" class="btn btn-sm" id="pCancel">ยกเลิกรอบ</button>' : '') +
       (d.can_cancel_paid ? '<button type="button" class="btn btn-sm btn-danger" id="pCancelPaid" title="ใช้เมื่อบันทึกว่าจ่ายแล้วแต่ความจริงยังไม่ได้จ่าย">ยกเลิกรอบ (บันทึกจ่ายผิด)</button>' : '') + '</div>') +
       (r.payment_status === 'PAID' ? '<div class="note g">จ่ายจริง '+esc(thDate(r.payment_date))+' · หลักฐาน '+esc(r.payment_ref)+'</div>' : '<div class="note">อยู่ในรอบยืนยันแล้ว · รอบเก่าคงยอดเดิม · ยังไม่บันทึกหลักฐานจ่ายจริงในระบบ (ถ้าจ่ายแล้วให้กด “บันทึกหลักฐานจ่ายจริง”)</div>') +
+      (r.from_claim ? '<div class="note">รอบนี้ตั้งจากยอดรายคนตามใบเบิก (กรอกยอด) · ยังไม่ผูกเลขหมายรายฉบับ — จะผูกเมื่อนำเข้าแบบ 25</div>' : '') +
       (r.status === 'CANCELLED' ? '<div class="note r">รอบนี้ถูกยกเลิกโดย ' + esc(r.cancelled_by) + ' เมื่อ ' + esc(thDate(r.cancelled_at, true)) + ' · เหตุผล: ' + esc(r.cancel_reason) + '</div>' : '') +
       '<div class="bn4"><div class="kpi clay kt k-all"><span>ยอดรวม' + esc(free ? 'หมายฟรี' : 'หมายเงิน') + '</span><b>' + baht2(r.total) + '&nbsp;฿</b><small>' + num(d.lines.length) + ' คน · ' + num(inc.length) + ' เรื่อง</small></div>' +
       '<div class="kpi clay kt k-paid"><span>ผู้ส่งหมาย 60%</span><b>' + baht2(r.courier60) + '&nbsp;฿</b><small>กองกลาง 40% ' + baht2(r.pool40) + '</small></div>' +
       '<div class="kpi clay kt k-free"><span>กองกลาง + เศษยกมา</span><b>' + baht2(r.pool_total) + '&nbsp;฿</b><small>เศษยกมา ' + baht2(r.carry_in) + '</small></div>' +
       '<div class="kpi clay kt k-done"><span>คนนั่งงาน ' + num(r.seats) + ' คน ได้คนละ</span><b>' + baht2(r.per_seat) + '&nbsp;฿</b><small>เศษยกไป ' + baht2(r.carry_out) + '</small></div></div>' +
       '<div class="clay panel"><h3>ใบแบ่งยอด 60:40 รายผู้ส่ง</h3>' + splitTable(sp, names, { policyTh: r.policy_th, type: r.round_type }) +
-      '<p class="tiny muted" style="margin:6px 2px 0">' + (free ? 'หมายที่ลงข้อมูลถึง ' + esc(thDate(r.cutoff_date)) + ' · ' : '') + 'ที่มา: ' + esc(r.source_label || '—') + ' · บันทึกโดย ' + esc(r.created_by) + ' เมื่อ ' + esc(thDate(r.created_at, true)) +
+      '<p class="tiny muted" style="margin:6px 2px 0">' + (free && r.cutoff_date ? 'หมายที่ลงข้อมูลถึง ' + esc(thDate(r.cutoff_date)) + ' · ' : '') + 'ที่มา: ' + esc(r.source_label || '—') + ' · บันทึกโดย ' + esc(r.created_by) + ' เมื่อ ' + esc(thDate(r.created_at, true)) +
         (r.carry_note ? ' · ' + esc(r.carry_note) : '') + (r.note ? ' · หมายเหตุ: ' + esc(r.note) : '') + '</p></div>' +
       (d.items.length ? '<div class="clay panel"><h3>รายการที่เบิกในรอบนี้ (' + num(inc.length) + ')</h3><div class="tbl-wrap"><table><thead><tr><th class="onm">ผู้ส่งหมาย</th><th>เลขคดี</th><th>วันที่</th><th class="n">บาท</th></tr></thead><tbody>' + itemRows(inc) + '</tbody></table></div></div>' +
         (exc.length ? '<div class="clay panel"><h3>ยังไม่เสนอเบิกจ่าย (' + num(exc.length) + ') — ยกไปรอบหน้า</h3><div class="tbl-wrap"><table><thead><tr><th class="onm">ผู้ส่งหมาย</th><th>เลขคดี</th><th>วันที่</th><th class="n">บาท</th></tr></thead><tbody>' + itemRows(exc) + '</tbody></table></div></div>' : '') : '');
