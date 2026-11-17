@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.18';
+  const UI_VERSION = '0.7.19';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -62,15 +62,29 @@
   /** <b data-count> นับจาก 0 ถึงค่าจริงใน 0.6 วินาที (ค่าเงินมีทศนิยมได้ 2 ตำแหน่ง) */
   function countUp(root) {
     if (reduceMotion()) return;
-    (root || document).querySelectorAll('[data-count]').forEach((el) => {
-      const end = Number(el.dataset.count) || 0, money = el.dataset.money === '1', suffix = el.dataset.suffix || '';
-      if (!end) return;
-      const fmt = (v) => (money ? v.toLocaleString('th-TH', { maximumFractionDigits: v === end ? 2 : 0 }) : Math.round(v).toLocaleString('th-TH')) + suffix;
-      const t0 = performance.now();
-      const step = (t) => { const p = Math.min(1, (t - t0) / 600); el.textContent = fmt(p < 1 ? end * (1 - Math.pow(1 - p, 3)) : end); if (p < 1) requestAnimationFrame(step); };
-      el.textContent = fmt(0); requestAnimationFrame(step);
-    });
+    (root || document).querySelectorAll('[data-count]').forEach((el) => animCount(el, Number(el.dataset.count)));
   }
+  /** นับเลขหนึ่งช่องจาก 0 → ค่าจริง (เรียกซ้ำระหว่างวิ่งได้ ไม่ซ้อน · จบที่ค่าจริงเสมอ) */
+  function animCount(el, end, ms) {
+    end = Number(end) || 0;
+    const money = el.dataset.money === '1', suffix = el.dataset.suffix || '';
+    if (!end) return;
+    const fmt = (v) => (money ? v.toLocaleString('th-TH', { minimumFractionDigits: v === end && end % 1 ? 2 : 0, maximumFractionDigits: v === end ? 2 : 0 }) : Math.round(v).toLocaleString('th-TH')) + suffix;
+    const id = (el._cnt || 0) + 1; el._cnt = id;
+    const t0 = performance.now(), dur = ms || 600;
+    const step = (t) => { if (el._cnt !== id) return; const p = Math.min(1, (t - t0) / dur); el.textContent = fmt(p < 1 ? end * (1 - Math.pow(1 - p, 3)) : end); if (p < 1) requestAnimationFrame(step); };
+    el.textContent = fmt(0); requestAnimationFrame(step);
+  }
+  /** 0.7.19 เลื่อนเมาส์ผ่าน/กด: การ์ดตัวเลข และแถวผู้ส่งหมาย → ตัวเลขวิ่งจาก 0 · แถบสถานะค่อย ๆ เลื่อนจากขวาไปซ้าย */
+  function replayFx(box) {
+    if (!box || reduceMotion()) return;
+    const now = Date.now(); if (box._fxAt && now - box._fxAt < 700) return; box._fxAt = now;
+    box.querySelectorAll('[data-count],[data-rc]').forEach((el) => animCount(el, el.dataset.count !== undefined ? el.dataset.count : el.dataset.rc));
+    box.querySelectorAll('.stbar-in').forEach((b) => { b.classList.remove('sweep'); void b.offsetWidth; b.classList.add('sweep'); });
+  }
+  const FX_SEL = '.kpi, #offTbl tbody tr';
+  document.addEventListener('mouseover', (e) => { const t = e.target.closest && e.target.closest(FX_SEL); if (t && !(e.relatedTarget && t.contains(e.relatedTarget))) replayFx(t); });
+  document.addEventListener('click', (e) => { const t = e.target.closest && e.target.closest(FX_SEL); if (t) replayFx(t); });
   /** สีสถานะเดียวกันทุกหน้าจอ: เทา รอผล · ส้ม พร้อมเบิก/รอวันจ่าย · ฟ้า เบิกแล้วรอจ่าย · เขียว จ่ายแล้ว · แดง รอตรวจ */
   const ST = [
     { k: 'wait', th: 'ยังไม่มีข้อมูลผลส่ง', c: '#B4B2A9' }, { k: 'ready', th: 'มีผลส่งแล้ว รอตรวจเข้ารอบ', c: '#EF9F27' },
@@ -80,8 +94,8 @@
     const tot = ST.reduce((a, x) => a + (Number(m[x.k]) || 0), 0);
     if (!tot) return '<div class="stbar" title="ยังไม่มียอดเงิน"></div>';
     const tip = ST.filter((x) => m[x.k]).map((x) => x.th + ' ' + Number(m[x.k]).toLocaleString('th-TH') + ' ฿').join('\n');
-    return '<div class="stbar" title="' + esc(tip) + '" role="img" aria-label="' + esc(tip.replace(/\n/g, ' · ')) + '">' +
-      ST.filter((x) => m[x.k]).map((x) => '<i style="width:' + (m[x.k] / tot * 100).toFixed(2) + '%;background:' + x.c + '"></i>').join('') + '</div>';
+    return '<div class="stbar" title="' + esc(tip) + '" role="img" aria-label="' + esc(tip.replace(/\n/g, ' · ')) + '"><span class="stbar-in">' +
+      ST.filter((x) => m[x.k]).map((x) => '<i style="width:' + (m[x.k] / tot * 100).toFixed(2) + '%;background:' + x.c + '"></i>').join('') + '</span></div>';
   }
   function spark(w) {
     const a = (w || []).map(Number), mx = Math.max(1, ...a);
@@ -670,9 +684,9 @@
     if (!L.length) return '<tr><td colspan="6" class="muted small">ยังไม่มีผู้ส่งที่มียอดในสถานะนี้</td></tr>';
     const lbl = sel ? ST_BY[sel].th : 'พร้อมเบิก', key = sel || 'ready';
     return L.map((o) => '<tr><td class="onm"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + esc(o.color) + ';margin-right:8px"></span>' + esc(o.name) + '</td>' +
-      '<td class="n">' + num(o.paid_issued+o.paid_delivered) + '</td><td class="n">' + num(o.free_issued+o.free_delivered) +
-      '</td><td class="n"><b>' + num(o.paid_issued + o.paid_delivered + o.free_issued + o.free_delivered) + '</b></td>' +
-      '<td>' + spark(o.weeks) + '</td><td data-v="' + Number((o.money || {})[key] || 0) + '">' + stBar(o.money || {}) + '<span class="tiny muted">' + esc(lbl) + ' ' + baht((o.money || {})[key]) + ' ฿</span></td></tr>').join('');
+      '<td class="n"><span data-rc="' + (o.paid_issued + o.paid_delivered) + '">' + num(o.paid_issued+o.paid_delivered) + '</span></td><td class="n"><span data-rc="' + (o.free_issued + o.free_delivered) + '">' + num(o.free_issued+o.free_delivered) +
+      '</span></td><td class="n"><b data-rc="' + (o.paid_issued + o.paid_delivered + o.free_issued + o.free_delivered) + '">' + num(o.paid_issued + o.paid_delivered + o.free_issued + o.free_delivered) + '</b></td>' +
+      '<td>' + spark(o.weeks) + '</td><td data-v="' + Number((o.money || {})[key] || 0) + '">' + stBar(o.money || {}) + '<span class="tiny muted">' + esc(lbl) + ' <span data-rc="' + Number((o.money || {})[key] || 0) + '" data-money="1">' + baht((o.money || {})[key]) + '</span> ฿</span></td></tr>').join('');
   }
 
   /* ---------------------------------------------------------------- ค้นหาหมาย */
