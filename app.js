@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.32';
+  const UI_VERSION = '0.7.34';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -1434,7 +1434,7 @@
             throw new Error(!totOk ? 'ยอดท้ายไฟล์ไม่ตรงผลรวมแถว' : !nOk ? 'จำนวนท้ายไฟล์ไม่ตรง' : p.badDate ? 'อ่านวันที่จ่ายไม่ได้ ' + p.badDate + ' แถว' : p.grpBad.length ? 'ยอดรายคนไม่ตรงหัวกลุ่ม' : p.wrongKind ? 'ชนิดไฟล์ไม่ตรงหัวรายงาน' : 'ไม่มีแถวข้อมูล');
           const r = await api('ledger_import', { kind: x.kind, rows: p.rows, file: x.file, sheet: x.sheet, period_from: p.period_from, period_to: p.period_to });
           x.preview = r;
-          x.body = { kind: x.kind, rows: p.rows, file: x.file, sheet: x.sheet, commit: true, period_from: p.period_from, period_to: p.period_to, preview_token: r.preview_token };
+          x.body = { kind: x.kind, rows: p.rows, file: x.file, sheet: x.sheet, commit: true, period_from: p.period_from, period_to: p.period_to, preview_token: r.preview_token, preview_snapshot: r.preview_snapshot || '' };
           x.money = p.sum; x.rowsN = p.rows.length;
         } else {
           const st = x.state = sheetState(x.wb, x.sheet);
@@ -1469,7 +1469,7 @@
         (op.some((d) => d.changed_rows) ? ' · ยอดเปลี่ยน ' + num(op.reduce((a, d) => a + (d.changed_rows || 0), 0)) : '') + (lk.length ? ' · ตั้งรอบแล้ว ข้าม ไม่แก้ ' + num(lk.length) + ' วัน' : '');
     }
     const k = p.compare || {};
-    return num(x.rowsN) + ' เรื่อง ' + baht2(x.money) + ' บาท · ตรงยอดระบบ ' + num(k.same) + ' · ศาลคิดมากกว่า ' + num(k.court_more) + ' · น้อยกว่า ' + num(k.court_less) + (k.locked ? ' · เข้ารอบเบิกแล้ว (ไม่แก้) ' + num(k.locked) : '') + '<br>ราคาที่จะปรับจากครั้งก่อน ' + num(p.changed) + ' เรื่อง (เฉพาะหมายที่ยังไม่เข้ารอบ)';
+    return num(x.rowsN) + ' เรื่อง ' + baht2(x.money) + ' บาท · ตรงยอดระบบ ' + num(k.same) + ' · ศาลคิดมากกว่า ' + num(k.court_more) + ' · น้อยกว่า ' + num(k.court_less) + (k.locked ? ' · เข้ารอบเบิกแล้ว (ไม่แก้) ' + num(k.locked) : '') + '<br>ราคาที่จะปรับจากครั้งก่อน ' + num(p.changed) + ' เรื่อง (เฉพาะหมายที่ยังไม่เข้ารอบ)' + (p.price_changes ? '<br><b>ยอดเดิม ' + baht2(p.price_changes.previous) + ' บาท → ยอดใหม่ ' + baht2(p.price_changes.proposed) + ' บาท · ผลต่าง ' + (p.price_changes.difference > 0 ? '+' : '') + baht2(p.price_changes.difference) + ' บาท</b> · จะขอยืนยันใช้ยอดใหม่อีกครั้งก่อนบันทึก' : '');
   }
   function batchCanCommit() {
     const on = BT.files.filter((x) => x.include && x.status === 'ready');
@@ -1512,6 +1512,25 @@
       if (stop) { x.result = { ok: false, html: 'ยังไม่นำเข้า (หยุดเพราะไฟล์ก่อนหน้าไม่สำเร็จ)' }; continue; }
       try {
         if (x.kind === 'PAY' || x.kind === 'FREE18') {
+          if (x.kind === 'FREE18') {
+            // Re-preview AFTER earlier files in this batch have committed: the notice population may have changed.
+            // The exact, current snapshot is required by API 0.7.33. Never silently approve revised court prices.
+            const current = await api('ledger_import', Object.assign({}, x.body, { commit: false, preview_snapshot: '' }));
+            if (!current.preview_snapshot || !current.price_changes) throw new Error('ไม่พบยอดเปรียบเทียบแบบ 18 กรุณาตรวจข้อมูลอีกครั้ง');
+            x.preview = current;
+            const p = current.price_changes, c = current.compare || {}, summary = current.summary || {};
+            const approved = await askBox('ยืนยันใช้ยอดหมายฟรีล่าสุดจากแบบ 18?\\n' +
+              'ยอดเดิมที่ใช้คำนวณ ' + baht2(p.previous) + ' บาท → ยอดใหม่ ' + baht2(p.proposed) + ' บาท\\n' +
+              'ยอดเปลี่ยน ' + num(p.count) + ' รายการ · รอจับคู่ ' + num(summary.none || 0) + ' รายการ' +
+              ' · ไม่แก้รอบที่ยืนยันแล้ว ' + num(c.locked || 0) + ' รายการ\\n' +
+              'การยืนยันนี้ปรับเฉพาะราคาหมายฟรีที่ยังไม่เข้ารอบ และยังไม่ตั้งรอบ 60/40');
+            if (!approved) {
+              x.result = { ok: false, html: 'ยังไม่ยืนยันใช้ยอดใหม่แบบ 18 — ไม่ได้บันทึกไฟล์นี้' };
+              stop = 'ยกเลิกการยืนยันยอดใหม่แบบ 18';
+              continue;
+            }
+            x.body = Object.assign({}, x.body, { preview_snapshot: current.preview_snapshot });
+          }
           const r = await api('ledger_import', x.body);
           x.result = { ok: true, html: '<b>นำเข้าแล้ว</b> ชุด ' + esc(r.batch_id) + ' · ' + num(r.imported) + ' รายการ' + (r.skipped_locked ? ' · ข้ามวันที่ตั้งรอบแล้ว ' + num(r.skipped_locked) : '') };
         } else {
