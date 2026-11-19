@@ -1412,6 +1412,7 @@
     drop.addEventListener('drop', (e) => e.dataTransfer.files.length && batchRead(Array.from(e.dataTransfer.files)));
   }
   async function batchRead(files) {
+    if (BT.busy) { toast('กำลังบันทึกชุดเดิม กรุณารอผล'); return; }
     if (!window.XLSX) { toast('กำลังโหลดตัวอ่าน Excel กรุณาลองอีกครั้ง'); return; }
     const ep = ++BT.epoch; BT.files = []; BT.done = false;
     $('#btList').innerHTML = '<p class="small"><span class="spin"></span> กำลังอ่านและตรวจ ' + num(files.length) + ' ไฟล์…</p>';
@@ -1434,7 +1435,7 @@
             throw new Error(!totOk ? 'ยอดท้ายไฟล์ไม่ตรงผลรวมแถว' : !nOk ? 'จำนวนท้ายไฟล์ไม่ตรง' : p.badDate ? 'อ่านวันที่จ่ายไม่ได้ ' + p.badDate + ' แถว' : p.grpBad.length ? 'ยอดรายคนไม่ตรงหัวกลุ่ม' : p.wrongKind ? 'ชนิดไฟล์ไม่ตรงหัวรายงาน' : 'ไม่มีแถวข้อมูล');
           const r = await api('ledger_import', { kind: x.kind, rows: p.rows, file: x.file, sheet: x.sheet, period_from: p.period_from, period_to: p.period_to });
           x.preview = r;
-          x.body = { kind: x.kind, rows: p.rows, file: x.file, sheet: x.sheet, commit: true, period_from: p.period_from, period_to: p.period_to, preview_token: r.preview_token };
+          x.body = { kind: x.kind, rows: p.rows, file: x.file, sheet: x.sheet, commit: true, period_from: p.period_from, period_to: p.period_to, preview_token: r.preview_token, preview_snapshot: r.preview_snapshot || '' };
           x.money = p.sum; x.rowsN = p.rows.length;
         } else {
           const st = x.state = sheetState(x.wb, x.sheet);
@@ -1478,7 +1479,7 @@
   function drawBatch() {
     const rows = BT.files.map((x, i) => {
       const imp = IMPACT_TH[x.impact] || ['r', ''];
-      const head = '<div class="row" style="gap:8px;align-items:center"><label class="row" style="gap:6px"><input type="checkbox" class="btInc" data-i="' + i + '"' + (x.include ? ' checked' : '') + (x.status !== 'ready' || BT.done ? ' disabled' : '') + '>' +
+      const head = '<div class="row" style="gap:8px;align-items:center"><label class="row" style="gap:6px"><input type="checkbox" class="btInc" data-i="' + i + '"' + (x.include ? ' checked' : '') + (x.status !== 'ready' || BT.done || x.committed ? ' disabled' : '') + '>' +
         '<b>' + esc(BATCH_KIND_TH[x.kind] || 'ไม่รู้จักชนิด') + '</b></label><span class="small muted">' + esc(x.name) + '</span></div>';
       if (x.status === 'error') return '<div class="bt-item bt-err">' + head + '<p class="note r" style="margin:6px 0 0">' + esc(x.err) + '</p></div>';
       const tags = batchTags(x).map((t) => '<span class="pill ' + t[0] + '">' + esc(t[1]) + '</span>').join(' ');
@@ -1504,14 +1505,27 @@
     if ($('#btNew')) $('#btNew').addEventListener('click', () => { BT.files = []; BT.done = false; BT.epoch++; $('#btList').innerHTML = ''; });
   }
   async function batchCommit() {
-    if (!batchCanCommit()) return;
+    if (!batchCanCommit() || BT.busy) return;
+    BT.busy = true;
     const b = $('#btGo'); b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังนำเข้า…';
-    const todo = BT.files.filter((x) => x.include && x.status === 'ready');
-    let stop = '';
+    const todo = BT.files.filter((x) => x.include && x.status === 'ready' && !x.committed);
+    let stop = '', paused = false;
     for (const x of todo) {
-      if (stop) { x.result = { ok: false, html: 'ยังไม่นำเข้า (หยุดเพราะไฟล์ก่อนหน้าไม่สำเร็จ)' }; continue; }
+      if (stop || paused) { x.result = { ok: false, html: 'ยังไม่นำเข้า (รอแก้ไขหรือยืนยันไฟล์ก่อนหน้า)' }; continue; }
       try {
-        if (x.kind === 'PAY' || x.kind === 'FREE18') {
+        const isLedger = x.kind === 'PAY' || x.kind === 'FREE18';
+        const probe = Object.assign({}, x.body); delete probe.preview_token; delete probe.preview_snapshot; delete probe.commit;
+        const fresh = await api(isLedger ? 'ledger_import' : 'import_preview', probe);
+        x.preview = fresh; x.impact = batchImpact(x);
+        if (x.impact === 'red' && !x.tick) { paused = true; x.result = {ok:false, html:'พบผลกระทบใหม่ กรุณาติ๊กยืนยันก่อนดำเนินการต่อ'}; continue; }
+        x.body.preview_token = fresh.preview_token;
+        if (isLedger) x.body.preview_snapshot = fresh.preview_snapshot || '';
+        if (x.kind === 'FREE18') {
+          const p = fresh.price_changes;
+          if (!fresh.preview_snapshot || !p) throw new Error('ไม่มีผลตรวจยอดหมายฟรีเดิม–ใหม่ กรุณาตรวจรุ่น API');
+          if (!(await askBox('ยืนยันใช้ยอดหมายฟรีจากแบบ 18?\\nยอดเดิม ' + baht2(p.previous) + ' บาท → ยอดใหม่ ' + baht2(p.proposed) + ' บาท\\nเปลี่ยน ' + num(p.count) + ' รายการ · ข้ามรายการเข้ารอบแล้ว ' + num((fresh.compare || {}).locked || 0) + '\\nไม่แก้รอบ 60/40 เดิม'))) { paused = true; x.result = {ok:false, html:'ยังไม่ยืนยันใช้ยอดใหม่'}; continue; }
+        }
+        if (isLedger) {
           const r = await api('ledger_import', x.body);
           x.result = { ok: true, html: '<b>นำเข้าแล้ว</b> ชุด ' + esc(r.batch_id) + ' · ' + num(r.imported) + ' รายการ' + (r.skipped_locked ? ' · ข้ามวันที่ตั้งรอบแล้ว ' + num(r.skipped_locked) : '') };
         } else {
@@ -1519,11 +1533,13 @@
           x.result = { ok: !(r.calc && r.calc.error), html: '<b>นำเข้าแล้ว</b> ชุด ' + esc(r.batch_id) + ' · ใหม่ ' + num(r.inserted) + ' · ปรับปรุง ' + num(r.updated) + ' · รออนุมัติแก้ ' + num(r.held_changes) + ' · รอตรวจ ' + num(r.review_rows) +
             (r.review_auto_resolved ? ' · จับคู่แถวค้างให้แล้ว ' + num(r.review_auto_resolved) : '') + (r.calc && r.calc.error ? '<br>คำนวณค่าหมายไม่สำเร็จ: ' + esc(r.calc.error) : '') };
         }
+        x.committed = true; x.include = false;
+        if (!x.result.ok) stop = 'คำนวณค่าหมายไม่สำเร็จ';
       } catch (e) { x.result = { ok: false, html: 'ไม่สำเร็จ: ' + esc(e.message) }; stop = e.message; }
     }
-    BT.done = true;
+    BT.done = !paused; BT.busy = false;
     try { IM.meta = await api('import_templates'); paintKinds(); } catch (e2) { /* แสดงครั้งหน้า */ }
-    toast(stop ? 'นำเข้าไม่ครบ — ดูรายละเอียดในรายการ' : 'นำเข้าครบ ' + num(todo.length) + ' ไฟล์');
+    toast(stop || paused ? 'นำเข้าไม่ครบ — ดูรายละเอียดในรายการ' : 'นำเข้าครบ ' + num(todo.length) + ' ไฟล์');
     drawBatch();
   }
 
