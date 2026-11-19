@@ -6,6 +6,6 @@ window.NP_CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbxqQaTG6NO5XA_dv6LRhG5ljRuyXk_nF-8wP_cuoV_ic7GrNJ2MbEfxkKVD6X64YSyU/exec',
   SEAL_URL: 'court-seal.webp',
   AREA_MAP_URL: 'https://checkfile2568-ops.github.io/MapLibre/view.html',
-  VERSION: '0.7.32'
+  VERSION: '0.7.33'
 };
 
