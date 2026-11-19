@@ -1119,12 +1119,23 @@
       $('#imPrev').innerHTML = '<div class="clay panel"><span class="spin"></span> <span class="muted">กำลังจับคู่กับหมายในระบบ…</span></div>';
       const r = await api('ledger_import', { kind: kind, rows: p.rows, file: IM.file, sheet: IM.sheet, period_from: p.period_from, period_to: p.period_to });
       if (revision !== importEpoch) return;
-      IM.ledgerBody = {kind:kind, rows:p.rows, file:IM.file, sheet:IM.sheet, commit:true, period_from:p.period_from, period_to:p.period_to, preview_token:r.preview_token};
+      IM.ledgerBody = {kind:kind, rows:p.rows, file:IM.file, sheet:IM.sheet, commit:true, period_from:p.period_from, period_to:p.period_to, preview_token:r.preview_token, preview_snapshot:r.preview_snapshot || ''};
       drawLedgerPreview(r);
     } catch (e) { $('#fInfo').innerHTML = '<p class="note r">' + esc(e.message) + '</p>'; }
   }
   function drawLedgerPreview(r) {
     const s = r.summary;
+    const price = r.kind === 'FREE18' ? (r.price_changes || null) : null;
+    const priceDetails = price ? '<div class="note" style="margin-top:12px"><b>ตรวจราคาหมายฟรีก่อนยืนยันใช้ยอดใหม่</b><br>' +
+      'หมายฟรีที่จับคู่ได้และยังไม่เข้ารอบ ' + num(price.matched_unlocked) + ' รายการ · ยอดเปลี่ยน ' + num(price.count) + ' รายการ<br>' +
+      'ยอดเดิมที่ใช้คำนวณ ' + baht2(price.previous) + ' บาท → ยอดใหม่จากแบบ 18 ' + baht2(price.proposed) + ' บาท' +
+      ' · ส่วนต่าง ' + (price.difference > 0 ? '+' : '') + baht2(price.difference) + ' บาท' +
+      (r.compare.locked ? '<br><b>ไม่แก้รอบที่ยืนยันแล้ว ' + num(r.compare.locked) + ' รายการ</b>' : '') +
+      (r.compare.non_budget ? '<br><b>ข้ามรายการที่ไม่ใช่หมายฟรี ' + num(r.compare.non_budget) + '</b>' : '') +
+      '<p class="tiny muted">ยอดเปลี่ยนเฉพาะหมายฟรีที่ยังไม่เข้ารอบ · ตรวจรายการที่จับคู่ไม่ได้ก่อนใช้ยอดจริง · ยังไม่จัดรอบ 60/40</p></div>' +
+      ((price.samples || []).length ? '<details style="margin-top:10px"><summary>ดูรายการยอดเดิม → ยอดใหม่ (แสดงสูงสุด 30 รายการ)</summary><div class="tbl-wrap"><table><thead><tr><th>เลขคดี</th><th class="n">ยอดเดิม</th><th class="n">ยอดใหม่</th><th class="n">ผลต่าง</th></tr></thead><tbody>' +
+        price.samples.map(x => '<tr><td>' + esc(x.case_no) + '</td><td class="n">' + baht2(x.previous) + '</td><td class="n">' + baht2(x.proposed) + '</td><td class="n">' +
+          (Number(x.difference) > 0 ? '+' : '') + baht2(x.difference) + '</td></tr>').join('') + '</tbody></table></div></details>' : '') : '';
     const none = (r.samples_none || []).map((x) => '<tr><td>' + esc(x.pay_date ? thDate(x.pay_date) : '') + '</td><td>' + esc(x.case_no) + '</td><td class="small">' + esc(x.recipient) + '</td><td class="small">' + esc(x.received_date ? 'รับเงิน ' + thDate(x.received_date) : (x.notice_kind || '')) + '</td><td class="n">' + baht2(x.amount) + '</td><td class="small">' + 'รอยืนยัน · ' + esc(x.match_reason || (x.match === 'TYPE' ? 'ประเภทหรือผู้ส่งไม่ตรง' : 'ยังไม่พบหมายที่ตรงกัน')) + '</td></tr>').join('');
     $('#imPrev').innerHTML = '<div class="clay panel"><h3>3 · ผลตรวจ ' + esc(r.kind_th) + '</h3>' +
       '<p class="small" style="margin:0 0 8px">ที่มา: <b>' + esc(r.source) + '</b></p>' +
@@ -1134,10 +1145,19 @@
           (s.none ? '<p class="note" style="margin:10px 0 0">รายการรอยืนยันยังแสดงยอดตามบัญชีจ่าย ไม่ได้แปลว่ายังไม่จ่ายเงิน ควรตรวจวันจ่ายหมาย วันส่ง และไฟล์ 50 ของช่วงที่เกี่ยวข้อง (นำเข้าไฟล์ 50 เพิ่ม แล้วนำเข้าไฟล์นี้ซ้ำ จะจับคู่ได้)</p>' : '')
         : '<p class="small" style="margin:12px 0 0">เทียบกับยอดที่ระบบคำนวณ: ตรง ' + num(r.compare.same) + ' · ศาลคิดมากกว่า ' + num(r.compare.court_more) + ' · ศาลคิดน้อยกว่า ' + num(r.compare.court_less) + ' เรื่อง' +
           (r.compare.locked ? ' · เข้ารอบเบิกแล้ว (ไม่แก้) ' + num(r.compare.locked) : '') + '<br><span class="tiny muted">หมายฟรีในระบบ ' + num(r.compare.system_free) + ' เรื่อง · ไม่อยู่ในไฟล์ ' + num(r.compare.system_not_in_file) + ' (ใช้ยอดที่ระบบคำนวณ) · ศาลรวมหมายตามข้อ 7 แล้ว ฉบับที่รวมได้ราคา 0</span></p>') +
+      priceDetails +
       (none ? '<h3 style="margin-top:16px">รอยืนยันการจับคู่ (แสดง ' + num((r.samples_none || []).length) + ' แถวแรก)</h3><div class="tbl-wrap"><table><thead><tr><th>วันที่จ่าย</th><th>เลขดำ</th><th>ผู้รับ</th><th></th><th class="n">บาท</th><th></th></tr></thead><tbody>' + none + '</tbody></table></div>' : '') +
-      '<div class="row" style="margin-top:14px;gap:8px"><button type="button" class="btn btn-g" id="lgOk">ยืนยันนำเข้า</button><span class="small muted">' + (r.kind === 'PAY' ? 'วันที่จ่ายที่ตั้งรอบแล้วจะไม่ถูกแก้ · วันที่ยังไม่ตั้งรอบเพิ่มหรือปรับตามใบเสร็จ โดยเก็บรายการที่ไม่อยู่ในไฟล์ไว้' : 'ราคาศาลใช้แทนยอดระบบในรอบหมายฟรี · หมายที่เบิกแล้วไม่ถูกแก้') + '</span></div></div>';
+      '<div class="row" style="margin-top:14px;gap:8px"><button type="button" class="btn btn-g" id="lgOk">' + (r.kind === 'FREE18' ? 'ยืนยันใช้ยอดใหม่ (หมายฟรี)' : 'ยืนยันนำเข้า') + '</button><span class="small muted">' + (r.kind === 'PAY' ? 'วันที่จ่ายที่ตั้งรอบแล้วจะไม่ถูกแก้ · วันที่ยังไม่ตั้งรอบเพิ่มหรือปรับตามใบเสร็จ โดยเก็บรายการที่ไม่อยู่ในไฟล์ไว้' : 'ราคาศาลใช้แทนยอดระบบในรอบหมายฟรี · หมายที่เบิกแล้วไม่ถูกแก้') + '</span></div></div>';
     $('#lgOk').addEventListener('click', async (e) => {
-      const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังนำเข้า…';
+      const b = e.currentTarget;
+      if (r.kind === 'FREE18') {
+        if (!r.preview_snapshot || !r.price_changes) { toast('ไม่มีผลตรวจยอดเดิม–ใหม่ กรุณาเลือกไฟล์ 18 อีกครั้ง'); return; }
+        const p = r.price_changes;
+        const ok = await askBox('ยืนยันใช้ยอดหมายฟรีจากแบบ 18?\\nยอดเดิม ' + baht2(p.previous) + ' บาท → ยอดใหม่ ' + baht2(p.proposed) +
+          ' บาท\\nเปลี่ยน ' + num(p.count) + ' รายการ · ข้ามรายการเข้ารอบแล้ว ' + num(r.compare.locked || 0) + '\\nยังไม่คำนวณหรือยืนยันรอบ 60/40');
+        if (!ok) return;
+      }
+      b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังนำเข้า…';
       try {
         const x = await api('ledger_import', IM.ledgerBody);
         try { IM.meta = await api('import_templates'); paintKinds(); } catch (e2) { /* แสดงสถานะครั้งหน้า */ }
