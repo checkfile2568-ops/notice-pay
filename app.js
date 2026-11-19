@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.32';
+  const UI_VERSION = '0.7.34';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -1104,7 +1104,7 @@
     const kind = IM.kind; revision = revision || importEpoch;
     try {
       const aoa = XLSX.utils.sheet_to_json(IM.wb.Sheets[IM.sheet], { header: 1, raw: true, defval: '' });
-      const p = IM.ledger = parseLedger(kind, aoa);
+      const p = IM.ledger = parseLedger(kind, aoa, IM.wb);
       const totOk = p.footer === null || Math.abs(p.footer - p.sum) < 0.005;
       const nOk = p.footerN === null || p.footerN === p.rows.length;
       IM.ledgerOk = totOk && nOk && !p.badDate && !p.grpBad.length && !p.wrongKind && p.rows.length > 0;
@@ -1412,7 +1412,7 @@
     drop.addEventListener('drop', (e) => e.dataTransfer.files.length && batchRead(Array.from(e.dataTransfer.files)));
   }
   async function batchRead(files) {
-    if (BT.busy) { toast('กำลังบันทึกชุดเดิม กรุณารอผล'); return; }
+    if (BT.busy) { toast('กำลังนำเข้าไฟล์ชุดเดิม'); return; }
     if (!window.XLSX) { toast('กำลังโหลดตัวอ่าน Excel กรุณาลองอีกครั้ง'); return; }
     const ep = ++BT.epoch; BT.files = []; BT.done = false;
     $('#btList').innerHTML = '<p class="small"><span class="spin"></span> กำลังอ่านและตรวจ ' + num(files.length) + ' ไฟล์…</p>';
@@ -1470,7 +1470,7 @@
         (op.some((d) => d.changed_rows) ? ' · ยอดเปลี่ยน ' + num(op.reduce((a, d) => a + (d.changed_rows || 0), 0)) : '') + (lk.length ? ' · ตั้งรอบแล้ว ข้าม ไม่แก้ ' + num(lk.length) + ' วัน' : '');
     }
     const k = p.compare || {};
-    return num(x.rowsN) + ' เรื่อง ' + baht2(x.money) + ' บาท · ตรงยอดระบบ ' + num(k.same) + ' · ศาลคิดมากกว่า ' + num(k.court_more) + ' · น้อยกว่า ' + num(k.court_less) + (k.locked ? ' · เข้ารอบเบิกแล้ว (ไม่แก้) ' + num(k.locked) : '') + '<br>ราคาที่จะปรับจากครั้งก่อน ' + num(p.changed) + ' เรื่อง (เฉพาะหมายที่ยังไม่เข้ารอบ)';
+    return num(x.rowsN) + ' เรื่อง ' + baht2(x.money) + ' บาท · ตรงยอดระบบ ' + num(k.same) + ' · ศาลคิดมากกว่า ' + num(k.court_more) + ' · น้อยกว่า ' + num(k.court_less) + (k.locked ? ' · เข้ารอบเบิกแล้ว (ไม่แก้) ' + num(k.locked) : '') + '<br>ราคาที่จะปรับจากครั้งก่อน ' + num(p.changed) + ' เรื่อง (เฉพาะหมายที่ยังไม่เข้ารอบ)' + (p.price_changes ? '<br><b>ยอดเดิม ' + baht2(p.price_changes.previous) + ' บาท → ยอดใหม่ ' + baht2(p.price_changes.proposed) + ' บาท · ผลต่าง ' + (p.price_changes.difference > 0 ? '+' : '') + baht2(p.price_changes.difference) + ' บาท</b> · จะขอยืนยันใช้ยอดใหม่อีกครั้งก่อนบันทึก' : '');
   }
   function batchCanCommit() {
     const on = BT.files.filter((x) => x.include && x.status === 'ready');
@@ -1479,7 +1479,7 @@
   function drawBatch() {
     const rows = BT.files.map((x, i) => {
       const imp = IMPACT_TH[x.impact] || ['r', ''];
-      const head = '<div class="row" style="gap:8px;align-items:center"><label class="row" style="gap:6px"><input type="checkbox" class="btInc" data-i="' + i + '"' + (x.include ? ' checked' : '') + (x.status !== 'ready' || BT.done || x.committed ? ' disabled' : '') + '>' +
+      const head = '<div class="row" style="gap:8px;align-items:center"><label class="row" style="gap:6px"><input type="checkbox" class="btInc" data-i="' + i + '"' + (x.include ? ' checked' : '') + (x.status !== 'ready' || BT.done ? ' disabled' : '') + '>' +
         '<b>' + esc(BATCH_KIND_TH[x.kind] || 'ไม่รู้จักชนิด') + '</b></label><span class="small muted">' + esc(x.name) + '</span></div>';
       if (x.status === 'error') return '<div class="bt-item bt-err">' + head + '<p class="note r" style="margin:6px 0 0">' + esc(x.err) + '</p></div>';
       const tags = batchTags(x).map((t) => '<span class="pill ' + t[0] + '">' + esc(t[1]) + '</span>').join(' ');
@@ -1508,24 +1508,38 @@
     if (!batchCanCommit() || BT.busy) return;
     BT.busy = true;
     const b = $('#btGo'); b.disabled = true; b.innerHTML = '<span class="spin"></span> กำลังนำเข้า…';
-    const todo = BT.files.filter((x) => x.include && x.status === 'ready' && !x.committed);
-    let stop = '', paused = false;
+    const todo = BT.files.filter((x) => x.include && x.status === 'ready');
+    let stop = '';
     for (const x of todo) {
-      if (stop || paused) { x.result = { ok: false, html: 'ยังไม่นำเข้า (รอแก้ไขหรือยืนยันไฟล์ก่อนหน้า)' }; continue; }
+      if (stop) { x.result = { ok: false, html: 'ยังไม่นำเข้า (หยุดเพราะไฟล์ก่อนหน้าไม่สำเร็จ)' }; continue; }
       try {
         const isLedger = x.kind === 'PAY' || x.kind === 'FREE18';
-        const probe = Object.assign({}, x.body); delete probe.preview_token; delete probe.preview_snapshot; delete probe.commit;
-        const fresh = await api(isLedger ? 'ledger_import' : 'import_preview', probe);
-        x.preview = fresh; x.impact = batchImpact(x);
-        if (x.impact === 'red' && !x.tick) { paused = true; x.result = {ok:false, html:'พบผลกระทบใหม่ กรุณาติ๊กยืนยันก่อนดำเนินการต่อ'}; continue; }
-        x.body.preview_token = fresh.preview_token;
-        if (isLedger) x.body.preview_snapshot = fresh.preview_snapshot || '';
-        if (x.kind === 'FREE18') {
-          const p = fresh.price_changes;
-          if (!fresh.preview_snapshot || !p) throw new Error('ไม่มีผลตรวจยอดหมายฟรีเดิม–ใหม่ กรุณาตรวจรุ่น API');
-          if (!(await askBox('ยืนยันใช้ยอดหมายฟรีจากแบบ 18?\\nยอดเดิม ' + baht2(p.previous) + ' บาท → ยอดใหม่ ' + baht2(p.proposed) + ' บาท\\nเปลี่ยน ' + num(p.count) + ' รายการ · ข้ามรายการเข้ารอบแล้ว ' + num((fresh.compare || {}).locked || 0) + '\\nไม่แก้รอบ 60/40 เดิม'))) { paused = true; x.result = {ok:false, html:'ยังไม่ยืนยันใช้ยอดใหม่'}; continue; }
-        }
+        // Reuse the approved file payload, but renew the preview after earlier commits.
+        const probe = Object.assign({}, x.body);
+        delete probe.preview_token; delete probe.preview_snapshot; delete probe.commit;
+        if (isLedger) probe.commit = false;
+        const current = await api(isLedger ? 'ledger_import' : 'import_preview', probe);
+        if (!current.preview_token) throw new Error('ไม่พบรหัสผลตรวจล่าสุด กรุณาตรวจรุ่น API');
+        x.preview = current; x.impact = batchImpact(x);
+        if (x.impact === 'red' && !x.tick) throw new Error('ผลตรวจล่าสุดพบรายการขัดกับรอบที่จ่ายแล้ว กรุณาตรวจและยืนยันอีกครั้ง');
+        x.body = Object.assign({}, x.body, {preview_token: current.preview_token});
         if (isLedger) {
+          if (x.kind === 'FREE18') {
+            // The exact, current snapshot is required. Never silently approve revised court prices.
+            if (!current.preview_snapshot || !current.price_changes) throw new Error('ไม่พบยอดเปรียบเทียบแบบ 18 กรุณาตรวจข้อมูลอีกครั้ง');
+            const p = current.price_changes, c = current.compare || {}, summary = current.summary || {};
+            const approved = await askBox('ยืนยันใช้ยอดหมายฟรีล่าสุดจากแบบ 18?\\n' +
+              'ยอดเดิมที่ใช้คำนวณ ' + baht2(p.previous) + ' บาท → ยอดใหม่ ' + baht2(p.proposed) + ' บาท\\n' +
+              'ยอดเปลี่ยน ' + num(p.count) + ' รายการ · รอจับคู่ ' + num(summary.none || 0) + ' รายการ' +
+              ' · ไม่แก้รอบที่ยืนยันแล้ว ' + num(c.locked || 0) + ' รายการ\\n' +
+              'การยืนยันนี้ปรับเฉพาะราคาหมายฟรีที่ยังไม่เข้ารอบ และยังไม่ตั้งรอบ 60/40');
+            if (!approved) {
+              x.result = { ok: false, html: 'ยังไม่ยืนยันใช้ยอดใหม่แบบ 18 — ไม่ได้บันทึกไฟล์นี้' };
+              stop = 'ยกเลิกการยืนยันยอดใหม่แบบ 18';
+              continue;
+            }
+            x.body = Object.assign({}, x.body, { preview_snapshot: current.preview_snapshot });
+          }
           const r = await api('ledger_import', x.body);
           x.result = { ok: true, html: '<b>นำเข้าแล้ว</b> ชุด ' + esc(r.batch_id) + ' · ' + num(r.imported) + ' รายการ' + (r.skipped_locked ? ' · ข้ามวันที่ตั้งรอบแล้ว ' + num(r.skipped_locked) : '') };
         } else {
@@ -1533,13 +1547,12 @@
           x.result = { ok: !(r.calc && r.calc.error), html: '<b>นำเข้าแล้ว</b> ชุด ' + esc(r.batch_id) + ' · ใหม่ ' + num(r.inserted) + ' · ปรับปรุง ' + num(r.updated) + ' · รออนุมัติแก้ ' + num(r.held_changes) + ' · รอตรวจ ' + num(r.review_rows) +
             (r.review_auto_resolved ? ' · จับคู่แถวค้างให้แล้ว ' + num(r.review_auto_resolved) : '') + (r.calc && r.calc.error ? '<br>คำนวณค่าหมายไม่สำเร็จ: ' + esc(r.calc.error) : '') };
         }
-        x.committed = true; x.include = false;
         if (!x.result.ok) stop = 'คำนวณค่าหมายไม่สำเร็จ';
       } catch (e) { x.result = { ok: false, html: 'ไม่สำเร็จ: ' + esc(e.message) }; stop = e.message; }
     }
-    BT.done = !paused; BT.busy = false;
+    BT.done = true; BT.busy = false;
     try { IM.meta = await api('import_templates'); paintKinds(); } catch (e2) { /* แสดงครั้งหน้า */ }
-    toast(stop || paused ? 'นำเข้าไม่ครบ — ดูรายละเอียดในรายการ' : 'นำเข้าครบ ' + num(todo.length) + ' ไฟล์');
+    toast(stop ? 'นำเข้าไม่ครบ — ดูรายละเอียดในรายการ' : 'นำเข้าครบ ' + num(todo.length) + ' ไฟล์');
     drawBatch();
   }
 
@@ -1986,7 +1999,14 @@
   function claimRangeOverlap(from, to, ranges) { return ranges.some(r => from <= r.to && to >= r.from); }
   function normalizeClaimOfficer(x) { return String(x || '').normalize('NFKC').replace(/\s+/g, '').replace(/^(นางสาว|น\.ส\.|นาง|นาย)/, ''); }
   function exactClaimOfficer(name, officers) { const k = normalizeClaimOfficer(name); const hits = k ? officers.filter(x => normalizeClaimOfficer(x.name) === k || normalizeClaimOfficer(x.full_name) === k) : []; return hits.length === 1 ? hits[0].officer_id : ''; }
-  function form25Type(receipt) { const v = String(receipt == null ? '' : receipt).trim(); if (v === 'เงินนอกงบประมาณ') return 'FREE'; return /^(?:[A-Za-zก-ฮ.]{1,10}[-/. ]?)?[0-9๐-๙]+(?:[-/._][0-9๐-๙]+)*$/.test(v) ? 'PAID' : ''; }
+  function form25Type(receipt) {
+    const v = String(receipt == null ? '' : receipt).trim();
+    if (v === 'เงินนอกงบประมาณ') return 'FREE';
+    if (/^(?:[A-Za-zก-ฮ.]{1,10}[-/. ]?)?[0-9๐-๙]+(?:[-/._][0-9๐-๙]+)*$/.test(v)) return 'PAID';
+    // Court export also appends the receipt amount in parentheses, with several receipts comma-separated.
+    const receiptPart = /^[0-9๐-๙]+\/[0-9๐-๙]+\s*\([0-9๐-๙]+(?:\.[0-9๐-๙]{1,2})?\)$/;
+    return v.split(/\s*,\s*/).every(part => receiptPart.test(part.trim())) ? 'PAID' : '';
+  }
   /** บาท → สตางค์ แบบเข้มงวด (ตรงกับ claimCents_ ฝั่งเซิร์ฟเวอร์) · ว่าง = 0 · ผิด = null */
   function claimCents(v) {
     const s = String(v == null ? '' : v).replace(/,/g, '').trim();
