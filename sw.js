@@ -2,8 +2,8 @@
  * - ไม่เก็บข้อมูลจาก Apps Script (ข้อมูลคดี/การเงิน) ไว้เด็ดขาด — คำขอ POST และโดเมน script.google.com ผ่านตรง
  * - index.html / config.js : ดึงจากเครือข่ายก่อน (ได้รุ่นใหม่ทันที) ถ้าออฟไลน์/ช้าเกิน 3 วินาที ใช้ที่เก็บไว้
  * - ไฟล์อื่น (app.js?v= app.css?v= ตราศาล ฟอนต์ ตัวอ่าน Excel) : ใช้ที่เก็บไว้ก่อน เพราะเปลี่ยนชื่อ ?v= ทุกรุ่น */
-const CACHE = 'np-static-0.7.26';
-const STATIC_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net'];
+const CACHE = 'np-static-0.7.32-rc2';
+const STATIC_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net', 'cdn.sheetjs.com'];
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(

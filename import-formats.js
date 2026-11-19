@@ -67,6 +67,22 @@ var NoticeImportFormat = (function () {
       return (HASH_MEMO[src] = 'R1-'+sha256(src));
     }).join(',');
   }
+  // 0.7.31: exact form 25 evidence; no raw case/recipient/kind/place in API payload.
+  // Require all fields; do not infer missing fields or select one of multiple notices.
+  function form25Evidence(row) {
+    var parts=String(row.case_no||'').split(/\r?\n/).map(function(v){return v.trim();}).filter(Boolean);
+    var cs=caseNo(parts[0]||''), ref=caseNo(parts.slice(1).join(' ')), raw=String(row.recipient||'').trim();
+    // Use identical R1 hashing without retaining raw names in the memo cache for this new flow.
+    if(!raw||raw.indexOf(',')>=0)return '';
+    var rp=/^R1-[A-F0-9]{64}$/.test(raw)?raw:'R1-'+sha256('NoticePay/recipient/v1\n'+cs+'\n'+name(raw));
+    var kind=text(row.notice_kind).replace(/\s+/g,'').toUpperCase();
+    var place=function(v){return text(v).replace(/^(อำเภอ|อ\.|ตำบล|ต\.|แขวง|เขต|กิ่งอำเภอ)\s*/, '').replace(/\s+/g,'');};
+    var tambon=place(row.tambon), amphoe=place(row.amphoe);
+    if (!cs || !rp || !kind || !tambon || !amphoe || [cs,kind,tambon,amphoe].some(function(v){return v==='-';})) return '';
+    // If there are several recipients, do not assume the report represents a single notice.
+    if(!/^R1-[A-F0-9]{64}$/.test(rp))return '';
+    return sha256(JSON.stringify(['NoticePay/form25/v1',cs,ref||caseNo(row.case_ref),rp,kind,tambon,amphoe]));
+  }
   function mapped(row,mapping,date1904) {
     var out={},cs=caseNo(row[mapping.case_no]);
     Object.keys(mapping).forEach(function(f){
@@ -122,6 +138,6 @@ var NoticeImportFormat = (function () {
     var s=String(value==null?'':value),ms=nameMatches(s);for(var i=ms.length-1;i>=0;i--)s=s.slice(0,ms[i].start)+'[ตัดชื่อ]'+s.slice(ms[i].end);
     return {text:s,count:ms.length};
   }
-  return {date:date,recipient:recipient,mapped:mapped,sha256:sha256,privacyField:privacyField,nameMatches:nameMatches,redactNames:redactNames};
+  return {date:date,recipient:recipient,form25Evidence:form25Evidence,mapped:mapped,sha256:sha256,privacyField:privacyField,nameMatches:nameMatches,redactNames:redactNames};
 })();
 if (typeof module!=='undefined' && module.exports) module.exports=NoticeImportFormat;
