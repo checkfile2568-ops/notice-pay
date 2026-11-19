@@ -1905,7 +1905,7 @@
     const names = d.officers, bl = d.backlog;
     const T = bl.reduce((a, b) => ({ pn: a.pn + b.paid_n, p: a.p + b.paid, bn: a.bn + b.budget_n, b: a.b + b.budget, h: a.h + b.held_n }), { pn: 0, p: 0, bn: 0, b: 0, h: 0 });
     const bk = d.blocked || {}, lf = d.last_free;
-    m.innerHTML = top('รอบเบิก 60/40', d.can_create ? '<div class="row" style="gap:8px"><button type="button" class="btn btn-g" id="pNewC">+ ตั้งรอบตามใบเบิก</button>'+(has('ADMIN')?'<button type="button" class="btn btn-sm" id="pNewF" title="วิธีเดิม · เฉพาะผู้ดูแล ช่วงเปลี่ยนผ่าน">เตรียมเบิกหมายฟรี (วิธีเดิม)</button><button type="button" class="btn btn-sm" id="pNewP" title="วิธีเดิม · เฉพาะผู้ดูแล ช่วงเปลี่ยนผ่าน">+ รอบหมายเงิน ไฟล์ 30 (วิธีเดิม)</button>':'')+'</div>' : '') +
+    m.innerHTML = top('รอบเบิก 60/40', d.can_create ? '<div class="row" style="gap:8px"><button type="button" class="btn btn-g" id="pNewF">เตรียมเบิกหมายฟรี</button><button type="button" class="btn" id="pNewP">+ รอบหมายมีเงิน (บัญชี 30)</button><button type="button" class="btn btn-sm" id="pNewC" title="ตรวจแบบ 25 แยกต่างหาก ไม่เปลี่ยนสูตรและลำดับรอบเดิม">ตรวจแบบ 25 (ทางเลือก)</button></div>' : '') +
       '<div class="clay panel pinfo">' +
         '<div class="pinfo-r"><span class="pchip pf">งบประมาณ</span><div><b>' + (lf ? 'เบิกหมายฟรีล่าสุด ' + esc(thDate(lf.pay_date)) : 'ยังไม่เคยเบิกหมายฟรีในระบบ') + '</b>' +
           (lf ? '<span class="small muted">' + (lf.cutoff ? ' · ลงข้อมูลถึง ' + esc(thDate(lf.cutoff)) : '') + ' · ' + baht2(lf.total) + '&nbsp;฿</span>' : '') +
