@@ -243,7 +243,7 @@
     '<li>กด <b>นำเข้าไฟล์ถัดไป</b> → ทำไฟล์ลำดับต่อไป</li></ol>' +
     '<h4>ก่อนตั้งรอบแต่ละครั้ง</h4><div class="tbl-wrap"><table class="small"><thead><tr><th>รอบ</th><th>ต้องนำเข้า</th><th>ควรนำเข้าด้วย</th></tr></thead><tbody>' +
     '<tr><td><b>หมายเงิน</b> (ปกติวันศุกร์)</td><td>30 ของวันที่จ่าย</td><td>50 · 42 ช่วงล่าสุด (ให้บัญชีจ่ายผูกกับหมายครบ)</td></tr>' +
-    '<tr><td><b>หมายฟรี</b> (เดือนละ 1–2 ครั้ง)</td><td>18 ชุดใหม่ · 42 ช่วงล่าสุด</td><td>50 ถ้ามีหมายจ่ายใหม่</td></tr></tbody></table></div>' +
+    '<tr><td><b>หมายฟรี</b> (เบิกตามจริง · เดือนหนึ่งอาจไม่มีรอบหรือมีหลายรอบ)</td><td>18 ชุดใหม่ · 42 ช่วงล่าสุด</td><td>50 ถ้ามีหมายจ่ายใหม่</td></tr></tbody></table></div>' +
     '<p class="small muted">ไม่นำเข้า 50/42 ก่อน: รอบหมายเงินยังตั้งได้ตามไฟล์ 30 แต่จะมี "รอยืนยันการจับคู่" จนกว่าจะนำเข้า · รอบหมายฟรี หมายที่ยังไม่มีผลการส่งจะยังไม่พร้อมเบิก (รอรอบหน้า)</p>' +
     '<div class="row" style="justify-content:flex-end"><button type="button" class="btn btn-sm" id="imGuideClose">ปิดคู่มือ ▲</button></div>' +
     '</div></details>';
@@ -1958,7 +1958,8 @@
       '<div class="clay panel pinfo">' +
         '<div class="pinfo-r"><span class="pchip pf">งบประมาณ</span><div><b>' + (lf ? 'เบิกหมายฟรีล่าสุด ' + esc(thDate(lf.pay_date)) : 'ยังไม่เคยเบิกหมายฟรีในระบบ') + '</b>' +
           (lf ? '<span class="small muted">' + (lf.cutoff ? ' · ลงข้อมูลถึง ' + esc(thDate(lf.cutoff)) : '') + ' · ' + baht2(lf.total) + '&nbsp;฿</span>' : '') +
-          '<div class="tiny muted">ราคาหมายฟรีตามบัญชีศาล: ' + (d.free18_at ? 'นำเข้าล่าสุด ' + esc(thDate(d.free18_at, true)) : '<span class="flag-r">ยังไม่นำเข้า — รอบหมายฟรีจะใช้ยอดที่ระบบคำนวณ</span>') + ' · ที่มา ' + esc(d.sources.FREE18) + '</div></div></div>' +
+          '<div class="tiny muted">ราคาหมายฟรีตามบัญชีศาล: ' + (d.free18_at ? 'นำเข้าล่าสุด ' + esc(thDate(d.free18_at, true)) : '<span class="flag-r">ยังไม่นำเข้า — รอบหมายฟรีจะใช้ยอดที่ระบบคำนวณ</span>') + ' · ที่มา ' + esc(d.sources.FREE18) + '</div>' +
+           '<div class="tiny muted">รอบหมายฟรีตั้งตามการเบิกจริง · เดือนหนึ่งอาจไม่มีรอบ หรือมีหนึ่ง/หลายรอบ · ไม่สร้างรอบอัตโนมัติ</div></div></div>' +
         '<div class="pinfo-r"><span class="pchip pm">นอกงบฯ</span><div><b>มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ</b>' +
           (d.pending_dates.length ? '<div class="pdates">' + d.pending_dates.map((x) => '<button type="button" class="btn btn-sm pdate" data-pd="' + esc(x.pay_date) + '"' + (d.can_create ? '' : ' disabled') + '>' + esc(thDate(x.pay_date)) + ' · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + '&nbsp;฿' + (x.none ? ' <span class="flag-r">รอยืนยันการจับคู่ ' + num(x.none) + '</span>' : '') + '</button>').join('') + '</div>'
             : '<div class="small muted">ไม่มี — ดาวน์โหลดไฟล์ ' + esc(d.sources.PAY) + ' แล้วนำเข้าที่ "นำเข้าข้อมูล › บัญชีจ่ายเงินหมายมีเงิน"</div>') +
@@ -1971,11 +1972,11 @@
         : '<tr><td colspan="7" class="muted small">ไม่มีรายการค้างเบิก</td></tr>') +
       '</tbody><tfoot><tr><td><b>รวม</b></td><td class="n"><b>' + num(T.pn) + '</b></td><td class="n"><b>' + baht2(T.p) + '</b></td><td class="n"><b>' + num(T.bn) + '</b></td><td class="n"><b>' + baht2(T.b) + '</b></td><td class="n"><b>' + num(T.h) + '</b></td><td></td></tr></tfoot></table></div>' +
       '<p class="tiny muted" style="margin:8px 2px 0">หมายเงิน = ส่งแล้วแต่ยังไม่อยู่ในบัญชีจ่ายเงิน · ยังไม่เข้าเกณฑ์: รอผลการส่ง ' + num(bk.wait || 0) + ' · รอตรวจ ' + num(bk.review || 0) + ' ฉบับ' + (d.closed_n ? ' · ปิด "ไม่เบิก" แล้ว ' + num(d.closed_n) + ' เรื่อง' : '') + '</p></div>' +
-      '<div class="clay panel"><h3>รอบเบิกที่ผ่านมา</h3>' + roundPaySummaryHtml(d.rounds) + (d.rounds.length ? '<div class="tbl-wrap"><table><thead><tr><th>วันที่จ่าย</th><th>ประเภท</th><th class="n">รายการ</th><th class="n">ยังไม่เสนอ</th><th class="n">ยอดรวม</th><th class="n">เศษยกมา</th><th class="n">คนนั่ง</th><th class="n">ได้คนละ</th><th class="n">เศษยกไป</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+      '<div class="clay panel"><h3>รอบเบิกที่ผ่านมา</h3><p class="tiny muted" style="margin:4px 0 10px">ยืนยันรอบ = ล็อกยอดคำนวณ · จ่ายเงินจริง = มีการบันทึกหลักฐานจ่ายในระบบ สถานะทั้งสองแยกกัน</p>' + roundPaySummaryHtml(d.rounds) + (d.rounds.length ? '<div class="tbl-wrap"><table><thead><tr><th>วันที่จ่าย</th><th>ประเภท</th><th class="n">รายการ</th><th class="n">ยังไม่เสนอ</th><th class="n">ยอดรวม</th><th class="n">เศษยกมา</th><th class="n">คนนั่ง</th><th class="n">ได้คนละ</th><th class="n">เศษยกไป</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
         d.rounds.map((r) => '<tr' + (r.status === 'CANCELLED' ? ' class="muted"' : '') + '><td>' + esc(thDate(r.pay_date)) + '</td><td>' + rChip(r.round_type) + (r.from_claim ? ' <span class="pchip pc">ตามใบเบิก</span>' : '') +
           '</td><td class="n">' + num(r.n_items) + '</td><td class="n">' + num(r.n_excluded) + '</td><td class="n"><b>' + baht2(r.total) + '</b></td><td class="n">' + baht2(r.carry_in) + '</td><td class="n">' + num(r.seats) + '</td><td class="n">' + baht2(r.per_seat) + '</td><td class="n">' + baht2(r.carry_out) +
           '</td><td>' + roundStatusHtml(r) + '</td><td><button type="button" class="btn btn-sm" data-r="' + esc(r.round_id) + '">ดู / พิมพ์</button></td></tr>').join('') +
-        '</tbody></table></div>' : '<p class="small muted" style="margin:0">ยังไม่มีรอบเบิก</p>') +
+        '</tbody></table></div>' : '<p class="small muted" style="margin:0">ยังไม่มีรอบเบิกที่บันทึกในระบบ · เดือนที่ไม่มีการเบิกไม่จำเป็นต้องสร้างรอบ</p>') +
       '<p class="tiny muted" style="margin:8px 2px 0">1 รอบ = 1 ประเภท 1 วันที่จ่าย · วันเดียวกันตั้งรอบหมายฟรีก่อน แล้วเศษยกไปรอบหมายเงิน · เศษยกต่อเนื่องตามลำดับวันที่ (ตั้งรอบย้อนหลังให้เรียงจากเก่าไปใหม่)</p></div>';
     if ($('#pNewC')) $('#pNewC').addEventListener('click', () => { S.payoutSub = 'claim'; go('payout'); });
     if ($('#pNewF')) $('#pNewF').addEventListener('click', () => { S.payoutSub = 'new:FREE'; go('payout'); });
@@ -2320,7 +2321,7 @@
             : '<label>วันที่จ่ายตามบัญชีการจ่ายเงิน<select class="inp" id="pDate" required>' + (pending.length ? pending.map((x) => '<option value="' + esc(x.pay_date) + '"' + (x.pay_date === pd ? ' selected' : '') + '>' + esc(thDate(x.pay_date)) + ' · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + ' ฿</option>').join('') : '<option value="">— ยังไม่มีบัญชีจ่ายเงินที่รอตั้งรอบ —</option>') + '</select></label>') +
       '<button class="btn btn-g" id="pLoad"' + (!free && !pending.length ? ' disabled' : '') + '>ดึงรายการ</button></div>' +
       '<p class="tiny muted" style="margin:10px 2px 0">' + (free
-        ? 'ระบบเสนอหมายฟรีที่ส่งแล้ว ลงข้อมูลไม่เกินวันที่กำหนด และยังไม่เคยเบิก (ราคาตามบัญชีศาล ไฟล์ 18) · กรอก <b>ยอดรายคนจากใบแบ่งยอด</b> ได้ ระบบจะบอกคนที่ไม่ตรงและเสนอเรื่องที่ควรเอาออก · เรื่องที่เอาออก = <b>ยังไม่เสนอเบิกจ่าย</b> ยกไปรอบหน้า · เบิกได้หลายครั้งต่อเดือน'
+        ? 'ระบบเสนอหมายฟรีที่ส่งแล้ว ลงข้อมูลไม่เกินวันที่กำหนด และยังไม่เคยเบิก (ราคาตามบัญชีศาล ไฟล์ 18) · กรอก <b>ยอดรายคนจากใบแบ่งยอด</b> ได้ ระบบจะบอกคนที่ไม่ตรงและเสนอเรื่องที่ควรเอาออก · เรื่องที่เอาออก = <b>ยังไม่เสนอเบิกจ่าย</b> ยกไปรอบหน้า · เลือกตั้งรอบเฉพาะวันที่มีการเบิกจริง (เดือนที่ไม่เบิกไม่ต้องตั้งรอบ · เดือนหนึ่งอาจมีหลายรอบ)'
         : 'ใช้รายการจากบัญชีการจ่ายเงินให้เจ้าพนักงานศาลของวันที่จ่ายนั้นทั้งหมด (ยอดตามไฟล์) · ถ้ายังไม่มีวันที่ต้องการ ให้นำเข้าไฟล์ที่เมนู "นำเข้าข้อมูล" ก่อน') + '</p></form><div id="pBody"></div>';
     $('#pBack').addEventListener('click', () => { S.payoutSub = 'list'; go('payout'); });
     const load = async () => {

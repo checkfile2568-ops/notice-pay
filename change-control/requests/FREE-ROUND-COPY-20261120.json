@@ -1,0 +1,55 @@
+{
+  "id": "FREE-ROUND-COPY-20261120",
+  "change_type": "copy-only",
+  "description": "Clarify event-driven free-notice payouts, distinguish round confirmation from proof of actual payment, and explain zero-round months. Copy-only, existing importer/finance logic unchanged.",
+  "allowed_files": [
+    "app.js"
+  ],
+  "exact_replacements": [
+    {
+      "file": "app.js",
+      "from": "<b>หมายฟรี</b> (เดือนละ 1–2 ครั้ง)",
+      "to": "<b>หมายฟรี</b> (เบิกตามจริง · เดือนหนึ่งอาจไม่มีรอบหรือมีหลายรอบ)"
+    },
+    {
+      "file": "app.js",
+      "from": "· เบิกได้หลายครั้งต่อเดือน'",
+      "to": "· เลือกตั้งรอบเฉพาะวันที่มีการเบิกจริง (เดือนที่ไม่เบิกไม่ต้องตั้งรอบ · เดือนหนึ่งอาจมีหลายรอบ)'"
+    },
+    {
+      "file": "app.js",
+      "from": "' · ที่มา ' + esc(d.sources.FREE18) + '</div></div></div>' +",
+      "to": "' · ที่มา ' + esc(d.sources.FREE18) + '</div>' +\n           '<div class=\"tiny muted\">รอบหมายฟรีตั้งตามการเบิกจริง · เดือนหนึ่งอาจไม่มีรอบ หรือมีหนึ่ง/หลายรอบ · ไม่สร้างรอบอัตโนมัติ</div></div></div>' +"
+    },
+    {
+      "file": "app.js",
+      "from": "'<div class=\"clay panel\"><h3>รอบเบิกที่ผ่านมา</h3>' + roundPaySummaryHtml(d.rounds)",
+      "to": "'<div class=\"clay panel\"><h3>รอบเบิกที่ผ่านมา</h3><p class=\"tiny muted\" style=\"margin:4px 0 10px\">ยืนยันรอบ = ล็อกยอดคำนวณ · จ่ายเงินจริง = มีการบันทึกหลักฐานจ่ายในระบบ สถานะทั้งสองแยกกัน</p>' + roundPaySummaryHtml(d.rounds)"
+    },
+    {
+      "file": "app.js",
+      "from": "'<p class=\"small muted\" style=\"margin:0\">ยังไม่มีรอบเบิก</p>'",
+      "to": "'<p class=\"small muted\" style=\"margin:0\">ยังไม่มีรอบเบิกที่บันทึกในระบบ · เดือนที่ไม่มีการเบิกไม่จำเป็นต้องสร้างรอบ</p>'"
+    }
+  ],
+  "impact_map": {
+    "frontend": [
+      "import guide wording (no importer change)",
+      "payout list description",
+      "payout list zero-round empty state",
+      "payout new form guidance"
+    ],
+    "api": "UNCHANGED",
+    "apps_script": "UNCHANGED",
+    "sheets": "UNCHANGED",
+    "calculation": "UNCHANGED",
+    "reports": "UNCHANGED"
+  },
+  "tests": [
+    "Exact byte-level candidate comparison against main using five approved replacements; no other code changes",
+    "Single/batch import UI, parser, upload, draft/commit actions, request routes, API config and GAS unchanged at source level",
+    "Protected historical calculations and existing 60/40 payout functions unchanged at source level",
+    "Full integration, real-file import and live deployed GAS parity remain BLOCKED pending matching deployment version and isolated regression suite"
+  ],
+  "rollback": "Restore original main app.js through reviewed release process without altering backend, confirmed rounds, data or financial state."
+}
