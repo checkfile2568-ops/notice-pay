@@ -1,0 +1,12 @@
+{
+  "id": "CHANGE-CONTROL-20261121",
+  "change_type": "tooling-only",
+  "description": "Add non-runtime change approval, exact-diff scope validation, PR review checklist and CI static release gate. No notice, money, API or production code changes.",
+  "allowed_files": [
+    "docs/CHANGE_CONTROL.md",
+    "tools/check-change-scope.cjs",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/workflows/change-control.yml"
+  ],
+  "reviewer_note": "Set branch-protection required checks and review after approval. Current static release guard must fail until live GAS integration verified."
+}
