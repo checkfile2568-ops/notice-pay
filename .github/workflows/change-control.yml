@@ -1,0 +1,26 @@
+name: Notice Pay change scope and release preflight
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+permissions:
+  contents: read
+jobs:
+  change-control:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate with history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch main ref
+        run: git fetch origin main:refs/remotes/origin/main
+      - name: Check exact approved change scope
+        run: node tools/check-change-scope.cjs --base origin/main
+      - name: Check published JS syntax
+        run: node --check app.js
+      - name: Check release contract (must not be bypassed to publish)
+        run: node tools/check-release.js
+# This check does not alone protect main. Repository owner must configure
+# branch protection to require this check and reviews before any merge.
+# The baseline mismatch is intentional: until live GAS matches, the gate MUST fail.
