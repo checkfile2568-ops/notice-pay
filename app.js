@@ -2076,13 +2076,38 @@
         '<tbody id="cRows"><tr><td colspan="3" class="muted small">กำลังโหลด…</td></tr></tbody><tfoot><tr><td><b>รวม</b></td><td class="n"><b id="cSumN">0</b></td><td class="n"><b id="cSum">0.00</b></td></tr></tfoot></table></div>' +
         '<p class="tiny muted" style="margin:8px 2px 0">ยอดในใบเบิกเป็นยอดจริงของรอบนี้ · คนที่ไม่มีในใบเบิกเว้นว่าง</p></div>' +
       '<div class="clay panel"><h3>ผลแบ่ง 60:40</h3><div id="cSplit"></div>' +
-        '<div class="row" style="gap:8px;margin-top:12px"><button type="button" class="btn btn-g" id="cGo">ยืนยันตั้งรอบ</button><button type="button" class="btn btn-sm" id="cClear">ล้างค่าที่กรอก</button></div></div>';
+        '<div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap"><button type="button" class="btn btn-g" id="cGo">ยืนยันตั้งรอบ</button><button type="button" class="btn btn-sm" id="c25Bottom">เลือกไฟล์แบบ 25</button><button type="button" class="btn btn-sm" id="cClear">ล้างค่าที่กรอก</button></div>' +
+        '<div id="cGoWhy" class="note small" role="status" aria-live="polite" style="margin-top:10px"></div></div>';
     $('#pBack').addEventListener('click', () => { S.payoutSub = 'list'; go('payout'); });
     $('#cType').value = st.type; $('#cDate').value = st.date; $('#cSeats').value = st.seats; $('#cRef').value = st.ref;
     const save = () => { if (f25 || imported || importBlocked) { claimDraftSet(null); return; } claimDraftSet({ type: st.type, date: st.date, ref: st.ref, seats: st.seats, amt: st.amt, n: st.n }); };
     const viewButton = $('#cGo');
     const onView = () => m.isConnected && m.querySelector('#cGo') === viewButton;
-    const syncGo = () => { if (onView()) viewButton.disabled = !init || init.claim_integrity !== 1 || !init.order_ok || importBlocked || submitting; };
+    // A disabled financial confirmation button must always explain WHICH gate is blocking it.
+    // Do not bypass the official Form25 evidence, historical round order or duplicate checks.
+    const syncGo = () => {
+      if (!onView()) return;
+      const why = [], official25 = st.date >= '2026-11-20';
+      const fileInfo = ($('#c25Info') && $('#c25Info').textContent || '').replace(/\s+/g, ' ').trim();
+      if (!init) why.push('ยังไม่พบข้อมูลตั้งรอบจากระบบ — ตรวจข้อความด้านบน');
+      else {
+        if (init.claim_integrity !== 1) why.push('ระบบตรวจสอบรายการซ้ำไม่พร้อม');
+        if (!init.order_ok) why.push('วันที่ตั้งรอบอยู่ก่อนรอบล่าสุด — ต้องแก้วันให้เรียงต่อจากรอบล่าสุด');
+        if (official25 && Array.isArray(init.unlinked_rounds) && init.unlinked_rounds.length)
+          why.push('มีรอบ' + (st.type === 'FREE' ? 'หมายฟรี' : 'หมายมีเงิน') + 'เก่าที่ยังไม่ผูกรหัสหมาย ' + num(init.unlinked_rounds.length) + ' รอบ ต้องกระทบยอดประวัติก่อน (ห้ามลบรอบเดิม)');
+      }
+      if (importBlocked) why.push(f25 ? 'แบบ 25 ยังตรวจไม่ผ่าน: ' + (fileInfo || 'ตรวจช่วงวันที่ เลขหมายซ้ำหรือรายการที่จับคู่ไม่ได้') : (fileInfo || 'กำลังตรวจหรืออ่านแบบ 25 — ต้องได้ผลตรวจที่ครบก่อน'));
+      else if (official25 && !imported) why.push('รอบวันที่ 20 พฤศจิกายน 2569 เป็นต้นไปต้องนำเข้าแบบ 25 ที่ตรวจจับคู่รายหมายครบ ไม่สามารถยืนยันจากยอดกรอกเอง');
+      if (submitting) why.push('กำลังยืนยันรายการอยู่');
+      viewButton.disabled = why.length > 0;
+      const label = $('#cGoWhy');
+      if (label) {
+        label.innerHTML = why.length
+          ? '<b>ยังยืนยันไม่ได้ เพราะ</b><div style="margin-top:4px">' + why.map(x => '• ' + esc(x)).join('<span style="display:block;margin-top:4px"></span>') + '</div>' +
+            (official25 ? '<div class="tiny muted" style="margin-top:6px">วิธีดำเนินการ: เลือกไฟล์แบบ 25 ตรวจช่วงวันที่และผลจับคู่ให้ครบ แล้วจึงยืนยัน หากติดรายการเก่าให้ตรวจรอบเดิมก่อน ไม่ต้องล้างข้อมูล</div>' : '')
+          : '<span class="flag-ok">✓ ผ่านเงื่อนไขเบื้องต้น พร้อมตรวจยอดและยืนยัน</span>';
+      }
+    };
     const read = () => {
       let bad = 0; const lines = [];
       m.querySelectorAll('#cRows tr[data-o]').forEach((tr) => {
@@ -2131,6 +2156,7 @@
     $('#cDate').addEventListener('change', (e) => { st.date = e.target.value || today; if (f25 || imported || importBlocked) { resetImport(); resetAmounts(); } save(); load(); });
     $('#cSeats').addEventListener('input', (e) => { st.seats = e.target.value; save(); calc(); });
     $('#cRef').addEventListener('input', (e) => { st.ref = e.target.value; save(); });
+    $('#c25Bottom').addEventListener('click', () => $('#c25File').click());
     $('#cClear').addEventListener('click', async () => {
       if (!(await askBox('ล้างยอดและจำนวนเรื่องที่กรอกทั้งหมด?'))) return;
       resetImport(); resetAmounts(); save(); load();
@@ -2174,7 +2200,7 @@
       } finally { submitting = false; syncGo(); }
     });
     /* 0.7.28 นำเข้าแบบ 25 ยอดสะสม → คัดช่วงวันที่ลงข้อมูลหลังรอบก่อน → เติมยอดรายคน (ไม่อ่านคอลัมน์ผู้รับหมาย) */
-    const c25Info = (h) => { $('#c25Info').innerHTML = h; };
+    const c25Info = (h) => { $('#c25Info').innerHTML = h; syncGo(); };
     let cutBasis = '';
     const lastCut = () => {
       if (!init || !Array.isArray(init.form25_ranges)) throw new Error('API ยังไม่รองรับการตรวจช่วงแบบ 25 — อัปเดตหลังบ้านก่อน');
