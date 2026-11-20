@@ -1,0 +1,42 @@
+{
+  "id": "FREE-ROUND-COPY-20261120",
+  "change_type": "copy-only",
+  "description": "Clarify free notice rounds are only when finance actually pays; zero, one or multiple rounds per month. No changes to 60/40 or backend.",
+  "allowed_files": [
+    "app.js"
+  ],
+  "exact_replacements": [
+    {
+      "file": "app.js",
+      "from": "<b>หมายฟรี</b> (เดือนละ 1–2 ครั้ง)",
+      "to": "<b>หมายฟรี</b> (เบิกตามจริง · เดือนหนึ่งอาจไม่มีรอบหรือมีหลายรอบ)"
+    },
+    {
+      "file": "app.js",
+      "from": "· เบิกได้หลายครั้งต่อเดือน'",
+      "to": "· เลือกตั้งรอบเฉพาะวันที่มีการเบิกจริง (เดือนที่ไม่เบิกไม่ต้องตั้งรอบ · เดือนหนึ่งอาจมีหลายรอบ)'"
+    },
+    {
+      "file": "app.js",
+      "from": "' · ที่มา ' + esc(d.sources.FREE18) + '</div></div></div>' +",
+      "to": "' · ที่มา ' + esc(d.sources.FREE18) + '</div>' +\n           '<div class=\"tiny muted\">รอบหมายฟรีตั้งตามการเบิกจริง · เดือนหนึ่งอาจไม่มีรอบ หรือมีหนึ่ง/หลายรอบ · ไม่สร้างรอบอัตโนมัติ</div></div></div>' +"
+    }
+  ],
+  "impact_map": {
+    "frontend": [
+      "import guide",
+      "payout list",
+      "payout new form"
+    ],
+    "api": "UNCHANGED",
+    "apps_script": "UNCHANGED",
+    "sheets": "UNCHANGED",
+    "calculation": "UNCHANGED",
+    "reports": "UNCHANGED"
+  },
+  "tests": [
+    "exact byte-level diff verified against main for 3 replacement sites",
+    "live GAS/API compatibility still BLOCKED until version verification"
+  ],
+  "rollback": "Restore main app.js in this PR without touching Sheets/GAS."
+}
