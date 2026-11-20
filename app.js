@@ -2045,7 +2045,7 @@
       if(typeof NoticeImportFormat!=='undefined' && NoticeImportFormat.form25Evidence && Object.values(evCols).every(i=>i>=0)){
         const ev={};Object.keys(evCols).forEach(k=>{ev[k]=r[evCols[k]];});evidence=NoticeImportFormat.form25Evidence(ev);
       }
-      rows.push({ uid:uidCol>=0 && typeof r[uidCol]==='string' ? r[uidCol].trim() : '', evidence:evidence, date: date, c: c, officer: String(r[ci.o]).replace(/\s+/g, ' ').trim(), type: rowType });
+      rows.push({ source_line:i+1, uid:uidCol>=0 && typeof r[uidCol]==='string' ? r[uidCol].trim() : '', evidence:evidence, date: date, c: c, officer: String(r[ci.o]).replace(/\s+/g, ' ').trim(), type: rowType });
     }
     if (!foot || foot.c === null) throw new Error('ไม่พบแถวรวมทั้งสิ้นท้ายไฟล์ จึงตรวจยอดไม่ได้');
     if (foot.n !== rows.length || foot.c !== allC) throw new Error('ยอดไม่ตรงท้ายไฟล์: อ่านได้ ' + num(rows.length) + ' หมาย ' + cb(allC) + ' บาท · ท้ายไฟล์ ' + num(foot.n) + ' หมาย ' + cb(foot.c) + ' บาท — ไม่นำเข้า');
@@ -2191,7 +2191,7 @@
         body.allow_same_date = true;
       }
       if (!onView() || !init || importBlocked || snapshot !== JSON.stringify([st.type, st.date, st.ref, st.seats, read().lines, imported])) { toast('ข้อมูลเปลี่ยน กรุณาตรวจอีกครั้ง'); return; }
-      if (imported) { body.form25_range = {from: imported.from, to: imported.to}; body.form25_rows = imported.rows; } else { body.confirm_manual_review = true; }
+      if (imported) { body.form25_range = {from: imported.from, to: imported.to}; body.form25_rows = imported.rows.map(({source_line,review_status,...row})=>row); } else { body.confirm_manual_review = true; }
       try {
         const x = await api('claim_confirm', body);
         claimDraftSet(null); toast('ตั้งรอบแล้ว · คนนั่งงานได้คนละ ' + baht2(x.round.per_seat) + ' บาท');
@@ -2222,7 +2222,8 @@
         if (to && r.date > to) return;
         const id = f25.map[r.officer];
         if (!id) { miss[r.officer] = (miss[r.officer] || 0) + r.c; return; }
-        picked.push({notice_uid:r.uid, evidence:r.evidence||'', officer_id:id, date:r.date, amount:(r.c/100).toFixed(2)});
+        picked.push({notice_uid:r.uid, evidence:r.evidence||'', officer_id:id, date:r.date, amount:(r.c/100).toFixed(2), source_line:r.source_line,
+          review_status:r.uid?'UID_PRESENT':(r.evidence?'AWAITING_MATCH':'MISSING_EVIDENCE')});
         agg[id] = agg[id] || { n: 0, c: 0 }; agg[id].n++; agg[id].c += r.c; n++; sum += r.c;
       });
       st.amt = {}; st.n = {};
@@ -2241,21 +2242,46 @@
           if(seq!==matchSeq||source!==f25||want!==st.type||pd!==st.date||!onView())return;
           if(!Array.isArray(match.matches)||match.matches.length!==pending.length)throw new Error('ข้อมูลจับคู่ไม่ครบ');
           let linked=0;const reasons=Object.create(null);
-          match.matches.forEach((x,i)=>{if(x&&x.status==='MATCHED'&&x.uid){pending[i].notice_uid=x.uid;linked++;}else{const k=x&&x.status||'UNKNOWN';reasons[k]=(reasons[k]||0)+1;}});
+          match.matches.forEach((x,i)=>{if(x&&x.status==='MATCHED'&&x.uid){pending[i].notice_uid=x.uid;pending[i].review_status='MATCHED';linked++;}else{const k=x&&x.status||'UNKNOWN';pending[i].review_status=k;reasons[k]=(reasons[k]||0)+1;}});
           const labels={NOT_FOUND:'ไม่พบในทะเบียน',AMBIGUOUS:'พบหลายฉบับ',DATE_OR_UNIT_MISMATCH:'วันที่หรือหน่วยหมายไม่ตรง',ALREADY_LINKED:'อยู่ในรอบแล้ว',AMOUNT_OR_CANDIDATE_MISMATCH:'ยอดหรือสถานะไม่ตรง',DUPLICATE_IN_FILE:'ซ้ำในไฟล์',OFFICER_MISMATCH:'ผู้ส่งไม่ตรง',TYPE_MISMATCH:'ประเภทไม่ตรง',PRIVACY_REVIEW:'ข้อมูลเดิมต้องตรวจการตัดชื่อ',MISSING_EVIDENCE:'หลักฐานไม่ครบ'};
           matchNote='<div class="note">จับคู่จากทะเบียน '+num(linked)+' / '+num(pending.length)+' รายการ'+(Object.keys(reasons).length?' · '+Object.keys(reasons).map(k=>esc(labels[k]||k)+' '+num(reasons[k])).join(' · '):'')+'</div>';
           (match.unlinked_rounds||[]).forEach(id=>{if(!unresolved.includes(id))unresolved.push(id);});
         }catch(e){if(seq!==matchSeq||!onView())return;matchNote='<div class="note r">ตรวจทะเบียนไม่สำเร็จ — ระงับยืนยัน ('+esc(e.message)+')</div>';}
       }
       if(seq!==matchSeq||source!==f25||want!==st.type||pd!==st.date||!onView())return;
-      picked.forEach(r=>{if(!r.notice_uid)missingUid++;else if(seen.has(r.notice_uid))repeatedUid++;else seen.add(r.notice_uid);});
+      picked.forEach(r=>{if(!r.notice_uid)missingUid++;else if(seen.has(r.notice_uid)){r.review_status='DUPLICATE_IN_FILE';repeatedUid++;}else seen.add(r.notice_uid);});
+      const statusName={NOT_FOUND:'ไม่พบในทะเบียน',AMBIGUOUS:'พบหลายฉบับ',DATE_OR_UNIT_MISMATCH:'วันที่หรือหน่วยหมายไม่ตรง',ALREADY_LINKED:'อยู่ในรอบแล้ว',AMOUNT_OR_CANDIDATE_MISMATCH:'ยอดหรือสถานะไม่ตรง',DUPLICATE_IN_FILE:'รหัสหมายซ้ำ',OFFICER_MISMATCH:'ผู้ส่งไม่ตรง',TYPE_MISMATCH:'ประเภทไม่ตรง',PRIVACY_REVIEW:'ข้อมูลเดิมต้องตรวจ',MISSING_EVIDENCE:'หลักฐานจับคู่ไม่ครบ',AWAITING_MATCH:'ยังตรวจจับคู่ไม่สำเร็จ',UNKNOWN:'ไม่ทราบสาเหตุ'};
+      const reviewRows=picked.filter(r=>!r.notice_uid || r.review_status==='DUPLICATE_IN_FILE');
+      const reviewC=reviewRows.reduce((sum,r)=>sum+claimCents(r.amount),0);
+      const fileFree=f25.rows.filter(r=>r.type==='FREE'), filePaid=f25.rows.filter(r=>r.type==='PAID');
+      const byMoney=rows=>rows.reduce((acc,r)=>acc+r.c,0);
+      const reviewTable=reviewRows.length?'<details class="clay panel" open style="margin:8px 0"><summary><b>ตรวจรายการที่ยังจับคู่ไม่ได้ '+num(reviewRows.length)+' รายการ · '+cb(reviewC)+' บาท</b> — กดเพื่อดูเลขแถวใน Excel</summary>'+
+        '<div class="tiny muted" style="margin:8px 0">เป็นยอดในแบบ 25 ที่ยังผูกรหัสหมายไม่สำเร็จ ไม่ใช่ยอดที่ต้องจ่ายเพิ่ม กรุณาตรวจต้นฉบับตามเลขแถว ห้ามลบหรือหักยอดอัตโนมัติ</div>'+
+        '<div class="tbl-wrap"><table class="ctbl"><thead><tr><th>แถว Excel</th><th>วันที่</th><th class="n">ยอดเงิน (บาท)</th><th>เหตุผล</th></tr></thead><tbody>'+
+        reviewRows.map(r=>'<tr><td>'+num(r.source_line||0)+'</td><td>'+esc(thDate(r.date))+'</td><td class="n">'+cb(claimCents(r.amount))+'</td><td>'+esc(statusName[r.review_status]||'ตรวจข้อมูลรายหมาย')+'</td></tr>').join('')+
+        '</tbody></table></div><button type="button" class="btn btn-sm" id="c25ReviewCsv" style="margin-top:8px">ดาวน์โหลดรายการรอตรวจ (ไม่ระบุชื่อคู่ความ)</button></details>':'';
+      const localReviewCsv=()=>{
+        const header=['แถว Excel','วันที่ลงข้อมูล','ยอดบาท','เหตุผล'];
+        const data=reviewRows.map(r=>[String(r.source_line||0),r.date,r.amount,statusName[r.review_status]||'ตรวจข้อมูล']);
+        const csv='\uFEFF'+[header,...data].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+        const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+        const link=document.createElement('a');
+        link.href=url;
+        link.download='notice-pay-form25-review-'+st.type+'-'+from+'-'+to+'.csv';
+        link.click();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+      };
       imported = {from, to, tag, rows:picked, lines: JSON.stringify(Object.keys(agg).map(id => [id,agg[id].c,agg[id].n]).sort())};
       importBlocked = mk.length > 0 || !n || missingUid > 0 || repeatedUid > 0 || unresolved.length > 0; save(); load();
       c25Info('<div class="note">' + esc(f25.name) + ' · ตรวจยอดท้ายไฟล์ตรง (' + num(f25.total_n) + ' หมาย ' + cb(f25.total_c) + ' บาท) · ' +
+        '<br><span class="tiny muted">ยอดสะสมในไฟล์ทั้งสองประเภท: หมายฟรี '+num(fileFree.length)+' รายการ '+cb(byMoney(fileFree))+' บาท · หมายมีเงิน '+num(filePaid.length)+' รายการ '+cb(byMoney(filePaid))+' บาท (ไม่ใช่ยอดรอบใหม่ทั้งหมด)</span><br>' +
         (want === 'FREE' ? 'หมายฟรี' : 'หมายเงิน') + ' ที่ลงข้อมูล ' + esc(thDate(from || f25.min)) + ' – ' + esc(thDate(to || f25.max)) + ' : <b>' + num(n) + ' เรื่อง ' + cb(sum) + ' บาท</b>' +
         (before ? ' · ข้ามรายการก่อนช่วง ' + num(before) + ' เรื่อง' : '') + (cutBasis ? '<br><span class="tiny muted">วันที่เริ่ม: ' + esc(cutBasis) + '</span>' : '') + '</div>' +
-        matchNote + (missingUid || repeatedUid ? '<div class="note r">ตรวจยอดได้เท่านั้น · ขาด notice_uid '+num(missingUid)+' รายการ · รหัสซ้ำ '+num(repeatedUid)+' รายการ — ต้องใช้รหัสจากทะเบียนจริง</div>' : '') + (unresolved.length ? '<div class="note r">มีรอบเดิมยังไม่ผูกรายหมาย '+num(unresolved.length)+' รอบ — ต้องกระทบยอดก่อนยืนยัน</div>' : '') +
+        matchNote + '<div class="note small">ยอดเลือกช่วงนี้ '+cb(sum)+' บาท · มีรหัสหมายเบื้องต้น '+num(n-missingUid)+' รายการ '+cb(sum-reviewC)+' บาท · รอตรวจ '+num(reviewRows.length)+' รายการ '+cb(reviewC)+' บาท (ยังไม่ยืนยันยอดจ่ายรอบ)</div>' +
+        reviewTable +
+        (missingUid || repeatedUid ? '<div class="note r">ตรวจยอดได้เท่านั้น · ขาด notice_uid '+num(missingUid)+' รายการ · รหัสซ้ำ '+num(repeatedUid)+' รายการ — ต้องใช้รหัสจากทะเบียนจริง</div>' : '') + (unresolved.length ? '<div class="note r">มีรอบเดิมยังไม่ผูกรายหมาย '+num(unresolved.length)+' รอบ — ต้องกระทบยอดก่อนยืนยัน</div>' : '') +
         (mk.length ? '<div class="note r">ไม่พบผู้ส่งในระบบ: ' + mk.map((k) => esc(k) + ' ' + cb(miss[k]) + ' บาท').join(' · ') + ' — เพิ่มที่ ตั้งค่า › ผู้ส่งหมายและอัตรา แล้วนำเข้าใหม่</div>' : ''));
+      if ($('#c25ReviewCsv')) $('#c25ReviewCsv').addEventListener('click', localReviewCsv);
     };
     const read25 = async (file) => {
       if (submitting || !init) return;
