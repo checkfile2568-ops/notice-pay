@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.34';
+  const UI_VERSION = '0.7.35';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -255,7 +255,7 @@
   const roundStatusHtml = (r) => {
     if (r.status !== 'CONFIRMED') return '<span class="pchip pcx">ยกเลิก</span>';
     return '<span class="pchip pok">ยืนยันรอบแล้ว</span><div class="tiny" style="margin-top:3px;white-space:nowrap">' +
-      (r.payment_status === 'PAID' ? '<span style="color:var(--g-ink);font-weight:700">✓ จ่ายจริง ' + esc(thDate(r.payment_date)) + '</span>' : '<span class="flag-up">ยังไม่บันทึกจ่าย</span>') + '</div>';
+      (r.payment_status === 'PAID' ? '<span style="color:var(--g-ink);font-weight:700">✓ จ่ายจริง ' + esc(thDate(r.payment_date)) + '</span>' : (r.from_form25 ? '<span class="flag-up">มีรายการจ่ายจริงตามแบบ 25 · ยังไม่บันทึกหลักฐานส่วนแบ่ง 60:40</span>' : '<span class="flag-up">ยังไม่บันทึกจ่าย</span>')) + '</div>';
   };
   /** 0.7.14 สรุปเหนือตารางรอบ: กี่รอบบันทึกจ่ายแล้ว กี่รอบยังไม่บันทึก พร้อมยอดรวมและส่วนเจ้าหน้าที่ส่งหมาย 60% */
   const roundPaySummaryHtml = (rounds) => {
@@ -2060,15 +2060,15 @@
     const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
     const st = Object.assign({ type: 'FREE', date: today, ref: '', seats: '', amt: {}, n: {} }, claimDraftGet() || {});
     let init = null, loadSeq = 0, submitting = false, f25 = null, importBlocked = false, imported = null, readSeq = 0, matchSeq = 0;
-    m.innerHTML = top('ตั้งรอบ 60/40 ตามใบเบิก', '<button type="button" class="btn btn-sm" id="pBack">← กลับ</button>') +
+    m.innerHTML = top('ตั้งรอบ 60/40 จากยอดจ่ายจริงแบบ 25', '<button type="button" class="btn btn-sm" id="pBack">← กลับ</button>') +
       '<div class="clay panel"><div class="pform">' +
         '<label>ประเภทใบเบิก<select class="inp" id="cType"><option value="FREE">หมายฟรี (เงินงบประมาณ)</option><option value="PAID">หมายเงิน (นอกงบประมาณ)</option></select></label>' +
         '<label>วันที่จ่าย<input type="date" class="inp" id="cDate" required></label>' +
         '<label>คนนั่งงาน (N)<input type="number" class="inp" id="cSeats" min="1" max="1000" step="1" inputmode="numeric" required></label>' +
         '<label>เลขที่ / อ้างอิงใบเบิก<input class="inp" id="cRef" maxlength="100" required placeholder="เลขที่จริง / ปี"></label>' +
       '</div><div id="cInfo" class="small" style="margin-top:10px"></div></div>' +
-      '<div class="clay panel cimp"><div class="row" style="justify-content:space-between;align-items:center;gap:10px"><div><b>นำเข้าแบบ 25 (บัญชีค่าใช้จ่ายส่งหมาย)</b> <span class="pchip">ตรวจสอบก่อนยืนยัน</span>' +
-        '<div class="tiny muted">ใช้ไฟล์ยอดสะสมได้ ระบบคัดเฉพาะหมายที่ลงข้อมูลหลังรอบก่อน แล้วเติมยอดและจำนวนเรื่องรายคนให้ · ตรวจรหัสจากทะเบียนโดยอัตโนมัติเมื่อหลักฐานครบและตรงเพียงรายการเดียว · ไม่ส่งชื่อผู้รับหมายขึ้นระบบ</div></div>' +
+      '<div class="clay panel cimp"><div class="row" style="justify-content:space-between;align-items:center;gap:10px"><div><b>แบบ 25 · ยอดจ่ายจริงของหมายฟรีและหมายมีเงิน</b> <span class="pchip">ตรวจสอบก่อนยืนยัน</span>' +
+        '<div class="tiny muted">แบบ 25 คือแหล่งยอดจ่ายจริงสำหรับทั้งสองประเภท · หากไฟล์เลือก “รวม” ระบบจะแยกหมายฟรีกับหมายมีเงินก่อนคิดยอด · ตรวจรหัสกับทะเบียนและรอบเดิม ป้องกันเบิกซ้ำ · ไม่ส่งชื่อผู้รับหมายขึ้นระบบ</div></div>' +
         '<button type="button" class="btn btn-sm btn-g" id="c25Btn">เลือกไฟล์แบบ 25</button><input type="file" id="c25File" accept=".xls,.xlsx" hidden></div>' +
         '<div class="row" style="gap:10px;margin-top:10px;align-items:end"><label>ลงข้อมูลตั้งแต่<input type="date" class="inp" id="c25From"></label><label>ถึง<input type="date" class="inp" id="c25To"></label><button type="button" class="btn btn-sm" id="c25Apply" disabled>คิดยอดช่วงนี้ใหม่</button></div>' +
         '<div id="c25Info" class="small" style="margin-top:8px"></div></div>' +
@@ -2346,6 +2346,7 @@
       '<label class="pseat hidden" id="pCarryNoteL">เหตุผลที่แก้เศษยกมา<input class="inp" id="pCarryNote" maxlength="200" placeholder="เช่น เศษจากใบแบ่งยอดก่อนใช้ระบบ"></label>' +
       '<label class="pseat">หมายเหตุ (ถ้ามี)<input class="inp" id="pNote" maxlength="300" placeholder="เช่น เลื่อนจ่ายจากวันศุกร์"></label>' +
       (d.order_ok ? '' : '<p class="note r small">มีรอบที่ยืนยันแล้วหลังวันที่นี้ — ตั้งรอบย้อนหลังไม่ได้ (เศษยกจะคลาดเคลื่อน)</p>') +
+      (d.requires_form25 ? '<div class="note r small">ยอดนี้เป็นเพียงรายการคาดว่าจะเบิกจากแบบ 18/30 ยังไม่ใช่ยอดจ่ายจริง · สำหรับรอบใหม่นำเข้าแบบ 25 ก่อน (แยกประเภทฟรี/มีเงินและตรวจหมายทีละฉบับ)</div><button type="button" class="btn btn-g" id="pTo25" style="width:100%">ไปที่แบบ 25 · ยอดจ่ายจริง</button>' : '') +
       '<button type="button" class="btn btn-g" id="pOk" style="width:100%">ยืนยันรอบ</button>' +
       (!free && d.can_outside ? '<div class="note small" style="margin-top:10px"><b>บัญชีวันนี้แบ่ง 60:40 นอกระบบไปแล้ว?</b><br><span class="tiny">เช่น งานเดือน ก.ย. ก่อนเริ่มระบบ · บันทึกแล้ววันที่นี้จะไม่อยู่ในรายการรอตั้งรอบและรอจับคู่ ยอดบัญชีคงเดิม ไม่สร้างรอบ ไม่คิดเศษยก · ยกเลิกได้</span>' +
         '<button type="button" class="btn btn-sm" id="pOutside" style="width:100%;margin-top:8px">บันทึกว่าแบ่งจ่ายนอกระบบแล้ว</button></div>' : '') +
@@ -2386,8 +2387,8 @@
       });
       if ($('#pSugAll')) $('#pSugAll').disabled = !anySug;
       box.querySelectorAll('[data-sg]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); applySug([b.dataset.sg]); }));
-      $('#pOk').disabled = negOff.length > 0 || !inc.some((it) => it.amount_c > 0) || !(Number.isInteger(Number($('#pSeats').value)) && Number($('#pSeats').value) >= 1 && Number($('#pSeats').value) <= 1000) || !d.order_ok;
-      $('#pOk').textContent = 'ยืนยันรอบ · ' + cb(sp.total_c) + ' ฿';
+      $('#pOk').disabled = !!d.requires_form25 || negOff.length > 0 || !inc.some((it) => it.amount_c > 0) || !(Number.isInteger(Number($('#pSeats').value)) && Number($('#pSeats').value) >= 1 && Number($('#pSeats').value) <= 1000) || !d.order_ok;
+      $('#pOk').textContent = d.requires_form25 ? 'ต้องตรวจจ่ายจริงจากแบบ 25' : 'ยืนยันรอบ · ' + cb(sp.total_c) + ' ฿';
     };
     const setOff = (it, out, noclaim) => {
       [it].concat(it.amount_c > 0 ? sameUnitZero(it) : []).forEach((x) => {
@@ -2440,7 +2441,9 @@
       try { const r = await api('ledger_outside', { pay_date: d.pay_date, reason: reason }); toast('บันทึกแล้ว · ' + thDate(r.pay_date) + ' ' + num(r.rows) + ' เรื่อง ' + baht2(r.amount) + ' บาท แบ่งนอกระบบ'); S.payoutSub = 'list'; go('payout'); }
       catch (x) { toast(x.message); b.disabled = false; }
     });
+    if ($('#pTo25')) $('#pTo25').addEventListener('click', () => go('claim25'));
     $('#pOk').addEventListener('click', async () => {
+      if (d.requires_form25) { toast('กรุณาตรวจยอดจ่ายจริงจากแบบ 25 ก่อนยืนยันรอบ'); return; }
       const inc = d.items.length - off.size, carryC = Math.round(Number($('#pCarry').value || 0) * 100);
       if (carryC !== carry0 && !$('#pCarryNote').value.trim()) { toast('กรุณาใส่เหตุผลที่แก้เศษยกมา'); $('#pCarryNote').focus(); return; }
       const bad = Object.keys(targets).filter((id) => { const s = byOff[id].filter((it) => !off.has(it.key)).reduce((a, x) => a + x.amount_c, 0); return s !== targets[id]; });
@@ -2507,7 +2510,9 @@
       (free && inc.length && !r.from_claim ? '<button type="button" class="btn btn-sm" id="pClaim">พิมพ์บัญชีหมายฟรีที่เบิก</button>' : '') +
       (d.can_cancel ? '<button type="button" class="btn btn-sm" id="pCancel">ยกเลิกรอบ</button>' : '') +
       (d.can_cancel_paid ? '<button type="button" class="btn btn-sm btn-danger" id="pCancelPaid" title="ใช้เมื่อบันทึกว่าจ่ายแล้วแต่ความจริงยังไม่ได้จ่าย">ยกเลิกรอบ (บันทึกจ่ายผิด)</button>' : '') + '</div>') +
-      (r.payment_status === 'PAID' ? '<div class="note g">จ่ายจริง '+esc(thDate(r.payment_date))+' · หลักฐาน '+esc(r.payment_ref)+'</div>' : '<div class="note">อยู่ในรอบยืนยันแล้ว · รอบเก่าคงยอดเดิม · ยังไม่บันทึกหลักฐานจ่ายจริงในระบบ (ถ้าจ่ายแล้วให้กด “บันทึกหลักฐานจ่ายจริง”)</div>') +
+      (r.payment_status === 'PAID' ? '<div class="note g">บันทึกหลักฐานจ่ายส่วนแบ่งแล้ว '+esc(thDate(r.payment_date))+' · หลักฐาน '+esc(r.payment_ref)+'</div>' :
+        (r.from_form25 ? '<div class="note g">แบบ 25 คือยอดจ่ายจริงจากระบบงานหมาย (ตรวจตรงรายหมายแล้ว) · รอบแบ่ง 60:40 นี้ยังไม่ได้บันทึกหลักฐานส่วนแบ่งในระบบ</div>' :
+          '<div class="note">อยู่ในรอบยืนยันแล้ว · รอบเก่าคงยอดเดิม · ยังไม่บันทึกหลักฐานจ่ายจริงในระบบ (ถ้าจ่ายแล้วให้กด “บันทึกหลักฐานจ่ายจริง”)</div>')) +
       (r.from_claim ? '<div class="note">รอบนี้ตั้งตามใบเบิก · ตรวจรายการที่ผูกทะเบียนในรายละเอียดด้านล่าง หากยังไม่มีรายการรายหมาย ต้องกระทบยอดประวัติก่อนเบิกซ้ำ</div>' : '') +
       (r.status === 'CANCELLED' ? '<div class="note r">รอบนี้ถูกยกเลิกโดย ' + esc(r.cancelled_by) + ' เมื่อ ' + esc(thDate(r.cancelled_at, true)) + ' · เหตุผล: ' + esc(r.cancel_reason) + '</div>' : '') +
       '<div class="bn4"><div class="kpi clay kt k-all"><span>ยอดรวม' + esc(free ? 'หมายฟรี' : 'หมายเงิน') + '</span><b>' + baht2(r.total) + '&nbsp;฿</b><small>' + num(d.lines.length) + ' คน · ' + num(inc.length) + ' เรื่อง</small></div>' +
