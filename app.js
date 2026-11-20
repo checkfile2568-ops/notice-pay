@@ -243,7 +243,7 @@
     '<li>กด <b>นำเข้าไฟล์ถัดไป</b> → ทำไฟล์ลำดับต่อไป</li></ol>' +
     '<h4>ก่อนตั้งรอบแต่ละครั้ง</h4><div class="tbl-wrap"><table class="small"><thead><tr><th>รอบ</th><th>ต้องนำเข้า</th><th>ควรนำเข้าด้วย</th></tr></thead><tbody>' +
     '<tr><td><b>หมายเงิน</b> (ปกติวันศุกร์)</td><td>30 ของวันที่จ่าย</td><td>50 · 42 ช่วงล่าสุด (ให้บัญชีจ่ายผูกกับหมายครบ)</td></tr>' +
-    '<tr><td><b>หมายฟรี</b> (เดือนละ 1–2 ครั้ง)</td><td>18 ชุดใหม่ · 42 ช่วงล่าสุด</td><td>50 ถ้ามีหมายจ่ายใหม่</td></tr></tbody></table></div>' +
+    '<tr><td><b>หมายฟรี</b> (เบิกตามจริง · เดือนหนึ่งอาจไม่มีรอบหรือมีหลายรอบ)</td><td>18 ชุดใหม่ · 42 ช่วงล่าสุด</td><td>50 ถ้ามีหมายจ่ายใหม่</td></tr></tbody></table></div>' +
     '<p class="small muted">ไม่นำเข้า 50/42 ก่อน: รอบหมายเงินยังตั้งได้ตามไฟล์ 30 แต่จะมี "รอยืนยันการจับคู่" จนกว่าจะนำเข้า · รอบหมายฟรี หมายที่ยังไม่มีผลการส่งจะยังไม่พร้อมเบิก (รอรอบหน้า)</p>' +
     '<div class="row" style="justify-content:flex-end"><button type="button" class="btn btn-sm" id="imGuideClose">ปิดคู่มือ ▲</button></div>' +
     '</div></details>';
@@ -1958,7 +1958,8 @@
       '<div class="clay panel pinfo">' +
         '<div class="pinfo-r"><span class="pchip pf">งบประมาณ</span><div><b>' + (lf ? 'เบิกหมายฟรีล่าสุด ' + esc(thDate(lf.pay_date)) : 'ยังไม่เคยเบิกหมายฟรีในระบบ') + '</b>' +
           (lf ? '<span class="small muted">' + (lf.cutoff ? ' · ลงข้อมูลถึง ' + esc(thDate(lf.cutoff)) : '') + ' · ' + baht2(lf.total) + '&nbsp;฿</span>' : '') +
-          '<div class="tiny muted">ราคาหมายฟรีตามบัญชีศาล: ' + (d.free18_at ? 'นำเข้าล่าสุด ' + esc(thDate(d.free18_at, true)) : '<span class="flag-r">ยังไม่นำเข้า — รอบหมายฟรีจะใช้ยอดที่ระบบคำนวณ</span>') + ' · ที่มา ' + esc(d.sources.FREE18) + '</div></div></div>' +
+          '<div class="tiny muted">ราคาหมายฟรีตามบัญชีศาล: ' + (d.free18_at ? 'นำเข้าล่าสุด ' + esc(thDate(d.free18_at, true)) : '<span class="flag-r">ยังไม่นำเข้า — รอบหมายฟรีจะใช้ยอดที่ระบบคำนวณ</span>') + ' · ที่มา ' + esc(d.sources.FREE18) + '</div>' +
+           '<div class="tiny muted">รอบหมายฟรีตั้งตามการเบิกจริง · เดือนหนึ่งอาจไม่มีรอบ หรือมีหนึ่ง/หลายรอบ · ไม่สร้างรอบอัตโนมัติ</div></div></div>' +
         '<div class="pinfo-r"><span class="pchip pm">นอกงบฯ</span><div><b>มีบัญชีจ่ายแล้ว แต่ยังไม่มีรอบแบ่งในระบบ</b>' +
           (d.pending_dates.length ? '<div class="pdates">' + d.pending_dates.map((x) => '<button type="button" class="btn btn-sm pdate" data-pd="' + esc(x.pay_date) + '"' + (d.can_create ? '' : ' disabled') + '>' + esc(thDate(x.pay_date)) + ' · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + '&nbsp;฿' + (x.none ? ' <span class="flag-r">รอยืนยันการจับคู่ ' + num(x.none) + '</span>' : '') + '</button>').join('') + '</div>'
             : '<div class="small muted">ไม่มี — ดาวน์โหลดไฟล์ ' + esc(d.sources.PAY) + ' แล้วนำเข้าที่ "นำเข้าข้อมูล › บัญชีจ่ายเงินหมายมีเงิน"</div>') +
@@ -2320,7 +2321,7 @@
             : '<label>วันที่จ่ายตามบัญชีการจ่ายเงิน<select class="inp" id="pDate" required>' + (pending.length ? pending.map((x) => '<option value="' + esc(x.pay_date) + '"' + (x.pay_date === pd ? ' selected' : '') + '>' + esc(thDate(x.pay_date)) + ' · ' + num(x.rows) + ' เรื่อง · ' + baht2(x.amount) + ' ฿</option>').join('') : '<option value="">— ยังไม่มีบัญชีจ่ายเงินที่รอตั้งรอบ —</option>') + '</select></label>') +
       '<button class="btn btn-g" id="pLoad"' + (!free && !pending.length ? ' disabled' : '') + '>ดึงรายการ</button></div>' +
       '<p class="tiny muted" style="margin:10px 2px 0">' + (free
-        ? 'ระบบเสนอหมายฟรีที่ส่งแล้ว ลงข้อมูลไม่เกินวันที่กำหนด และยังไม่เคยเบิก (ราคาตามบัญชีศาล ไฟล์ 18) · กรอก <b>ยอดรายคนจากใบแบ่งยอด</b> ได้ ระบบจะบอกคนที่ไม่ตรงและเสนอเรื่องที่ควรเอาออก · เรื่องที่เอาออก = <b>ยังไม่เสนอเบิกจ่าย</b> ยกไปรอบหน้า · เบิกได้หลายครั้งต่อเดือน'
+        ? 'ระบบเสนอหมายฟรีที่ส่งแล้ว ลงข้อมูลไม่เกินวันที่กำหนด และยังไม่เคยเบิก (ราคาตามบัญชีศาล ไฟล์ 18) · กรอก <b>ยอดรายคนจากใบแบ่งยอด</b> ได้ ระบบจะบอกคนที่ไม่ตรงและเสนอเรื่องที่ควรเอาออก · เรื่องที่เอาออก = <b>ยังไม่เสนอเบิกจ่าย</b> ยกไปรอบหน้า · เลือกตั้งรอบเฉพาะวันที่มีการเบิกจริง (เดือนที่ไม่เบิกไม่ต้องตั้งรอบ · เดือนหนึ่งอาจมีหลายรอบ)'
         : 'ใช้รายการจากบัญชีการจ่ายเงินให้เจ้าพนักงานศาลของวันที่จ่ายนั้นทั้งหมด (ยอดตามไฟล์) · ถ้ายังไม่มีวันที่ต้องการ ให้นำเข้าไฟล์ที่เมนู "นำเข้าข้อมูล" ก่อน') + '</p></form><div id="pBody"></div>';
     $('#pBack').addEventListener('click', () => { S.payoutSub = 'list'; go('payout'); });
     const load = async () => {
