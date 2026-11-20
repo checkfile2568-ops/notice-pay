@@ -255,7 +255,7 @@
   const roundStatusHtml = (r) => {
     if (r.status !== 'CONFIRMED') return '<span class="pchip pcx">ยกเลิก</span>';
     return '<span class="pchip pok">ยืนยันรอบแล้ว</span><div class="tiny" style="margin-top:3px;white-space:nowrap">' +
-      (r.payment_status === 'PAID' ? '<span style="color:var(--g-ink);font-weight:700">✓ จ่ายจริง ' + esc(thDate(r.payment_date)) + '</span>' : '<span class="flag-up">ยังไม่บันทึกจ่าย</span>') + '</div>';
+      (r.payment_status === 'PAID' ? '<span style="color:var(--g-ink);font-weight:700">✓ จ่ายจริง ' + esc(thDate(r.payment_date)) + '</span>' : (r.from_form25 ? '<span class="flag-up">มีรายการจ่ายจริงตามแบบ 25 · ยังไม่บันทึกหลักฐานส่วนแบ่ง 60:40</span>' : '<span class="flag-up">ยังไม่บันทึกจ่าย</span>')) + '</div>';
   };
   /** 0.7.14 สรุปเหนือตารางรอบ: กี่รอบบันทึกจ่ายแล้ว กี่รอบยังไม่บันทึก พร้อมยอดรวมและส่วนเจ้าหน้าที่ส่งหมาย 60% */
   const roundPaySummaryHtml = (rounds) => {
@@ -2510,7 +2510,9 @@
       (free && inc.length && !r.from_claim ? '<button type="button" class="btn btn-sm" id="pClaim">พิมพ์บัญชีหมายฟรีที่เบิก</button>' : '') +
       (d.can_cancel ? '<button type="button" class="btn btn-sm" id="pCancel">ยกเลิกรอบ</button>' : '') +
       (d.can_cancel_paid ? '<button type="button" class="btn btn-sm btn-danger" id="pCancelPaid" title="ใช้เมื่อบันทึกว่าจ่ายแล้วแต่ความจริงยังไม่ได้จ่าย">ยกเลิกรอบ (บันทึกจ่ายผิด)</button>' : '') + '</div>') +
-      (r.payment_status === 'PAID' ? '<div class="note g">จ่ายจริง '+esc(thDate(r.payment_date))+' · หลักฐาน '+esc(r.payment_ref)+'</div>' : '<div class="note">อยู่ในรอบยืนยันแล้ว · รอบเก่าคงยอดเดิม · ยังไม่บันทึกหลักฐานจ่ายจริงในระบบ (ถ้าจ่ายแล้วให้กด “บันทึกหลักฐานจ่ายจริง”)</div>') +
+      (r.payment_status === 'PAID' ? '<div class="note g">บันทึกหลักฐานจ่ายส่วนแบ่งแล้ว '+esc(thDate(r.payment_date))+' · หลักฐาน '+esc(r.payment_ref)+'</div>' :
+        (r.from_form25 ? '<div class="note g">แบบ 25 คือยอดจ่ายจริงจากระบบงานหมาย (ตรวจตรงรายหมายแล้ว) · รอบแบ่ง 60:40 นี้ยังไม่ได้บันทึกหลักฐานส่วนแบ่งในระบบ</div>' :
+          '<div class="note">อยู่ในรอบยืนยันแล้ว · รอบเก่าคงยอดเดิม · ยังไม่บันทึกหลักฐานจ่ายจริงในระบบ (ถ้าจ่ายแล้วให้กด “บันทึกหลักฐานจ่ายจริง”)</div>')) +
       (r.from_claim ? '<div class="note">รอบนี้ตั้งตามใบเบิก · ตรวจรายการที่ผูกทะเบียนในรายละเอียดด้านล่าง หากยังไม่มีรายการรายหมาย ต้องกระทบยอดประวัติก่อนเบิกซ้ำ</div>' : '') +
       (r.status === 'CANCELLED' ? '<div class="note r">รอบนี้ถูกยกเลิกโดย ' + esc(r.cancelled_by) + ' เมื่อ ' + esc(thDate(r.cancelled_at, true)) + ' · เหตุผล: ' + esc(r.cancel_reason) + '</div>' : '') +
       '<div class="bn4"><div class="kpi clay kt k-all"><span>ยอดรวม' + esc(free ? 'หมายฟรี' : 'หมายเงิน') + '</span><b>' + baht2(r.total) + '&nbsp;฿</b><small>' + num(d.lines.length) + ' คน · ' + num(inc.length) + ' เรื่อง</small></div>' +
