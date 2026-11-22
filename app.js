@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.35';
+  const UI_VERSION = '0.7.39';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -287,7 +287,7 @@
     if (!C.API_URL || /วางลิงก์/.test(C.API_URL)) throw Object.assign(new Error('ยังไม่ได้ตั้งค่า API_URL ใน config.js'), { code: 'CONFIG' });
     const epoch = navEpoch;
     const payload = Object.assign({}, body || {});
-    const writing = ['import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside','change_decide','change_decide_bulk','adjust_void','payout_draft','claim_confirm'].includes(action) || (action === 'ledger_import' && payload.commit);
+    const writing = ['free_check_save','import_commit','payout_confirm','payout_cancel','payout_noclaim','review_resolve','round_payment','round_payment_bulk','ledger_reconcile','ledger_outside','change_decide','change_decide_bulk','adjust_void','payout_draft','claim_confirm'].includes(action) || (action === 'ledger_import' && payload.commit);
     const retryKey = writing ? action + ':' + JSON.stringify(payload) : '';
     if (writing && !payload.request_id) { if (!requestKeys.has(retryKey)) requestKeys.set(retryKey, crypto.randomUUID()); payload.request_id = requestKeys.get(retryKey); }
     // 0.7.22: งานบันทึกใหญ่ (เช่น นำเข้า) ใช้เวลาได้ถึงหลายนาที — รอได้นานกว่า และถ้าเซิร์ฟเวอร์ยังทำคำขอเดิมอยู่ (BUSY)
@@ -2045,7 +2045,9 @@
       if(typeof NoticeImportFormat!=='undefined' && NoticeImportFormat.form25Evidence && Object.values(evCols).every(i=>i>=0)){
         const ev={};Object.keys(evCols).forEach(k=>{ev[k]=r[evCols[k]];});evidence=NoticeImportFormat.form25Evidence(ev);
       }
-      rows.push({ source_line:i+1, uid:uidCol>=0 && typeof r[uidCol]==='string' ? r[uidCol].trim() : '', evidence:evidence, date: date, c: c, officer: String(r[ci.o]).replace(/\s+/g, ' ').trim(), type: rowType });
+      const identity=typeof NoticeImportFormat!=='undefined'&&NoticeImportFormat.form25Identity&&Object.values(evCols).every(i=>i>=0)?NoticeImportFormat.form25Identity(Object.fromEntries(Object.keys(evCols).map(k=>[k,r[evCols[k]]]))):null;
+      const receipt_parts=rowType==='PAID'&&typeof NoticeImportFormat!=='undefined'&&NoticeImportFormat.receiptParts?NoticeImportFormat.receiptParts(r[ci.r],c):[];
+      rows.push({identity:identity,receipt_parts:receipt_parts, source_line:i+1, uid:uidCol>=0 && typeof r[uidCol]==='string' ? r[uidCol].trim() : '', evidence:evidence, date: date, c: c, officer: String(r[ci.o]).replace(/\s+/g, ' ').trim(), type: rowType });
     }
     if (!foot || foot.c === null) throw new Error('ไม่พบแถวรวมทั้งสิ้นท้ายไฟล์ จึงตรวจยอดไม่ได้');
     if (foot.n !== rows.length || foot.c !== allC) throw new Error('ยอดไม่ตรงท้ายไฟล์: อ่านได้ ' + num(rows.length) + ' หมาย ' + cb(allC) + ' บาท · ท้ายไฟล์ ' + num(foot.n) + ' หมาย ' + cb(foot.c) + ' บาท — ไม่นำเข้า');
@@ -2093,8 +2095,9 @@
       else {
         if (init.claim_integrity !== 1) why.push('ระบบตรวจสอบรายการซ้ำไม่พร้อม');
         if (!init.order_ok) why.push('วันที่ตั้งรอบอยู่ก่อนรอบล่าสุด — ต้องแก้วันให้เรียงต่อจากรอบล่าสุด');
-        if (official25 && Array.isArray(init.unlinked_rounds) && init.unlinked_rounds.length)
-          why.push('มีรอบ' + (st.type === 'FREE' ? 'หมายฟรี' : 'หมายมีเงิน') + 'เก่าที่ยังไม่ผูกรหัสหมาย ' + num(init.unlinked_rounds.length) + ' รอบ ต้องกระทบยอดประวัติก่อน (ห้ามลบรอบเดิม)');
+        const historyBlocks=imported&&imported.match_version===2?imported.unlinked_rounds:init.unlinked_rounds;
+        if (official25 && Array.isArray(historyBlocks) && historyBlocks.length)
+          why.push('มีรอบ' + (st.type === 'FREE' ? 'หมายฟรี' : 'หมายมีเงิน') + 'เก่าที่ยังไม่ผูกรหัสหมาย ' + num(historyBlocks.length) + ' รอบ ต้องกระทบยอดประวัติก่อน (ห้ามลบรอบเดิม)');
       }
       if (importBlocked) why.push(f25 ? 'แบบ 25 ยังตรวจไม่ผ่าน: ' + (fileInfo || 'ตรวจช่วงวันที่ เลขหมายซ้ำหรือรายการที่จับคู่ไม่ได้') : (fileInfo || 'กำลังตรวจหรืออ่านแบบ 25 — ต้องได้ผลตรวจที่ครบก่อน'));
       else if (official25 && !imported) why.push('รอบวันที่ 20 พฤศจิกายน 2569 เป็นต้นไปต้องนำเข้าแบบ 25 ที่ตรวจจับคู่รายหมายครบ ไม่สามารถยืนยันจากยอดกรอกเอง');
@@ -2191,7 +2194,7 @@
         body.allow_same_date = true;
       }
       if (!onView() || !init || importBlocked || snapshot !== JSON.stringify([st.type, st.date, st.ref, st.seats, read().lines, imported])) { toast('ข้อมูลเปลี่ยน กรุณาตรวจอีกครั้ง'); return; }
-      if (imported) { body.form25_range = {from: imported.from, to: imported.to}; body.form25_rows = imported.rows.map(({source_line,review_status,...row})=>row); } else { body.confirm_manual_review = true; }
+      if (imported) { body.form25_range = {from: imported.from, to: imported.to}; body.form25_rows = imported.rows.map(({source_line,review_status,...row})=>imported.match_version===2?{...row,source_line}:row); if(imported.match_version===2){body.match_version=2;body.match_snapshot=imported.match_snapshot;} } else { body.confirm_manual_review = true; }
       try {
         const x = await api('claim_confirm', body);
         claimDraftSet(null); toast('ตั้งรอบแล้ว · คนนั่งงานได้คนละ ' + baht2(x.round.per_seat) + ' บาท');
@@ -2208,13 +2211,33 @@
       cutBasis = best ? 'ช่วงแบบ 25 ล่าสุดถึง ' + thDate(best) : 'ยังไม่พบช่วงแบบ 25 ที่บันทึกไว้ — ตรวจรายการค้างจากรอบเดิม';
       return best;
     };
+    const apply25V2 = async (source, picked, want, pd, from, to, seq, tag) => {
+      c25Info('<span class="spin"></span> กำลังจับคู่ตามตัวหมาย กลุ่ม และองค์ประกอบใบเสร็จ…');
+      try {
+        const match=await api('claim_match25',{match_version:2,round_type:want,pay_date:pd,cutoff:to,rows:picked});
+        if(seq!==matchSeq||source!==f25||want!==st.type||pd!==st.date||!onView())return;
+        if(match.match_version!==2||!Array.isArray(match.matches)||match.matches.length!==picked.length||!match.match_snapshot)throw new Error('ผลจับคู่ไม่ครบ กรุณาตรวจรุ่นหลังบ้าน');
+        const labels={MATCHED:'จับคู่แล้ว',ALREADY_PAID:'การเงินบันทึกจ่ายแล้ว',IN_ROUND:'อยู่ในรอบยืนยันแล้ว',FINANCE_ONLY:'พบการเงินจ่ายแล้ว — รอผูกตัวหมาย',GROUP_REVIEW:'รอตรวจสมาชิกกลุ่ม',IDENTITY_REVIEW:'รอตรวจตัวหมาย',HISTORY_REVIEW:'พบหมายเข้ารอบแล้ว — ตรวจใบเสร็จ/กลุ่ม',FREE_ELIGIBILITY_REVIEW:'รอตรวจสิทธิ์/วันส่งหมายฟรี',NOCLAIM:'ไม่เบิกจ่าย',NOT_FOUND:'ไม่พบในทะเบียน',LEDGER_REVIEW:'องค์ประกอบใบเสร็จไม่ตรงบัญชีจ่าย',OFFICER_MISMATCH:'ผู้ส่งไม่ตรง',AMOUNT_OR_CANDIDATE_MISMATCH:'ยอดต้นทางกับยอดกลุ่มยังไม่ตรง',DUPLICATE_IN_FILE:'ตัวหมายซ้ำข้ามกลุ่ม'};
+        const totals=match.totals,review=match.matches.filter(x=>!['MATCHED','ALREADY_PAID','IN_ROUND'].includes(x.status));
+        st.amt={};st.n={};match.lines.forEach(l=>{st.amt[l.officer_id]=((l.paid_c+l.budget_c)/100).toFixed(2);st.n[l.officer_id]=String(l.n_paid+l.n_budget);});
+        const declared=match.lines.map(l=>[l.officer_id,l.paid_c+l.budget_c,l.n_paid+l.n_budget]).sort();
+        imported={from,to,tag,rows:picked,match_version:2,unlinked_rounds:match.unlinked_rounds||[],match_snapshot:match.match_snapshot,lines:JSON.stringify(declared)};
+        importBlocked=review.length>0||!totals.new_n||(match.unlinked_rounds||[]).length>0||(match.difference_blockers||[]).length>0;
+        save();await load();if(seq!==matchSeq||!onView())return;
+        m.querySelectorAll('#cRows .camt,#cRows .cn').forEach(el=>el.readOnly=true);
+        const countHeader=m.querySelector('#cRows').closest('table').querySelector('thead th:nth-child(2)');if(countHeader)countHeader.textContent='แถวเบิกในแบบ 25';
+        const title=want==='FREE'?'หมายฟรี':'หมายมีเงิน';
+        c25Info('<div class="note"><b>'+title+' · ตรวจยอดต้นทาง '+num(picked.length)+' แถว</b><br>พร้อมเข้ารอบใหม่ '+num(totals.new_n)+' แถว '+baht2(totals.new_amount)+' บาท · อยู่ในรอบ/พบหลักฐานการเงินแล้ว '+num(totals.paid_n)+' แถว '+baht2(totals.paid_amount)+' บาท · รอตรวจตัวหมาย/สิทธิ์ '+num(totals.review_n)+' แถว '+baht2(totals.review_amount)+' บาท</div><p class="tiny muted">วันที่ลงข้อมูลใช้เลือกขอบเขตไฟล์ ไม่ใช่วันส่งจริง · หมายมีเงินไม่บังคับวันส่งหรือวันรายงานตรงกัน · ยอดการเงินเดิมไม่นำเข้าเงินรอบใหม่</p>'+((match.difference_blockers||[]).length?'<div class="note r">มีส่วนต่างยอดการเงินกับรายละเอียดของรอบนี้ ให้ตรวจส่วนต่างก่อนยืนยัน '+match.difference_blockers.map(x=>esc((init.names[x.officer_id]||{}).name||x.officer_id)+' '+baht2(x.difference)+' บาท').join(' · ')+'</div>':'')+((match.unlinked_rounds||[]).length?'<div class="note r">รอบเดิมยังไม่ผูกรายหมายครบ ต้องกระทบยอดก่อนยืนยัน</div>':'')+((match.group_checks||[]).length?'<div class="note r">ยอดกลุ่มรอตรวจ (ไม่ใช่เงินเบิกเพิ่ม): '+match.group_checks.map(g=>'แถว '+g.source_lines.map(num).join(', ')+' · ต้นทาง '+baht2(g.source_amount)+' / กลุ่ม '+baht2(g.reference_amount)+' · ต่าง '+baht2(g.difference)+' บาท').join(' · ')+'</div>':'')+'<details class="clay panel" '+(review.length?'open':'')+'><summary>ผลจับคู่รายแถว / กลุ่ม '+num(match.matches.length)+' รายการ</summary><div class="tbl-wrap"><table><thead><tr><th>แถว</th><th>เลขคดี</th><th class="n">ยอดต้นทาง</th><th>ผลตรวจ</th><th>ระดับจับคู่</th></tr></thead><tbody>'+match.matches.map((x,i)=>'<tr><td>'+num(x.source_line)+'</td><td>'+esc((source.caseLabels||{})[x.source_line]||'ดูแถวในไฟล์ต้นทาง')+'</td><td class="n">'+baht2(picked[i].amount)+'</td><td>'+esc(labels[x.status]||x.status)+'</td><td>'+esc(x.scope==='GROUP'?'รวมกลุ่ม '+num(x.group_size||x.uids.length)+' ฉบับ — ไม่บวกเงินซ้ำ':x.scope==='NOTICE'?(x.source_count>1?'รวมองค์ประกอบของหมายเดียว':'รายหมาย'):/^(ALREADY_PAID|IN_ROUND)$/.test(x.status)?'หลักฐานรอบเดิม':'รอตรวจหลักฐาน')+'</td></tr>').join('')+'</tbody></table></div></details>');
+        reveal(m);
+      }catch(e){if(seq!==matchSeq||!onView())return;imported=null;importBlocked=true;syncGo();c25Info('<div class="note r">ยังยืนยันไม่ได้: '+esc(e.message)+'</div>');}
+    };
     const apply25 = async () => {
       if (!f25 || !init || submitting) return;
       const seq=++matchSeq, source=f25, pd=st.date;
       const oldRef = st.ref; imported = null; importBlocked = true; syncGo(); resetAmounts();
       const from = $('#c25From').value, to = $('#c25To').value, want = st.type;
-      if (!claimIsoDay(from) || !claimIsoDay(to) || from > to || from < f25.min || to > f25.max || to > st.date) { c25Info('<div class="note r">ช่วงวันที่ไม่ถูกต้องหรือเกินวันที่จ่าย</div>'); return; }
-      if (!Array.isArray(init.form25_ranges) || claimRangeOverlap(from, to, init.form25_ranges)) { c25Info('<div class="note r">ช่วงนี้ทับกับรอบแบบ 25 เดิม หรือ API ไม่รองรับการตรวจช่วง — ระงับยืนยัน</div>'); return; }
+      if (!claimIsoDay(from) || !claimIsoDay(to) || from > to || from < f25.min || to > f25.max || (init.form25_match_version!==2 && to > st.date)) { c25Info('<div class="note r">ช่วงวันที่ไม่ถูกต้องหรือเกินวันที่จ่าย</div>'); return; }
+      if (!Array.isArray(init.form25_ranges) || (init.form25_match_version!==2 && claimRangeOverlap(from, to, init.form25_ranges))) { c25Info('<div class="note r">ช่วงนี้ทับกับรอบแบบ 25 เดิม หรือ API ไม่รองรับการตรวจช่วง — ระงับยืนยัน</div>'); return; }
       const agg = Object.create(null), miss = Object.create(null), picked = [], seen = new Set(); let n = 0, sum = 0, before = 0, missingUid = 0, repeatedUid = 0;
       f25.rows.forEach((r) => {
         if (r.type !== want) return;
@@ -2222,7 +2245,7 @@
         if (to && r.date > to) return;
         const id = f25.map[r.officer];
         if (!id) { miss[r.officer] = (miss[r.officer] || 0) + r.c; return; }
-        picked.push({notice_uid:r.uid, evidence:r.evidence||'', officer_id:id, date:r.date, amount:(r.c/100).toFixed(2), source_line:r.source_line,
+        picked.push({match_version:init.form25_match_version===2?2:1,identity:r.identity||null,receipt_parts:r.receipt_parts||[],notice_uid:r.uid, evidence:r.evidence||'', officer_id:id, date:r.date, amount:(r.c/100).toFixed(2), source_line:r.source_line,
           review_status:r.uid?'UID_PRESENT':(r.evidence?'AWAITING_MATCH':'MISSING_EVIDENCE')});
         agg[id] = agg[id] || { n: 0, c: 0 }; agg[id].n++; agg[id].c += r.c; n++; sum += r.c;
       });
@@ -2231,6 +2254,7 @@
       const tag = 'แบบ25:' + (from || f25.min) + '..' + (to || f25.max);
       st.ref = (tag + ' ' + String(oldRef || '').replace(/แบบ25:\S+\s*/g, '')).trim(); $('#cRef').value = st.ref;
       const mk = Object.keys(miss);
+      if(init.form25_match_version===2&&!mk.length&&picked.length){await apply25V2(source,picked,want,pd,from,to,seq,tag);return;}
       const unresolved = init.unlinked_rounds || [];
       let matchNote='';
       // Query only rows that need registry matching. No raw names or case text are sent.
@@ -2294,9 +2318,11 @@
         const wb = XLSX.read(bytes, { type: 'array', cellDates: false });
         const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
         f25 = parseClaim25Rows(aoa, officers, file.name);
-        const cut = lastCut();
-        const next = cut ? new Date(Date.parse(cut + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10) : f25.min;
-        $('#c25From').value = next > f25.min ? next : f25.min; $('#c25To').value = f25.max < st.date ? f25.max : st.date; $('#c25Apply').disabled = false;
+        const labelHeader=aoa.findIndex(r=>r.some(v=>String(v).replace(/\s/g,'')==='ผู้ส่งหมาย')),labelCol=labelHeader>=0?aoa[labelHeader].findIndex(v=>String(v).replace(/\s/g,'')==='เลขดำที่'):-1;
+        f25.caseLabels={};if(labelCol>=0)f25.rows.forEach(r=>{f25.caseLabels[r.source_line]=String((aoa[r.source_line-1]||[])[labelCol]||'').split(/\r?\n/)[0];});
+        if(init.form25_match_version===2){$('#c25From').value=f25.min;$('#c25To').value=f25.max;cutBasis='อ่านทั้งไฟล์ แล้วแยกรายการเดิมด้วยหลักฐาน ไม่ตัดจากวันที่ลงข้อมูล';}
+        else {const cut=lastCut(),next=cut?new Date(Date.parse(cut+'T00:00:00Z')+864e5).toISOString().slice(0,10):f25.min;$('#c25From').value=next>f25.min?next:f25.min;$('#c25To').value=f25.max<st.date?f25.max:st.date;}
+        $('#c25Apply').disabled=false;
         apply25();
       } catch (e) { if (seq !== readSeq || !onView()) return; f25 = null; imported = null; importBlocked = true; syncGo(); c25Info('<div class="note r">' + esc(e.message) + '</div>'); }
     };
@@ -2798,6 +2824,27 @@
   const differenceHtml = (v) => v === null ? '<span class="tiny muted">ยังไม่มียอดอ้างอิง</span>' : v > 0 ? '<span class="flag-up">เกิน '+baht2(v)+' ฿</span>' : v < 0 ? '<span class="flag-r">ขาด '+baht2(-v)+' ฿</span>' : '<span class="flag-ok">ยอดตรงกัน</span>';
   const statusHtml = (r) => '<span class="pill '+(r.status==='PAID'?'g':r.status==='REVIEW'?'r':r.status==='READY'?'est':'a')+'">'+esc(r.status_th)+'</span>';
   const latestHtml = (last) => '<div class="note small">'+[['ISSUE','50 ทะเบียนหมาย'],['RESULT','42 ผลส่ง'],['FREE18','18 ราคาหมายฟรี'],['PAY','30 บัญชีจ่ายเงิน']].map(([k,lab])=>{const x=last[k];return '<span class="nb">'+lab+': '+esc(x?thDate(x.at,true):'ยังไม่พบการนำเข้า')+'</span>';}).join(' · ')+'</div>';
+  function freeCheckBadge(r) {
+    const c=r.free_check;if(!c||!c.state)return '';
+    return '<br><span class="pill '+(c.state==='PENDING'?'a':'g')+'">'+(c.state==='PENDING'?'⚑ ':c.state==='CHECKED'?'✓ ':'')+esc(c.label)+'</span>';
+  }
+  function freeCheckEditor(r) {
+    const c=r.free_check;if(!c)return '';
+    if(!c.can_edit)return freeCheckBadge(r);
+    return '<form id="freeCheckForm" class="panel"><h3>ผลตรวจหมายฟรี</h3><p class="small">'+esc(r.officer)+' · ต.'+esc(r.tambon)+' · '+esc(r.moo?'หมู่ '+r.moo:'ไม่ระบุหมู่')+'</p><div class="row"><label>ผลตรวจ<select id="freeCheckState" class="sel"><option value="PENDING">⚑ รอตรวจสอบ</option><option value="CHECKED">✓ ตรวจสอบแล้ว</option><option value="NOCLAIM">ไม่เบิกจ่าย</option></select></label><label>เหตุผล / ผลการตรวจ<textarea id="freeCheckNote" class="inp" maxlength="300" required placeholder="ระบุผลตรวจ ไม่ใส่ชื่อคู่ความ">'+esc(c.note||'')+'</textarea></label><button type="submit" id="freeCheckSave" class="btn btn-g">บันทึกผลตรวจ</button></div><p class="tiny muted">ตรวจสอบแล้ว ไม่ใช่การบันทึกว่าจ่ายเงิน · เลือกไม่เบิกจ่ายเพื่อตัดออกจากยอดพร้อมเสนอ · เปลี่ยนกลับเป็นรอตรวจสอบหรือตรวจสอบแล้วจะเปิดคืนให้ระบบตรวจสิทธิ์ตามเดิม</p></form>';
+  }
+  function bindFreeCheckEditor(detail,r,reload) {
+    const form=detail.querySelector('#freeCheckForm');if(!form)return;
+    const state=form.querySelector('#freeCheckState'),note=form.querySelector('#freeCheckNote'),button=form.querySelector('#freeCheckSave');state.value=r.free_check.state||'PENDING';
+    let saving=false;
+    form.onsubmit=async e=>{e.preventDefault();if(saving)return;
+      const reason=note.value.trim();if(!reason){toast('ระบุเหตุผลหรือผลการตรวจ');note.focus();return;}
+      saving=true;button.disabled=true;
+      try {await api('free_check_save',{notice_uid:r.notice_uid,state:state.value,note:reason,expected_snapshot:r.free_check.snapshot});toast('บันทึกผลตรวจแล้ว');await reload();}
+      catch(err){toast(err.message);if(err.code==='STALE'){button.disabled=true;return;}}
+      finally{saving=false;if(form.isConnected)button.disabled=false;}
+    };
+  }
   RENDER.tracking = async (m, options) => {
     options=options||{};
     const own=has('COURIER')&&!has('NOTICE','FINANCE','ADMIN','CASE');
@@ -2811,18 +2858,18 @@
       '<label>ผู้ส่ง<select class="sel" id="trOfficer"><option value="">'+(own?'ของฉัน':'ทุกคน')+'</option></select></label>'+
       '<label>พื้นที่ส่งหมาย<select class="sel" id="trArea"><option value="">ทุกพื้นที่</option></select></label>'+
       '<label>สถานะ<select class="sel" id="trStatus"><option value="">ทุกสถานะ</option></select></label>'+
-      '<label>ตั้งแต่<input type="date" class="inp" id="trFrom"></label><label>ถึง<input type="date" class="inp" id="trTo"></label>'+
+      '<label>ผลตรวจหมายฟรี<select class="sel" id="trFreeCheck"><option value="">ทั้งหมด</option><option value="PENDING">⚑ รอตรวจสอบ</option><option value="CHECKED">✓ ตรวจสอบแล้ว</option><option value="NOCLAIM">ไม่เบิกจ่าย</option></select></label><label>ตั้งแต่<input type="date" class="inp" id="trFrom"></label><label>ถึง<input type="date" class="inp" id="trTo"></label>'+
       '<button class="btn btn-g">ค้นหา</button></div></form><div id="trackResult"></div><div id="trackDetail"></div>';
     let page=1,unit='',busy=false,seq=0,seeded=false;
     const run=async()=>{
       const ticket=++seq;busy=true;const box=$('#trackResult');box.innerHTML='<div class="clay panel"><span class="spin"></span> กำลังตรวจข้อมูล…</div>';
       try {
-        const d=await api('tracking',{q:$('#trQ').value,fy:$('#trFy').value,pay_type:fixed?preset:$('#trType').value,officer_id:$('#trOfficer').value,area_id:$('#trArea').value,status:$('#trStatus').value,from:$('#trFrom').value,to:$('#trTo').value,page:page,unit_id:unit});
+        const d=await api('tracking',{q:$('#trQ').value,fy:$('#trFy').value,pay_type:fixed?preset:$('#trType').value,officer_id:$('#trOfficer').value,area_id:$('#trArea').value,status:$('#trStatus').value,from:$('#trFrom').value,to:$('#trTo').value,page:page,unit_id:unit,free_check_state:$('#trFreeCheck').value});
         if(ticket!==seq)return;
         if(!seeded){seeded=true;Object.keys(d.officers).filter(id=>!d.scope_officer||id===d.scope_officer).forEach(id=>$('#trOfficer').insertAdjacentHTML('beforeend','<option value="'+esc(id)+'">'+esc(d.officers[id].name)+'</option>'));(d.areas||[]).forEach(a=>$('#trArea').insertAdjacentHTML('beforeend','<option value="'+esc(a.area_id)+'">ต.'+esc(a.tambon)+' · อ.'+esc(a.amphoe)+'</option>'));Object.keys(d.statuses).forEach(k=>$('#trStatus').insertAdjacentHTML('beforeend','<option value="'+k+'">'+esc(d.statuses[k])+'</option>'));}
         box.innerHTML=latestHtml(d.last_imports)+budgetPendingHtml(d)+(d.totals.ready_amount!==undefined?'<p class="note">ยอดพร้อมเสนอตามตัวกรอง '+baht2(d.totals.ready_amount)+' บาท · ราคาต้นทางเป็นข้อมูลอ้างอิง การรวมหน่วยและรายการรอผลส่งอาจทำให้ยอดพร้อมเสนอต่างกัน</p>':'')+'<div class="chips"><span class="chip">พบ '+num(d.total_rows)+' รายการ</span><span class="chip">'+(d.budget_pending?'ยอดในทะเบียน (รวมที่เบิกแล้ว) ':'ยอดที่แสดง ')+baht2(d.totals.amount)+' ฿</span>'+statusAmountChips(d)+'<span class="chip flag-r">เทียบอ้างอิง: ขาด '+baht2(d.totals.shortage)+' ฿ · '+num(d.totals.shortage_n)+' รายการ</span><span class="chip flag-up">เทียบอ้างอิง: เกิน '+baht2(d.totals.excess)+' ฿ · '+num(d.totals.excess_n)+' รายการ</span></div><p class="tiny muted">ส่วนต่างเป็นข้อมูลเปรียบเทียบรายหมายตามพื้นที่ ต้องตรวจยอดใบเบิกทั้งใบประกอบด้วย</p>'+
         '<div class="clay panel"><div class="tbl-wrap"><table class="wide-tbl track-tbl"><thead><tr><th>เลขคดี / หมาย</th><th class="onm">ผู้ส่ง</th><th>วันที่ส่ง / รายงาน</th><th class="n">ยอดอ้างอิงระบบ</th><th class="n">ยอดบัญชี / ยอดที่ใช้</th><th>เทียบอ้างอิง</th><th class="n">ราคาต้นทาง</th><th class="n">ปรับรวมหน่วย</th><th class="n">ยอดพร้อมเสนอ</th><th>สถานะ</th><th>รอบ / หลักฐาน</th><th></th></tr></thead><tbody>'+
-        (d.rows.length?d.rows.map((r,i)=>'<tr><td><b>'+esc(r.case_no)+'</b><br><span class="tiny">'+esc(r.notice_kind)+'</span><br><span class="tiny muted">ต.'+esc(r.tambon||'ไม่ระบุ')+' · อ.'+esc(r.amphoe||'ไม่ระบุ')+'</span></td><td class="onm">'+esc(r.officer)+'</td><td class="small">'+esc(thDate(r.delivered_date)||'รอผล')+'<br>'+esc(thDate(r.reported_date)||'—')+'</td><td class="n">'+(r.reference===null?'—':baht2(r.reference))+'</td><td class="n"><b>'+baht2(r.amount)+'</b><br><span class="tiny">'+esc(r.source)+'</span></td><td>'+differenceHtml(r.difference)+'</td><td class="n">'+(r.pay_type==='BUDGET'?baht2(r.source_amount):'—')+'</td><td class="n">'+(r.pay_type==='BUDGET'?baht2(r.unit_adjustment):'—')+'</td><td class="n"><b>'+ (r.pay_type==='BUDGET'?baht2(r.ready_amount):'—')+'</b>'+(r.pay_type==='BUDGET'?'<br><span class="tiny muted">'+esc(r.ready_reason)+'</span>':'')+'</td><td>'+statusHtml(r)+'</td><td class="small">'+esc(r.round_id||'ยังไม่พบประวัติรอบ')+'<br>'+esc(r.payment_date?thDate(r.payment_date)+' · '+r.payment_ref: r.round_id?'ยังไม่บันทึกหลักฐานจ่ายในระบบ':'')+'</td><td><button class="btn btn-sm" data-tr="'+i+'">รายละเอียด</button></td></tr>').join(''):'<tr><td colspan="12">ไม่พบรายการตามตัวกรอง</td></tr>')+'</tbody></table></div>'+
+        (d.rows.length?d.rows.map((r,i)=>'<tr><td><b>'+esc(r.case_no)+'</b><br><span class="tiny">'+esc(r.notice_kind)+'</span><br><span class="tiny muted">ต.'+esc(r.tambon||'ไม่ระบุ')+(r.pay_type==='BUDGET'?' · '+esc(r.moo?'ม.'+r.moo:'ไม่ระบุหมู่'):'')+' · อ.'+esc(r.amphoe||'ไม่ระบุ')+'</span></td><td class="onm">'+esc(r.officer)+'</td><td class="small">'+esc(thDate(r.delivered_date)||'รอผล')+'<br>'+esc(thDate(r.reported_date)||'—')+'</td><td class="n">'+(r.reference===null?'—':baht2(r.reference))+'</td><td class="n"><b>'+baht2(r.amount)+'</b><br><span class="tiny">'+esc(r.source)+'</span></td><td>'+differenceHtml(r.difference)+'</td><td class="n">'+(r.pay_type==='BUDGET'?baht2(r.source_amount):'—')+'</td><td class="n">'+(r.pay_type==='BUDGET'?baht2(r.unit_adjustment):'—')+'</td><td class="n"><b>'+ (r.pay_type==='BUDGET'?baht2(r.ready_amount):'—')+'</b>'+(r.pay_type==='BUDGET'?'<br><span class="tiny muted">'+esc(r.ready_reason)+'</span>':'')+'</td><td>'+statusHtml(r)+freeCheckBadge(r)+'</td><td class="small">'+esc(r.round_id||'ยังไม่พบประวัติรอบ')+'<br>'+esc(r.payment_date?thDate(r.payment_date)+' · '+r.payment_ref: r.round_id?'ยังไม่บันทึกหลักฐานจ่ายในระบบ':'')+'</td><td><button class="btn btn-sm" data-tr="'+i+'">รายละเอียด</button></td></tr>').join(''):'<tr><td colspan="12">ไม่พบรายการตามตัวกรอง</td></tr>')+'</tbody></table></div>'+
         '<div class="row" style="margin-top:12px"><button class="btn btn-sm" id="trPrev" '+(page<=1?'disabled':'')+'>← ก่อนหน้า</button><span>หน้า '+num(page)+'</span><button class="btn btn-sm" id="trNext" '+(page*100>=d.total_rows?'disabled':'')+'>ถัดไป →</button>'+(unit?'<button class="btn btn-sm" id="trClearUnit">กลับทุกรายการ</button>':'')+'</div><p class="tiny muted">ยังไม่พบประวัติในระบบไม่ได้แปลว่าไม่เคยเบิก · ยอดศูนย์อาจรวมในหมายอื่น · ประวัติรอบเก่าคงยอดเดิม</p></div>';
         if(S.page==='overview'){
           const summary=document.createElement('section');summary.className='clay panel';
@@ -2833,7 +2880,8 @@
         }
         $('#trPrev').onclick=()=>{page--;run();};$('#trNext').onclick=()=>{page++;run();};if($('#trClearUnit'))$('#trClearUnit').onclick=()=>{unit='';page=1;run();};
         box.querySelectorAll('[data-tr]').forEach(b=>b.onclick=()=>{
-          const r=d.rows[+b.dataset.tr],detail=$('#trackDetail');detail.innerHTML='<div class="clay panel"><h3>'+esc(r.case_no)+' · '+esc(r.notice_kind)+'</h3><p>'+esc(r.recipient)+' · '+esc(r.officer)+' · ต.'+esc(r.tambon)+'</p><p>'+statusHtml(r)+' · '+differenceHtml(r.difference)+'</p><p class="small">หน่วยเบิก '+esc(r.unit_id||'แยกฉบับ')+' · '+num(r.grouped_count)+' ฉบับ'+(r.amount===0&&r.grouped_count>1?' · ยอดอาจรวมอยู่ในหมายอื่น':'')+'</p>'+ (r.unit_id?'<button class="btn btn-sm" id="trGroup">ดูหมายในหน่วยเดียวกัน</button>':'')+(r.can_split?'<button class="btn btn-sm" id="trSplit" type="button">แยกฉบับ</button><p class="tiny muted">กลุ่มต้นทางนี้มี '+num(r.split_count||1)+' ฉบับ · เพิ่มเฉพาะจำนวนทะเบียน ไม่เพิ่มเงินหรือเปลี่ยนรอบเดิม</p>':r.split_parent_uid?'<p class="note">ฉบับแยกนับจำนวน ร่วมยอดกับฉบับต้นทาง ไม่คิดเงินเพิ่ม</p>':'')+'<h3 style="margin-top:14px">ประวัติรอบที่พบ</h3>'+(r.history.length?r.history.map(h=>'<p class="small">'+esc(h.round_id)+' · '+esc(thDate(h.pay_date))+' · '+baht2(h.amount)+' ฿ · '+esc(h.payment_date?'จ่ายจริง '+thDate(h.payment_date)+' '+h.payment_ref:'อยู่ในรอบยืนยันแล้ว')+'</p>').join(''):'<p>ยังไม่พบประวัติรอบในระบบ</p>')+(r.round_id?'<button class="btn btn-g btn-sm" id="trRound">เปิดรอบ / พิมพ์</button>':'')+'</div>';
+          const r=d.rows[+b.dataset.tr],detail=$('#trackDetail');detail.innerHTML='<div class="clay panel"><h3>'+esc(r.case_no)+' · '+esc(r.notice_kind)+'</h3><p>'+esc(r.recipient)+' · '+esc(r.officer)+' · ต.'+esc(r.tambon)+'</p><p>'+statusHtml(r)+' · '+differenceHtml(r.difference)+'</p><p class="small">หน่วยเบิก '+esc(r.unit_id||'แยกฉบับ')+' · '+num(r.grouped_count)+' ฉบับ'+(r.amount===0&&r.grouped_count>1?' · ยอดอาจรวมอยู่ในหมายอื่น':'')+'</p>'+ (r.unit_id?'<button class="btn btn-sm" id="trGroup">ดูหมายในหน่วยเดียวกัน</button>':'')+(r.can_split?'<button class="btn btn-sm" id="trSplit" type="button">แยกฉบับ</button><p class="tiny muted">กลุ่มต้นทางนี้มี '+num(r.split_count||1)+' ฉบับ · เพิ่มเฉพาะจำนวนทะเบียน ไม่เพิ่มเงินหรือเปลี่ยนรอบเดิม</p>':r.split_parent_uid?'<p class="note">ฉบับแยกนับจำนวน ร่วมยอดกับฉบับต้นทาง ไม่คิดเงินเพิ่ม</p>':'')+'<h3 style="margin-top:14px">ประวัติรอบที่พบ</h3>'+(r.history.length?r.history.map(h=>'<p class="small">'+esc(h.round_id)+' · '+esc(thDate(h.pay_date))+' · '+baht2(h.amount)+' ฿ · '+esc(h.payment_date?'จ่ายจริง '+thDate(h.payment_date)+' '+h.payment_ref:'อยู่ในรอบยืนยันแล้ว')+'</p>').join(''):'<p>ยังไม่พบประวัติรอบในระบบ</p>')+(r.round_id?'<button class="btn btn-g btn-sm" id="trRound">เปิดรอบ / พิมพ์</button>':'')+freeCheckEditor(r)+'</div>';
+          bindFreeCheckEditor(detail,r,async()=>{detail.innerHTML='';await run();});
           if($('#trSplit'))$('#trSplit').onclick=async()=>{
             const reason=await askBox('ยืนยันแยก '+r.case_no+' เพิ่มอีก 1 ฉบับ จาก '+num(r.split_count||1)+' เป็น '+num((r.split_count||1)+1)+' ฉบับ โดยไม่เพิ่มเงินและไม่เปลี่ยนรอบเดิม',{input:'ระบุเหตุผลหรือหลักฐานยืนยันจำนวนฉบับ'});
             if(!reason)return;const button=$('#trSplit');button.disabled=true;
@@ -2845,22 +2893,112 @@
       finally{busy=false;}
     };
     $('#trType').value=preset;
+    if(preset==='PAID')$('#trFreeCheck').closest('label').hidden=true;
     $('#trackForm').onsubmit=e=>{e.preventDefault();unit='';page=1;run();};await run();
   };
   RENDER.paid=m=>RENDER.tracking(m,{pay_type:'PAID',title:'หมายเงินนอกงบประมาณ',description:'ตรวจรายหมาย ยอดตามบัญชีจ่าย ผู้ส่งและพื้นที่ พร้อมดูรอบยืนยันและหลักฐานที่เกี่ยวข้อง'});
   RENDER.budget=async m=>{const box=document.createElement('div');await RENDER.tracking(m,{pay_type:'BUDGET',title:'หมายเงินงบประมาณ',description:'ทะเบียนหมายฟรี แยกส่งแล้ว รอผล รอตรวจ และสถานะการเบิก เลือกพื้นที่หรือผู้ส่งเพื่อดูรายการของตน'});const desc=m.querySelector('.page-description');if(desc)desc.after(box);else m.prepend(box);loadFreeClaim(box,S.fy);};
   RENDER.overview=m=>viewerOnly()?RENDER.calc(m):RENDER.tracking(m,{title:'ภาพรวม 2 ประเภท',description:'รวมเงินนอกงบประมาณและเงินงบประมาณ กรองรายคน รายพื้นที่ และสถานะ แล้วตรวจรายละเอียดรายหมายได้ด้านล่าง'});
   RENDER.search = RENDER.tracking;
+  function reconciliationPanel() {
+    return '<details id="rcPanel" class="clay panel"><summary><b>⚑ ส่วนต่างรอตรวจสอบ · หมายฟรี / หมายมีเงิน</b></summary><p class="small">แสดงยอดการเงินกับยอดรายละเอียดแยกกัน ส่วนต่างไม่เพิ่มเข้าเงินเบิกหรือยอดแบ่ง 60/40 อัตโนมัติ</p><form id="rcFilter" class="row"><label>ปีงบประมาณ<input id="rcFy" class="inp year-input" value="'+esc(S.fy)+'" required></label><label>ประเภท<select id="rcFilterType" class="sel"><option value="">ทั้งสองประเภท</option><option value="BUDGET">หมายฟรี</option><option value="PAID">หมายมีเงิน</option></select></label><button class="btn btn-sm">แสดงส่วนต่าง</button></form><div id="rcRows" aria-live="polite"></div><div id="rcEditor"></div></details>';
+  }
+  function bindReconciliation(m) {
+    const panel=m.querySelector('#rcPanel');if(!panel)return;
+    let data=null,editing=null,saving=false,seq=0;
+    const editor=()=>{
+      const box=panel.querySelector('#rcEditor');if(!data.can_edit){box.innerHTML='';return;}
+      const r=editing||{pay_type:'PAID',round_date:'',officer_id:'',finance_amount:'',detail_amount:'',source_ref:'',state:'PENDING',note:''};
+      box.innerHTML='<form id="rcSaveForm"><h3>'+(editing?'แก้ไขผลตรวจส่วนต่าง':'บันทึกส่วนต่างแยกไว้')+'</h3><div class="row"><label>ประเภท<select id="rcType" class="sel" '+(editing?'disabled':'')+'><option value="PAID">หมายมีเงิน</option><option value="BUDGET">หมายฟรี</option></select></label><label>วันรอบการเงิน<input id="rcDate" type="date" class="inp" required '+(editing?'disabled':'')+' value="'+esc(r.round_date)+'"></label><label>ผู้ส่ง<select id="rcOfficer" class="sel" required '+(editing?'disabled':'')+'><option value="">เลือกผู้ส่ง</option>'+Object.entries(data.officers).map(([id,o])=>'<option value="'+esc(id)+'">'+esc(o.name)+'</option>').join('')+'</select></label><label>ยอดการเงิน<input id="rcFinance" class="inp" type="number" min="0" step="0.01" required value="'+esc(r.finance_amount)+'"></label><label>ยอดรายละเอียดที่จับคู่ได้<input id="rcDetail" class="inp" type="number" min="0" step="0.01" required value="'+esc(r.detail_amount)+'"></label><label>แหล่งอ้างอิง<input id="rcRef" class="inp" maxlength="200" required value="'+esc(r.source_ref)+'"></label><label>ผลตรวจ<select id="rcState" class="sel"><option value="PENDING">⚑ รอตรวจสอบ</option><option value="CHECKED">✓ ตรวจสอบแล้ว</option><option value="NOCLAIM">ไม่เบิกส่วนต่าง</option></select></label><label>เหตุผล / ผลตรวจ<textarea id="rcNote" class="inp" maxlength="300" required>'+esc(r.note)+'</textarea></label><button id="rcSave" class="btn btn-g">บันทึกส่วนต่าง</button>'+(editing?'<button id="rcCancel" class="btn btn-sm" type="button">ยกเลิกแก้ไข</button>':'')+'</div><p class="tiny muted">ตรวจสอบแล้วไม่ได้แปลว่ายอดตรง · ไม่เบิกส่วนต่างไม่ได้ยกเลิกหมายหรือเปลี่ยนยอดที่จ่ายแล้ว</p></form>';
+      const q=s=>box.querySelector(s);q('#rcType').value=r.pay_type;q('#rcOfficer').value=r.officer_id;q('#rcState').value=r.state;
+      if(q('#rcCancel'))q('#rcCancel').onclick=()=>{editing=null;editor();};
+      q('#rcSaveForm').onsubmit=async e=>{e.preventDefault();if(saving)return;saving=true;q('#rcSave').disabled=true;
+        try {await api('reconciliation_save',{fy:editing?editing.fy:panel.querySelector('#rcFy').value,pay_type:q('#rcType').value,round_date:q('#rcDate').value,officer_id:q('#rcOfficer').value,finance_amount:q('#rcFinance').value,detail_amount:q('#rcDetail').value,source_ref:q('#rcRef').value,state:q('#rcState').value,note:q('#rcNote').value,expected_snapshot:editing?editing.snapshot:'NEW'});toast('เก็บส่วนต่างแล้ว · ยอดจ่ายเดิมคงเดิม');editing=null;await load();}
+        catch(err){toast(err.message);}finally{saving=false;const b=box.querySelector('#rcSave');if(b)b.disabled=false;}
+      };
+    };
+    const load=async()=>{const ticket=++seq,box=panel.querySelector('#rcRows');box.innerHTML='<p>กำลังตรวจส่วนต่าง…</p>';
+      try {const out=await api('reconciliation_list',{fy:panel.querySelector('#rcFy').value,pay_type:panel.querySelector('#rcFilterType').value});if(ticket!==seq||!panel.isConnected)return;data=out;
+        if(!Array.isArray(data.rows))throw new Error('หลังบ้านยังไม่รองรับการเก็บส่วนต่าง');
+        box.innerHTML='<div class="tbl-wrap"><table><thead><tr><th>ประเภท / รอบ</th><th>ผู้ส่ง</th><th class="n">ยอดการเงิน</th><th class="n">ยอดรายละเอียด</th><th class="n">ส่วนต่าง</th><th>ผลตรวจ / อ้างอิง</th><th></th></tr></thead><tbody>'+(data.rows.length?data.rows.map((r,i)=>'<tr><td>'+esc(r.pay_type==='BUDGET'?'หมายฟรี':'หมายมีเงิน')+'<br>'+esc(thDate(r.round_date))+'</td><td class="onm">'+esc((data.officers[r.officer_id]||{}).name||r.officer_id)+'</td><td class="n">'+baht2(r.finance_amount)+'</td><td class="n">'+baht2(r.detail_amount)+'</td><td class="n '+(r.difference?'flag-r':'')+'"><b>'+baht2(r.difference)+'</b></td><td><b>'+esc(r.state==='PENDING'?'⚑ รอตรวจสอบ':r.state==='CHECKED'?'✓ ตรวจสอบแล้ว':'ไม่เบิกส่วนต่าง')+'</b><br>'+esc(r.source_ref)+'<br>'+esc(r.note)+'</td><td>'+(data.can_edit?'<button type="button" class="btn btn-sm" data-rc-edit="'+i+'">แก้ไข</button>':'')+'</td></tr>').join(''):'<tr><td colspan="7">ยังไม่มีส่วนต่างที่บันทึกไว้</td></tr>')+'</tbody></table></div><p class="tiny muted">ส่วนต่าง = ยอดการเงิน − ยอดรายละเอียด · ค่าบวกคือรายละเอียดยังขาด ค่าลบคือรายละเอียดเกิน · เก็บแยกตามประเภทและรอบ</p>';
+        box.querySelectorAll('[data-rc-edit]').forEach(b=>b.onclick=()=>{editing=data.rows[+b.dataset.rcEdit];editor();});editor();reveal(panel);
+      }catch(err){if(ticket===seq)box.innerHTML='<p class="note r">'+esc(err.message)+'</p>';}
+    };
+    let loaded=false;panel.addEventListener('toggle',()=>{if(panel.open&&!loaded){loaded=true;load();}});
+    panel.querySelector('#rcFilter').onsubmit=e=>{e.preventDefault();editing=null;load();};
+  }
   RENDER.reports = async(m)=>{
     const canCloseout=has('FINANCE','NOTICE','ADMIN');
     m.innerHTML=top(S.page==='finance'?'ตรวจเงินงบประมาณ · รายงาน':'รายงานการเบิกจ่าย')+'<p class="page-description">ตรวจยอดตามบัญชี ประวัติรอบ และรายการคงค้าง ก่อนจัดรอบเบิก 60/40</p>'+(canCloseout?ledgerPendingPanel()+'<section class="clay panel closeout"><h3>เงินงบประมาณ · ตรวจรายการยังไม่เบิก</h3><p class="small muted">กดตรวจสอบเพื่ออ่านข้อมูลปัจจุบัน ตั้งแต่ 1 ตุลาคมของปีงบที่เลือกถึงวันที่กด (ไม่เกิน 30 กันยายน) รายการที่เบิกแล้วจะไม่แสดงในรายงานคงค้าง</p><form id="closeForm" class="row"><label>ปีงบประมาณ พ.ศ.<input class="inp year-input" id="closeFy" inputmode="numeric" maxlength="4" value="'+esc(S.fy)+'" required></label><label>งบคงเหลือที่ใช้จ่ายได้ (บาท)<input class="inp" id="closeBalance" inputmode="decimal" placeholder="กรอกเพื่อเทียบเงินพอ / ไม่พอ"></label><button class="btn btn-g" id="closeRun">ตรวจสอบข้อมูลปัจจุบัน</button></form><p class="tiny muted">ยอดประเมินเป็นยอดเต็มก่อนแบ่ง 60/40 · หลายฉบับอาจรวมเป็นหนึ่งหน่วยเบิก · ยังไม่มีผลส่งหรือรอตรวจจะไม่รวมในยอดประมาณการก่อนการเบิก</p><div id="closeBody" aria-live="polite"></div></section>':'')+'<details class="clay panel"><summary><b>รายงานการเบิกจ่าย</b></summary><form class="row" id="repForm" style="margin-top:14px"><label>ปีงบประมาณ<input id="repFy" class="inp year-input" inputmode="numeric" value="'+esc(S.fy)+'" placeholder="ทั้งหมด"></label><label>แหล่งเงิน<select id="repType" class="sel"><option value="BUDGET">เงินงบประมาณ</option><option value="PAID">เงินนอกงบประมาณ</option><option value="">ทั้ง 2 ประเภท</option></select></label><button class="btn btn-g">แสดงรายงาน</button></form><div id="repBody"></div></details>';
-    if(canCloseout) { bindCloseout(m); bindLedgerPending(m); }
+    if(canCloseout) {
+      const rc=document.createElement('section');rc.innerHTML=reconciliationPanel();m.querySelector('.page-description').after(rc);bindReconciliation(m);
+      bindCloseout(m); bindLedgerPending(m);
+    }
     const run=async()=>{const d=await api('reports',{fy:$('#repFy').value,pay_type:$('#repType').value}),box=$('#repBody');box.innerHTML=latestHtml(d.last_imports)+'<div class="clay panel"><h3>สรุปรายผู้ส่งตามตัวกรอง</h3><p class="tiny muted">ส่วนต่างเทียบยอดอ้างอิง อาจเกิดจากการรวมหน่วยเบิก ให้ตรวจรายละเอียดก่อนสรุปว่าเงินขาดหรือจ่ายเกิน</p><div class="tbl-wrap"><table class="report-officers"><thead><tr><th class="onm">ผู้ส่ง</th><th class="n">รายการ</th><th class="n">ยอดที่ใช้</th><th class="n">ขาดจากยอดอ้างอิง</th><th class="n">เกินยอดอ้างอิง</th></tr></thead><tbody>'+d.per_officer.map(r=>'<tr><td class="onm">'+esc(r.officer)+'</td><td class="n">'+num(r.count)+'</td><td class="n">'+baht2(r.amount)+'</td><td class="n '+(r.shortage?'flag-r':'muted')+'">'+baht2(r.shortage)+'</td><td class="n '+(r.excess?'flag-up':'muted')+'">'+baht2(r.excess)+'</td></tr>').join('')+'</tbody></table></div><div class="row" style="margin-top:14px"><button class="btn btn-sm" id="repCsv">ดาวน์โหลด CSV</button><button class="btn btn-sm" id="repPrint">พิมพ์รายงาน</button></div></div>'+
       '<div class="clay panel"><h3>จำนวนตามสถานะ</h3>'+Object.keys(d.totals.statuses).map(k=>'<p>'+esc(d.statuses[k])+' <b>'+num(d.totals.statuses[k])+'</b> รายการ</p>').join('')+'<p class="tiny muted">สรุปจากหมายที่มีในทะเบียนตามตัวกรอง ส่วนยอดบัญชีและรอบด้านล่างใช้เป็นข้อมูลควบคุมแยกกัน</p></div>'+ledgerControlHtml(d);
       $('#repCsv').onclick=()=>{const rows=[['ผู้ส่ง','รายการ','ยอดที่ใช้','ขาด','เกิน']].concat(d.per_officer.map(r=>[r.officer,r.count,r.amount,r.shortage,r.excess]));const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v).replace(/^[=+@-]/,"'$&").replace(/"/g,'""')+'"').join(',')).join('\r\n');const u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=u;a.download='notice-pay-report.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
       $('#repPrint').onclick=()=>{loadSarabun();printArea('<div class="pr-head"><div class="pr-court">ศาลจังหวัดลพบุรี</div><div class="pr-title">รายงานการเบิกจ่าย · ปีงบ '+esc($('#repFy').value||'ทั้งหมด')+'</div><div>'+esc($('#repType').selectedOptions[0].textContent)+'</div></div>'+box.querySelector('.tbl-wrap').innerHTML+'<p>ขาดรวม '+baht2(d.totals.shortage)+' · เกินรวม '+baht2(d.totals.excess)+' บาท</p>');};
-    };$('#repForm').onsubmit=e=>{e.preventDefault();run().catch(e=>toast(e.message));};await run();
+    };$('#repForm').onsubmit=e=>{e.preventDefault();run().catch(e=>toast(e.message));};
+    if(canCloseout&&S.page==='finance'){
+      let loaded=false,loading=false;const details=$('#repForm').closest('details');
+      details.addEventListener('toggle',async()=>{if(!details.open||loaded||loading)return;loading=true;try{await run();loaded=true;}catch(e){toast(e.message);}finally{loading=false;}});
+    }else await run();
   };
+  function freeHistoryPanel(){
+    return '<h3>หมายฟรี · เบิกแล้วหรือยัง</h3><p class="small muted">ค้นเลขคดี เลขหมาย หรือรหัสรอบ แล้วเปิดดูวันที่และกลุ่มหน่วยเบิกได้ทันที · อ่านข้อมูลอย่างเดียว</p>'+
+      '<form id="fhForm" class="row"><label>ปีงบประมาณ<input id="fhFy" class="inp year-input" inputmode="numeric" maxlength="4" required value="'+esc(S.fy)+'"></label>'+
+      '<label>ค้นหา<input id="fhQ" class="inp" type="search" placeholder="เลขคดี / เลขหมาย / รหัสรอบ"></label>'+
+      '<label>ผู้ส่งหมาย<select id="fhOfficer" class="sel"><option value="">ทุกคน</option></select></label>'+
+      '<label>สถานะ<select id="fhStatus" class="sel"><option value="">ทั้งหมด</option><option value="READY">ส่งแล้ว ยังไม่เข้ารอบ</option><option value="WAIT">รอผลส่ง</option><option value="CLAIMED">พบรอบยืนยัน (รวมจ่ายแล้ว)</option><option value="ROUND">อยู่ในรอบยืนยันแล้ว</option><option value="PAID">บันทึกจ่ายจริงแล้ว</option><option value="CHECK">ต้องตรวจหลักฐานทั้งหมด</option><option value="LEGACY">พบประวัติเบิก รอตรวจหลักฐาน</option><option value="REVIEW">รอตรวจข้อมูล</option><option value="NOCLAIM">ไม่เบิกจ่าย</option></select></label>'+
+      '<button class="btn btn-g" id="fhRun">ค้น / ตรวจล่าสุด</button></form><div id="fhResult" aria-live="polite"></div>';
+  }
+  function freeHistoryTable(rows){
+    return '<div class="tbl-wrap"><table style="min-width:820px"><thead><tr><th>เลขคดี / เลขหมาย</th><th class="onm">ผู้ส่งหมาย</th><th>สถานะการเบิก</th><th>รอบ / วันที่</th><th>กลุ่มหน่วยเบิก</th><th>รายละเอียด</th></tr></thead><tbody>'+
+      rows.map(r=>'<tr><td><b>'+esc(r.case_no)+'</b><br><span class="tiny">'+esc(r.notice_no||'ไม่ระบุเลขหมาย')+'</span></td><td class="onm">'+esc(r.officer)+'</td>'+
+        '<td><b class="'+(/^(REVIEW|LEGACY)$/.test(r.status)?'flag-r':/^(ROUND|PAID)$/.test(r.status)?'flag-ok':'flag-a')+'">'+esc(r.status_th)+'</b><br><span class="tiny">'+esc(r.reason)+'</span>'+
+        (r.status==='READY'?'<br><span class="tiny">'+(r.grouped_zero?'รวมยอดในหน่วยเดียวกัน':('ยอดประมาณการ '+baht2(r.ready_amount)+' บาท'))+'</span>':'')+'</td>'+
+        '<td class="small">'+(r.history.length?r.history.map(h=>'<b>'+esc(thDate(h.claim_date)||'ไม่ระบุวันที่รอบ')+'</b><br><span class="tiny">'+esc(h.round_id)+'</span><br>'+(h.paid?'จ่ายจริง '+esc(thDate(h.payment_date)||'วันที่ไม่ครบ'):'ยังไม่บันทึกหลักฐานจ่าย')).join('<br>'):esc(r.pointer_round_id||r.legacy_ref||'ยังไม่พบรอบยืนยัน'))+'</td>'+
+        '<td><button type="button" class="btn btn-sm" data-fh-group="'+esc(r.group_id)+'">ดู '+num(r.group_count)+' ฉบับ</button><br><span class="tiny">'+esc(r.group_id)+'</span>'+
+        (r.group_partial?'<br><b class="tiny flag-a">มีประวัติเบิกบางฉบับ · ตรวจทั้งกลุ่ม</b>':'')+'</td>'+
+        '<td><details><summary>ดูหลักฐาน</summary><p class="tiny">จ่ายหมาย '+esc(thDate(r.issued_date)||'ไม่ระบุ')+'<br>ส่ง '+esc(thDate(r.delivered_date)||'รอผล')+'<br>รายงาน '+esc(thDate(r.reported_date)||'ไม่ระบุ')+'</p>'+
+        r.history.map(h=>'<div class="note"><button type="button" class="btn btn-sm" data-fh-round="'+esc(h.round_id)+'">เปิดรอบ '+esc(h.round_id)+'</button><p class="tiny">วันที่รอบ '+esc(thDate(h.claim_date)||'ไม่ระบุ')+'<br>บันทึกยืนยัน '+esc(thDate(h.confirmed_at,true)||'ไม่ระบุ')+'<br>ยอดรายการร่วมในรอบ '+baht2(h.item_amount)+' บาท (ไม่บวกซ้ำรายฉบับ)<br>หลักฐานจ่าย '+esc(h.payment_ref||'ยังไม่บันทึก')+'</p></div>').join('')+
+        '</details></td></tr>').join('')+(rows.length?'':'<tr><td colspan="6">ไม่พบรายการตามตัวกรอง</td></tr>')+'</tbody></table></div>';
+  }
+  function bindFreeHistory(m){
+    let seq=0,page=1,group='',seeded=false;
+    const box=$('#fhResult'),run=async()=>{
+      const ticket=++seq,button=$('#fhRun');button.disabled=true;box.innerHTML='<p><span class="spin"></span> กำลังตรวจประวัติรอบและกลุ่มหมายฟรี…</p>';
+      try{
+        const d=await api('reports',{report_mode:'free_history',fy:$('#fhFy').value.trim(),q:$('#fhQ').value,officer_id:$('#fhOfficer').value,status:$('#fhStatus').value,group_id:group,page:page});
+        if(ticket!==seq||!m.isConnected)return;
+        if(d.report_mode!=='free_history')throw new Error('หลังบ้านยังไม่รองรับหน้าประวัติหมายฟรี กรุณาใช้ทะเบียนเดิมระหว่างรออัปเดต');
+        page=d.page;
+        if(!seeded){seeded=true;(d.officers||[]).forEach(o=>$('#fhOfficer').insertAdjacentHTML('beforeend','<option value="'+esc(o.id)+'">'+esc(o.name)+'</option>'));}
+        const st=d.totals.statuses,claimed=(st.ROUND||0)+(st.PAID||0),review=(st.REVIEW||0)+(st.LEGACY||0);
+        box.innerHTML='<p class="tiny muted">ตรวจ ณ '+esc(thDate(d.checked_at,true))+' · ช่วงปีงบ '+esc(thDate(d.from))+' ถึง '+esc(thDate(d.to))+' · ทะเบียนถึง '+esc(thDate((d.data_period||{}).to)||'ยังไม่ระบุ')+' · ผลส่งถึง '+esc(thDate((d.data_period||{}).result_to)||'ยังไม่ระบุ')+'</p>'+
+          '<div class="grid-k">'+[['READY','ส่งแล้ว ยังไม่เข้ารอบ',st.READY||0],['CLAIMED','พบรอบยืนยัน',claimed],['CHECK','ต้องตรวจหลักฐาน',review],['WAIT','รอผลส่ง',st.WAIT||0]].map(x=>'<button type="button" class="kpi clay btn" style="flex-direction:column;align-items:flex-start;text-align:left" data-fh-status="'+x[0]+'"><span>'+x[1]+'</span><b class="'+(x[0]==='CHECK'&&x[2]?'flag-r':'')+'">'+num(x[2])+'</b><span>ฉบับ</span></button>').join('')+'</div>'+
+          '<p class="tiny muted">จำนวนสรุปตามปีงบ ผู้ส่ง และคำค้น ก่อนกรองสถานะ · ยอดพร้อมเสนอเป็นประมาณการ ให้ยืนยันจากแบบ 25 ตามกระบวนการเดิม</p>'+
+          (group?'<p class="note">กำลังดูกลุ่ม '+esc(group)+' <button type="button" class="btn btn-sm" id="fhClearGroup">กลับดูทั้งหมด</button></p>':'')+
+          '<p><b>ผลค้น '+num(d.total_rows)+' ฉบับ</b> · หน้า '+num(page)+' / '+num(Math.max(1,Math.ceil(d.total_rows/d.page_size)))+'</p>'+freeHistoryTable(d.rows)+
+          '<div class="row" style="margin-top:12px"><button type="button" class="btn btn-sm" id="fhPrev" '+(page<=1?'disabled':'')+'>← ก่อนหน้า</button><button type="button" class="btn btn-sm" id="fhNext" '+(page*d.page_size>=d.total_rows?'disabled':'')+'>ถัดไป →</button><button type="button" class="btn btn-sm" id="fhPrint" '+(!d.rows.length?'disabled':'')+'>พิมพ์หน้านี้</button></div>'+
+          '<p class="tiny muted">อยู่ในรอบยืนยัน กับจ่ายเงินจริงแล้วเป็นคนละสถานะ · หมายที่รวมกลุ่มอาจไม่มียอดเงินแยกรายฉบับ · หน้านี้ไม่เปลี่ยนยอดหรือสถานะ</p>'+
+          '<details class="note" id="fhRoundChecks"><summary><b>ตรวจยอด 60/40 และเศษจากรอบที่บันทึก '+num(d.round_checks.length)+' รอบ</b>'+ (d.round_checks.some(r=>r.errors.length)?' · <span class="flag-r">มีข้อควรตรวจ</span>':'')+'</summary><div class="tbl-wrap"><table style="min-width:760px"><thead><tr><th>รอบ / วันที่</th><th>ประเภท</th><th class="n">ยอดเต็ม</th><th class="n">60%</th><th class="n">40%</th><th class="n">เศษเข้า → ออก</th><th>ผลตรวจ</th></tr></thead><tbody>'+
+          d.round_checks.slice().reverse().map(r=>'<tr><td><button type="button" class="btn btn-sm" data-fh-round="'+esc(r.round_id)+'">'+esc(thDate(r.pay_date))+'</button><br><span class="tiny">'+esc(r.round_id)+'</span></td><td>'+esc(r.round_type==='FREE'?'หมายฟรี':'หมายมีเงิน')+'</td><td class="n">'+baht2(r.total)+'</td><td class="n">'+baht2(r.courier60)+'</td><td class="n">'+baht2(r.pool40)+'</td><td class="n">'+baht2(r.carry_in)+' → '+baht2(r.carry_out)+'</td><td class="'+(r.errors.length?'flag-r':'flag-ok')+'">'+esc(r.errors.join(' · ')||'ยอดสมดุล')+'</td></tr>').join('')+'</tbody></table></div><p class="tiny muted">ตรวจจากค่าที่บันทึก ไม่แก้ยอดเดิม · ยอดสมดุลไม่ได้ยืนยันว่ารายการต้นทางครบหรือจ่ายเงินจริงแล้ว</p></details>';
+        box.querySelectorAll('[data-fh-group]').forEach(b=>b.onclick=()=>{group=b.dataset.fhGroup;page=1;$('#fhQ').value='';$('#fhOfficer').value='';$('#fhStatus').value='';run();});
+        box.querySelectorAll('[data-fh-round]').forEach(b=>b.onclick=()=>{S.payoutSub='round:'+b.dataset.fhRound;go('payout');});
+        box.querySelectorAll('[data-fh-status]').forEach(b=>b.onclick=()=>{$('#fhStatus').value=b.dataset.fhStatus;page=1;run();});
+        if($('#fhClearGroup'))$('#fhClearGroup').onclick=()=>{group='';page=1;run();};
+        $('#fhPrev').onclick=()=>{page--;run();};$('#fhNext').onclick=()=>{page++;run();};
+        $('#fhPrint').onclick=()=>{loadSarabun();printArea('<div class="pr-head"><div class="pr-court">ศาลจังหวัดลพบุรี</div><div class="pr-title">ประวัติหมายฟรี · ปีงบ '+esc(d.fy)+' · หน้า '+num(page)+'</div><p>ตรวจ ณ '+esc(thDate(d.checked_at,true))+' · '+num(d.rows.length)+' ฉบับ</p></div>'+freeHistoryTable(d.rows)+'<p>อ่านอย่างเดียว · ยอดรายการร่วมไม่บวกซ้ำรายฉบับ</p>');};
+        reveal(m);
+      }catch(e){if(ticket===seq&&m.isConnected)box.innerHTML='<p class="note r">'+esc(e.message)+'</p>';}
+      finally{if(ticket===seq&&m.isConnected)button.disabled=false;}
+    };
+    $('#fhForm').onsubmit=e=>{e.preventDefault();group='';page=1;run();};
+    ['fhFy','fhQ','fhOfficer','fhStatus'].forEach(id=>$('#'+id).addEventListener('input',()=>{seq++;group='';page=1;$('#fhRun').disabled=false;box.innerHTML='<p class="note">ตัวกรองเปลี่ยนแล้ว กดค้น / ตรวจล่าสุดเพื่อดูผลใหม่</p>';}));
+    ['fhOfficer','fhStatus'].forEach(id=>$('#'+id).addEventListener('change',()=>run()));
+    run();
+  }
   function pendingBreakdownHtml(b){if(!b)return '';return '<div class="note"><b>รอยืนยันการจับคู่ ไม่ใช่ยอดค้างจ่าย</b><br>มีบัญชีจ่ายแล้ว ยังไม่มีรอบแบ่งในระบบ '+num(b.no_round_n)+' รายการ · '+baht2(b.no_round_amount)+' บาท<br>มีบัญชีจ่ายและรอบแบ่งแล้ว ยังไม่ผูกทะเบียน '+num(b.confirmed_round_n)+' รายการ · '+baht2(b.confirmed_round_amount)+' บาท<p class="tiny muted">ตรวจแยกวันที่ได้ที่ตาราง “บัญชีจ่ายแยกตามวันที่จ่าย” การจับคู่ไม่ได้ไม่ทำให้ยอดบัญชีหรือยอดแบ่งเดิมหายไป สถานะรับเงินจริงให้ดูหลักฐานจ่ายของรอบ</p></div>';}
   function ledgerPendingPanel() {
     return '<section class="clay panel"><h3>บัญชีจ่ายเงิน · รอยืนยันการจับคู่</h3><p class="small muted">แสดงรายการที่ยังเชื่อมกับหมายไม่ได้ หรือหลักฐานขัดกัน รอยืนยันการจับคู่ไม่ได้แปลว่ายังไม่จ่ายเงิน ยอดตามบัญชีและรอบเดิมคงเดิม · ระบบตรวจให้อัตโนมัติทุกครั้งที่นำเข้าไฟล์หมาย หรือกด “ตรวจจับคู่และบันทึกใหม่” เพื่อตรวจเอง</p>'+
