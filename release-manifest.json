@@ -1,15 +1,15 @@
 {
-  "version": "0.7.39",
-  "source_commit": "b6f9760f56f40fceae46212cd155739c574d6ff5",
-  "previous_public_commit": "511e01b57b254989b836f825a01df2cf18b5b422",
+  "version": "0.7.40",
+  "source_commit": "296090e8f8503ade5c92f4ad7e3e9e7da8dacaef",
+  "previous_public_commit": "c7c4eab56ce80954df0bf86f76386d9a8993221c",
   "backend_source": "private authoritative repository; provide --source-root",
   "web": {
-    "app.js": "34ccddb0997569e2a665339e12444bbc60a17b8b3d4ac4366d5cfb1a3f638c1e",
+    "app.js": "240065becd7b64ec2acfc46fef8a6318934e51b7cd1d6a3584b642f5b53e109a",
     "app.css": "0a9bf1f3b3910e63261464489ddfecd37d3be82226994099c965d2583ff503ea",
-    "index.html": "3168cee262df9e3c95f08698a18b98feafa3087afa7954c6c3f80fba091ef714",
-    "config.js": "825f9e0cdbce38f520ec86721be1dd8ef4267dca829d78e197cc8b6bf10778c2",
+    "index.html": "521b5145db8e3c5326838de4f8d3bc09c3161b3ac17ab3cc535602b2ca92c5f5",
+    "config.js": "52660186aabe01d447cb5ec65066df9a54e3e2afa2ab890b715fe1373463d17a",
     "import-formats.js": "edc2fa8ec26b6b713bf654b513b2594cebed944d530133bc83bcb286259e87d1",
-    "sw.js": "ea996196f55a22072ef717b866d87bbd700b67469a521f1745d09e779f16c1b7",
+    "sw.js": "88f59ed25f7adb0235c31b869300bc995543b1b7eb5fbcc87c8dd28bcfd82367",
     "report-export.js": "61b2798aecfaa4ca79e35e0b26534b3d06b2a85316237770052463b302165c25",
     "court-seal.webp": "59d21721f76a54602935f30a56e7dcaca367e3e4ab39e8c6c6160a9bc2e58857",
     "tools/party-cleaner/notice-pay-party-cleaner-offline.html": "2e7a99304f08f75efc767ef3d8bdc5b0941c69d98e95583ce7e92de5331a6d56"
@@ -18,7 +18,7 @@
     "Auth.js": "5a1dc824f88c18ee4c474154b882c2875ee8f989a4385014d12a3e02f78580b0",
     "Calc.js": "b72d38d50354414a42d0d750e2d27b75887cbc0d4b05d69303e69df5287e920f",
     "Code.js": "a0830734224d667d31071e80d976022b907a7f0af3a373ec92e0966cae66e4f3",
-    "Config.js": "1f48437cf0f9925ab7d6bcb66ab01295a4e4066fc220a2f2b27da289fef9aee8",
+    "Config.js": "3ed15a2128c066f1e3c03d1860a4a97a14ae7eb8980bbfd3da15a01cffb625d2",
     "Core.js": "5dfdf2303676b5a15bbb54ebad14641357de4653b9db489a67d3f31c3bca443a",
     "Dashboard.js": "a0765ad3a95fe4dec50128cd613b357d8a5731bf87b2722f0db79ac0d46bbd21",
     "Db.js": "92764c3b5d35bb54ed60640c4654ef8c74732cc746b4994e250059a84172ed9e",
@@ -35,10 +35,19 @@
     "Users.js": "1c5a944ffc80aca043570d9e70f3098ecde84e888c76663174b089b8c8adae73"
   },
   "tests": {
-    "regression_suites": 50,
-    "apps_script_synthetic_transactions": 13,
-    "http_synthetic_checks": 16,
-    "backup_restore_modules": 17
+    "regression_suites": 51,
+    "current_candidate_ci": 45028630310,
+    "responsive_widths": [
+      360,
+      390,
+      768,
+      1280
+    ],
+    "unchanged_engine_integration_0_7_39": {
+      "apps_script_transactions": 13,
+      "synthetic_http": 16,
+      "backup_restore_modules": 17
+    }
   },
   "privacy": "No court records, database IDs, credentials or private test results are published.",
   "api_url_sha256": "14b57b6b6f68e5b4a87e0f347671335a654e17d5616a400d73ebc71066f69b47"
