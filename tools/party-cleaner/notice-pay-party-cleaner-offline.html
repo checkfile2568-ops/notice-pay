@@ -98,6 +98,30 @@ var NoticeImportFormat = (function () {
     if(!/^R1-[A-F0-9]{64}$/.test(rp))return '';
     return sha256(JSON.stringify(['NoticePay/form25/v1',cs,ref||caseNo(row.case_ref),rp,kind,tambon,amphoe]));
   }
+  // V2 identity uses only deterministic keys; delivery and entry dates are not identity.
+  function matchKey(v) { return sha256(text(v).replace(/\s+/g,'').toUpperCase()); }
+  function form25Identity(row) {
+    var cases=String(row.case_no||'').split(/\r?\n/).map(caseNo).filter(Boolean);
+    if(row.case_ref)cases.push(caseNo(row.case_ref));
+    var cs=cases[0]||'',raw=String(row.recipient||'').trim();
+    var people=raw.split(/\s*,\s*/).filter(Boolean).map(function(v){return /^R1-[A-F0-9]{64}$/.test(v)?v:'R1-'+sha256('NoticePay/recipient/v1\n'+cs+'\n'+name(v));});
+    var place=function(v){return text(v).replace(/^(อำเภอ|อ\.|ตำบล|ต\.|แขวง|เขต|กิ่งอำเภอ)\s*/,'');};
+    if(!cs||!people.length||!text(row.tambon)||!text(row.amphoe))return null;
+    return {case_keys:Array.from(new Set(cases.map(matchKey))),recipient_keys:Array.from(new Set(people)).sort(),kind_key:matchKey(row.notice_kind||''),tambon_key:matchKey(place(row.tambon)),amphoe_key:matchKey(place(row.amphoe))};
+  }
+  function receiptParts(value, amountC) {
+    var s=digits(value).trim(), parts=[];
+    if(!s)return null;
+    var bits=s.split(/\s*,\s*/);
+    for(var i=0;i<bits.length;i++){
+      var m=/^((?:[A-Za-zก-ฮ.]{1,10}[-/. ]?)?[0-9]+(?:[\/._-][0-9]+)*)(?:\s*\((\d+)(?:\.(\d{1,2}))?\))?$/.exec(bits[i]);
+      if(!m||(!m[2]&&bits.length!==1))return null;
+      var c=m[2]?Number(m[2])*100+Number(((m[3]||'')+'00').slice(0,2)):amountC;
+      if(!Number.isSafeInteger(c)||c<=0)return null;
+      parts.push({receipt_key:matchKey(m[1]),amount_c:c});
+    }
+    return parts.reduce(function(a,p){return a+p.amount_c;},0)===amountC?parts:null;
+  }
   function mapped(row,mapping,date1904) {
     var out={},cs=caseNo(row[mapping.case_no]);
     Object.keys(mapping).forEach(function(f){
@@ -153,7 +177,7 @@ var NoticeImportFormat = (function () {
     var s=String(value==null?'':value),ms=nameMatches(s);for(var i=ms.length-1;i>=0;i--)s=s.slice(0,ms[i].start)+'[ตัดชื่อ]'+s.slice(ms[i].end);
     return {text:s,count:ms.length};
   }
-  return {date:date,recipient:recipient,form25Evidence:form25Evidence,mapped:mapped,sha256:sha256,privacyField:privacyField,nameMatches:nameMatches,redactNames:redactNames};
+  return {date:date,recipient:recipient,form25Evidence:form25Evidence,form25Identity:form25Identity,matchKey:matchKey,receiptParts:receiptParts,mapped:mapped,sha256:sha256,privacyField:privacyField,nameMatches:nameMatches,redactNames:redactNames};
 })();
 if (typeof module!=='undefined' && module.exports) module.exports=NoticeImportFormat;
 </script><script>/* Offline XLSX privacy transform. Uses the exact NoticePay recipient rules. */
