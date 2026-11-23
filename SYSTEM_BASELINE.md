@@ -44,3 +44,7 @@ Before update, all 18 live backend modules were read. A four-character trailing 
 
 ## 0.7.41 mobile text release — 2026-11-22
 Exact private candidate 4b207a618dc68517c39b0c1b65904d86c1b42daf passed full CI 45031760482 (51/51 synthetic suites, browser geometry at 320/344/360/390/480/768/1280 as applicable). Fix inline label collisions, home officer-name wrapping and reconciliation table readability. Items 2–4 retained; accounting engine and schema unchanged. See release-manifest.json for exact verified artifacts.
+
+
+## 0.7.42 register-only evidence projection — 2026-11-23
+Read-only register payment and match filters, exact receipt/free-group members and shared amount presentation. Legacy reference/split tools remain accessible inside the register. No other menu renderer, financial engine, schema or financial source data changes. Candidate f265428fb04f96e6eae72602b28454b4dd770169; full CI 45206668843 and 52 synthetic suites required before publication.
