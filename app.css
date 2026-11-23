@@ -711,3 +711,8 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
   .main .kt>span:not(.kt-ic) {font-size:13px;}
  }
 }
+
+/* 0.7.42 scoped to register only; no other menu layout changes. */
+.reg-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:14px;align-items:end;margin:14px 0}.reg-filters label{display:flex;flex-direction:column;gap:6px;min-width:0}.reg-filters .inp,.reg-filters .sel{width:100%;min-width:0;max-width:100%}.reg-table{min-width:900px}.reg-person{min-width:180px}.reg-ref{max-width:230px;overflow-wrap:anywhere}.reg-badge{display:inline-block;padding:5px 9px;border-radius:10px;font-size:13px;line-height:1.5;font-weight:700;white-space:normal}.reg-green{background:#def0e4;color:#195335}.reg-red{background:#fae1df;color:#972e2e}.reg-amber{background:#fff0c5;color:#77520b}.reg-group{padding:14px 0;border-bottom:1px solid var(--line)}.reg-group h4{overflow-wrap:anywhere}.reg-pages{margin-top:16px}#registerDetail{overflow-wrap:break-word}@media(max-width:480px){.reg-filters{grid-template-columns:minmax(0,1fr)}}
+
+.reg-blue{background:#e0edf8;color:#245478}
