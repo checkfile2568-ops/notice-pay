@@ -48,3 +48,7 @@ Exact private candidate 4b207a618dc68517c39b0c1b65904d86c1b42daf passed full CI 
 
 ## 0.7.42 register-only evidence projection — 2026-11-23
 Read-only register payment and match filters, exact receipt/free-group members and shared amount presentation. Legacy reference/split tools remain accessible inside the register. No other menu renderer, financial engine, schema or financial source data changes. Candidate f265428fb04f96e6eae72602b28454b4dd770169; full CI 45206668843 and 52 synthetic suites required before publication.
+
+
+## 0.7.43 register delivery monitoring — 2026-11-24
+Adds only the register delivery-monitor subtab: 14 calendar days from dispatch, officer/time filters and summaries, sent-date elapsed time, and Live waiting for connection. No LINE connection or messaging is enabled. Exact private candidate f29c4949544d5343885e9fd7723a62adc8301e37 passed CI 45213897467: 53/53 suites and responsive browser checks. All 18 saved live backend modules match that candidate; prior 0.7.42 script backup was read and verified, and the database backup matches all six register/financial tables plus OPERATIONS. Original endpoint, schema 0.7.39 and financial semantics are retained. Roll back web to fa1b6515e15dac1381aa08a853d276cf5132e755 and existing API deployment version 44 if required; financial records are never rolled back by this software release.
