@@ -1,15 +1,15 @@
 {
-  "version": "0.7.42",
-  "source_commit": "f265428fb04f96e6eae72602b28454b4dd770169",
-  "previous_public_commit": "86a4186e824245d452d6a3bb22c5002f653fa787",
+  "version": "0.7.43",
+  "source_commit": "f29c4949544d5343885e9fd7723a62adc8301e37",
+  "previous_public_commit": "fa1b6515e15dac1381aa08a853d276cf5132e755",
   "backend_source": "private authoritative repository; provide --source-root",
   "web": {
-    "app.js": "40c36689fe905c80a835debdadc6a231d8c3c9de5135a6f57d29939577e06bea",
-    "app.css": "3c262bcda10303d6280e8770fc818108f0bfe9576138d8368dc91f92763425af",
-    "index.html": "0080a11f0bf15a078da21090429024f1f59424a2b6c3ee3f3589e07e10d3fa44",
-    "config.js": "f92bc27bff873156368cbc56dcb6afa11f418e91e99f46f03b75ed7ac598e65d",
+    "app.js": "cee6526e826810db0c153a2b55cc34e129542e2eeab3eafece77cddfb2e488bb",
+    "app.css": "c8b3b407071018fa2a8a10ba293acf6889a0bf0c3b910e3015d74e84d655aa34",
+    "index.html": "b5b78af4227a41311c5f6f2654d417ec1bc3cb79a2fa09b923464b52ebb17c3b",
+    "config.js": "65e09100bdbf8e789bd8c76b1d80fbc1fa1350e599630dc97e6c0c65b22aadc5",
     "import-formats.js": "edc2fa8ec26b6b713bf654b513b2594cebed944d530133bc83bcb286259e87d1",
-    "sw.js": "325a759e80fe6cad584374ea52dee8d81c699568b05ec2b0f1ad58dc80c2ba01",
+    "sw.js": "74993df421faeb9798eff858520ca14e0416d97fc8f365711c738ed9e9ae8114",
     "report-export.js": "61b2798aecfaa4ca79e35e0b26534b3d06b2a85316237770052463b302165c25",
     "court-seal.webp": "59d21721f76a54602935f30a56e7dcaca367e3e4ab39e8c6c6160a9bc2e58857",
     "tools/party-cleaner/notice-pay-party-cleaner-offline.html": "2e7a99304f08f75efc767ef3d8bdc5b0941c69d98e95583ce7e92de5331a6d56"
@@ -18,7 +18,7 @@
     "Auth.js": "5a1dc824f88c18ee4c474154b882c2875ee8f989a4385014d12a3e02f78580b0",
     "Calc.js": "b72d38d50354414a42d0d750e2d27b75887cbc0d4b05d69303e69df5287e920f",
     "Code.js": "a0830734224d667d31071e80d976022b907a7f0af3a373ec92e0966cae66e4f3",
-    "Config.js": "92027f1aba19981a7e2280e9d796f110600b46df90e638bd7da6178bf979120d",
+    "Config.js": "4273359062b3e3674ca74b3ea2ae5531a6d68d495046a1db6bc4ac4dd0c26550",
     "Core.js": "5dfdf2303676b5a15bbb54ebad14641357de4653b9db489a67d3f31c3bca443a",
     "Dashboard.js": "a0765ad3a95fe4dec50128cd613b357d8a5731bf87b2722f0db79ac0d46bbd21",
     "Db.js": "92764c3b5d35bb54ed60640c4654ef8c74732cc746b4994e250059a84172ed9e",
@@ -31,12 +31,12 @@
     "Payout.js": "a1eabe53ad3c022b647cbe3dead2a45e70eef7b1baa528a2d637051eaa583857",
     "PrivacyMigration.js": "339163f0f7fae664760e8eebbf5c8eb993e25ff918ccb11f461dad7e08b018a1",
     "Setup.js": "b336712ce6dcdaabdc1c439e5d933729e62b53dc330b287fc6abdd9ee4e4cb72",
-    "Tracking.js": "1401a21e2538f614e51f8ce25558249e08bdb13e0b239012d1b8432fe987ddc9",
+    "Tracking.js": "5c096d05f2793ad2cf3264f024ecd7ad950f61418a99092b11166e11bb90a0d4",
     "Users.js": "1c5a944ffc80aca043570d9e70f3098ecde84e888c76663174b089b8c8adae73"
   },
   "tests": {
-    "regression_suites": 52,
-    "current_candidate_ci": 45206668843,
+    "regression_suites": 53,
+    "current_candidate_ci": 45213897467,
     "responsive_widths": [
       320,
       344,

@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.42';
+  const UI_VERSION = '0.7.43';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -416,7 +416,7 @@
   const PRIVACY_TH = 'ระบบไม่เก็บชื่อคู่ความ · ไม่รับคอลัมน์โจทก์/จำเลย';
   const viewerOnly = () => S.user && S.user.roles.length > 0 && S.user.roles.every((x) => x === 'VIEWER');
   /* 0.7.32: 7 กลุ่มงาน ใช้เส้นทางและสิทธิ์เดิม */
-  function navGroup(p) { return p === 'ostats' ? 'home' : ['tracking','search','calc','overview','paid','budget'].includes(p) ? 'overview' : ['import','history','review','changes','claim25'].includes(p) ? 'import' : p === 'reports' ? 'compensation' : ['settings','officers','users','audit'].includes(p) ? 'settings' : p; }
+  function navGroup(p) { return p === 'ostats' ? 'home' : ['tracking','search','calc','overview','paid','budget','delivery14'].includes(p) ? 'overview' : ['import','history','review','changes','claim25'].includes(p) ? 'import' : p === 'reports' ? 'compensation' : ['settings','officers','users','audit'].includes(p) ? 'settings' : p; }
   function pages() {
     return [
       {id:'home',th:'ภาพรวมและสถิติ',show:true},
@@ -432,7 +432,7 @@
     const g = navGroup(p); let links = [];
     if (g === 'home') links = [['home','ภาพรวมสถิติ'],['ostats','สถิติเจ้าหน้าที่ส่งหมาย']];
     if (g === 'import') links = [['import','ทะเบียน 50 / 42 / 18 · บัญชี 30'],['claim25','แบบ 25 · ตรวจยอดตามใบเบิก'],['review','รายการรอตรวจ'],['changes','รายการปรับปรุงรออนุมัติ'],['history','ประวัติการนำเข้า']];
-    if (g === 'overview') links = (viewerOnly()?[]:[['overview','หมายทั้งหมด'],['paid','หมายมีเงิน'],['budget','หมายฟรี']]).concat([['calc','ยอดอ้างอิงรายผู้ส่ง']]);
+    if (g === 'overview') links = (viewerOnly()?[]:[['overview','หมายทั้งหมด'],['paid','หมายมีเงิน'],['budget','หมายฟรี'],['delivery14','ตรวจหมาย 14 วัน']]).concat([['calc','ยอดอ้างอิงรายผู้ส่ง']]);
     if (g === 'finance') links = [['finance','ตรวจเงินงบประมาณ · รายการผิดปกติ']];
     if (g === 'payout') links = [['payout','รอบเบิก 60/40']];
     if (g === 'compensation') links = [['compensation','ค่าตอบแทนตามรอบ'],['reports','รายงานรวม']];
@@ -2898,6 +2898,21 @@
     $('#trackForm').onsubmit=e=>{e.preventDefault();unit='';page=1;run();};await run();
   };
   // Register menu only. Other tracking/report/finance screens retain their renderers.
+  const delivery14Labels={OPEN:'ยังไม่มีวันส่งจริง',GREEN:'เหลือมากกว่า 5 วัน',YELLOW:'เหลือ 4–5 วัน',RED:'เหลือ 0–3 วัน',OVERDUE:'เกินกำหนด',SENT:'ส่งแล้ว',REVIEW:'รอตรวจวันที่'};
+  function delivery14RowsHtml(rows){return rows.map(r=>'<article class="clay d14-card"><header><b>'+esc(r.case_no||'ไม่ระบุเลขคดี')+'</b><span class="d14-status d14-'+esc(r.time_state.toLowerCase())+'">'+esc(r.time_text)+'</span></header><p>'+esc(r.officer)+' · '+esc(r.pay_type==='BUDGET'?'หมายฟรี':'หมายมีเงิน')+'</p><p class="small">เลขหมาย '+esc(r.notice_no||'—')+' · '+esc(r.notice_kind||'—')+'</p><p class="small">บ้านเลขที่ '+esc(r.house_no||'ไม่ระบุ')+(r.moo?' · ม.'+esc(r.moo):'')+' · ต.'+esc(r.tambon||'ไม่ระบุ')+' · อ.'+esc(r.amphoe||'ไม่ระบุ')+'</p><dl><div><dt>วันที่จ่ายหมาย</dt><dd>'+esc(thDate(r.issued_date)||'ไม่ระบุ')+'</dd></div><div><dt>ครบเป้าหมาย 14 วัน</dt><dd>'+esc(thDate(r.deadline)||'รอตรวจวันที่')+'</dd></div><div><dt>วันที่ส่งจริง</dt><dd>'+esc(thDate(r.delivered_date)||'ยังไม่มีข้อมูล')+'</dd></div><div><dt>'+(r.time_state==='SENT'?'ระยะเวลาส่งจริง':'ผ่านมาจากวันจ่ายหมาย')+'</dt><dd>'+(r.elapsed===null?'รอตรวจวันที่':num(r.elapsed)+' วัน')+'</dd></div></dl>'+(r.time_state==='SENT'&&r.late_by?'<p class="tiny muted">วันส่งจริงหลังเป้าหมาย '+num(r.late_by)+' วัน · หยุดนับแล้ว</p>':'')+'</article>').join('');}
+  RENDER.delivery14=async m=>{
+    if(viewerOnly()){await RENDER.calc(m);return;}
+    let page=1,seq=0,seeded=false;const q=s=>m.querySelector(s);
+    m.innerHTML=top('ตรวจหมาย 14 วัน')+'<section class="clay panel d14-panel"><div class="d14-heading"><h3>ติดตามระยะเวลาส่งหมาย รายบุคคล</h3><span class="d14-live" role="status">สถานะ Live · รอเชื่อมต่อระบบ</span></div><p class="small">นับวันปฏิทิน วันถัดจากวันที่จ่ายหมายเป็นวันที่ 1 · ใช้วันส่งจริงเดิมในทะเบียนเพื่อหยุดนับ · ยังไม่รับพิกัดหรือรายงานจาก LINE</p><p class="tiny muted">เป้าหมายติดตามงาน 14 วัน ไม่ใช่เงื่อนไขตัดสิทธิ์เบิกเงิน และไม่เปลี่ยนสถานะการจ่ายเงิน</p><form id="d14Form" class="d14-filters"><label>เลขคดี / เลขหมาย<input id="d14Q" class="inp" placeholder="พิมพ์เลขคดีหรือเลขหมาย"></label><label>ผู้ส่งหมาย<select id="d14Officer" class="sel"><option value="">ทุกคนในสิทธิ์ของฉัน</option></select></label><label>ประเภท<select id="d14Type" class="sel"><option value="">ทั้งสองประเภท</option><option value="BUDGET">หมายฟรี</option><option value="PAID">หมายมีเงิน</option></select></label><label>ปีงบประมาณ<input id="d14Fy" class="inp" placeholder="ทั้งหมด" inputmode="numeric"></label><label>สถานะเวลา<select id="d14State" class="sel"><option value="">ทั้งหมด</option>'+Object.entries(delivery14Labels).map(([k,v])=>'<option value="'+k+'">'+esc(v)+'</option>').join('')+'</select></label><button class="btn btn-g">ค้นหา / อัปเดตข้อมูล</button></form><div class="d14-legend"><span class="d14-status d14-green">เหลือมากกว่า 5 วัน</span><span class="d14-status d14-yellow">เหลือ 4–5 วัน</span><span class="d14-status d14-red">เหลือ 0–3 วัน</span><span class="d14-status d14-overdue">เกินกำหนด</span></div></section><section id="d14Result" aria-live="polite"></section>';
+    q('#d14State').value='OPEN';
+    const run=async()=>{const ticket=++seq,box=q('#d14Result');box.innerHTML='<div class="clay panel"><span class="spin"></span> กำลังตรวจระยะเวลา…</div>';
+      try{const d=await api('tracking',{delivery14:true,q:q('#d14Q').value,officer_id:q('#d14Officer').value,pay_type:q('#d14Type').value,fy:q('#d14Fy').value,time_state:q('#d14State').value,page});if(ticket!==seq||!box.isConnected)return;
+        if(!seeded){seeded=true;Object.entries(d.officers||{}).forEach(([id,o])=>q('#d14Officer').insertAdjacentHTML('beforeend','<option value="'+esc(id)+'">'+esc(o.name)+'</option>'));}
+        box.innerHTML='<div class="clay panel"><p>ตรวจ ณ '+esc(thDate(d.today))+' · พบ '+num(d.total_rows)+' หมายตามตัวกรองเวลา</p><p class="tiny muted">จำนวนด้านล่างเป็นผลค้นหาก่อนกรองสถานะเวลา · แตะเพื่อเลือกดู</p><div class="d14-counts">'+[['','ทั้งหมด',d.counts.ALL],['OPEN','ยังไม่มีวันส่งจริง',d.counts.OPEN],['OVERDUE','เกินกำหนด',d.counts.OVERDUE],['RED','เหลือ 0–3 วัน',d.counts.RED],['YELLOW','เหลือ 4–5 วัน',d.counts.YELLOW],['SENT','ส่งแล้ว',d.counts.SENT],['REVIEW','รอตรวจวันที่',d.counts.REVIEW]].map(([k,l,v])=>'<button type="button" class="btn btn-sm" data-d14-state="'+k+'">'+esc(l)+' <b>'+num(v)+'</b></button>').join('')+'</div><details class="d14-people"><summary>สรุปรายผู้ส่ง · กดชื่อเพื่อกรอง</summary><div class="tbl-wrap"><table><thead><tr><th>ผู้ส่ง</th><th class="n">ทั้งหมด</th><th class="n">ยังไม่มีวันส่ง</th><th class="n">เกินกำหนด</th><th class="n">ใกล้กำหนด</th><th class="n">ส่งแล้ว</th><th class="n">รอตรวจวันที่</th></tr></thead><tbody>'+d.per_officer.map(o=>'<tr><td class="onm"><button type="button" class="close-person" data-d14-officer="'+esc(o.officer_id)+'">'+esc(o.officer)+'</button></td>'+[o.total,o.open,o.overdue,o.urgent,o.sent,o.review].map(v=>'<td class="n">'+num(v)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div></details></div><div class="d14-cards">'+(d.rows.length?delivery14RowsHtml(d.rows):'<p class="note">ไม่พบหมายตามตัวกรอง</p>')+'</div><div class="row d14-pages"><button type="button" class="btn btn-sm" id="d14Prev" '+(page<=1?'disabled':'')+'>ก่อนหน้า</button><span>หน้า '+num(page)+'</span><button type="button" class="btn btn-sm" id="d14Next" '+(page*d.page_size>=d.total_rows?'disabled':'')+'>ถัดไป</button></div>';
+        q('#d14Prev').onclick=()=>{page--;run();};q('#d14Next').onclick=()=>{page++;run();};box.querySelectorAll('[data-d14-state]').forEach(b=>b.onclick=()=>{q('#d14State').value=b.dataset.d14State;page=1;run();});box.querySelectorAll('[data-d14-officer]').forEach(b=>b.onclick=()=>{q('#d14Officer').value=b.dataset.d14Officer;page=1;run();});
+      }catch(e){if(ticket===seq)box.textContent=e.message;}
+    };q('#d14Form').onsubmit=e=>{e.preventDefault();page=1;run();};await run();
+  };
   const registerPaymentLabels={PAID:'เบิกจ่ายแล้ว',UNPAID:'ยังไม่เบิกจ่าย',UNKNOWN:'ยังไม่พบหลักฐานจ่าย',PARTIAL:'จ่ายแล้วบางส่วน'};
   const registerMatchLabels={MATCHED:'จับคู่เดี่ยวแล้ว',GROUP:'รวมในกลุ่ม',PARTIAL:'จับคู่บางส่วน',UNMATCHED:'ยังไม่พบคู่',REVIEW:'รอตรวจสอบการจับคู่'};
   function registerBadge(value, labels, green) {return '<span class="reg-badge '+(value===green?(green==='MATCHED'?'reg-blue':'reg-green'):value==='GROUP'?'reg-blue':value==='PARTIAL'||value==='REVIEW'?'reg-amber':'reg-red')+'">'+esc(labels[value]||value)+'</span>';}
