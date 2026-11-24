@@ -1,15 +1,15 @@
 {
-  "version": "0.7.43",
-  "source_commit": "f29c4949544d5343885e9fd7723a62adc8301e37",
-  "previous_public_commit": "fa1b6515e15dac1381aa08a853d276cf5132e755",
+  "version": "0.7.44",
+  "source_commit": "(ยังไม่บันทึกใน repo ส่วนตัว · หน้าเว็บอย่างเดียว)",
+  "previous_public_commit": "ef07e3b9d08116b6c99cfc9ecde4201bdb0bf1e8",
   "backend_source": "private authoritative repository; provide --source-root",
   "web": {
-    "app.js": "cee6526e826810db0c153a2b55cc34e129542e2eeab3eafece77cddfb2e488bb",
-    "app.css": "c8b3b407071018fa2a8a10ba293acf6889a0bf0c3b910e3015d74e84d655aa34",
-    "index.html": "b5b78af4227a41311c5f6f2654d417ec1bc3cb79a2fa09b923464b52ebb17c3b",
-    "config.js": "65e09100bdbf8e789bd8c76b1d80fbc1fa1350e599630dc97e6c0c65b22aadc5",
+    "app.js": "e97928d91dd0c8a9677b4476bf9529f43bc17ef80b676a1b0f50f844843e5344",
+    "app.css": "4432c7b75889c468ee93f20dc09e520ab4994288b61cb77f025218baefefe621",
+    "index.html": "8d8f7699725276da4fa2c0a2be88abfc385c174e56d077eeb380792e647b034f",
+    "config.js": "f7db631993a729d76334da5c6038e9df2b3bbada4074b9274558eacff67aa15d",
     "import-formats.js": "edc2fa8ec26b6b713bf654b513b2594cebed944d530133bc83bcb286259e87d1",
-    "sw.js": "74993df421faeb9798eff858520ca14e0416d97fc8f365711c738ed9e9ae8114",
+    "sw.js": "71ece41099a4620995def8ba1262cd39c3a4d53ddbd576686f9f6160c3e6b7b2",
     "report-export.js": "61b2798aecfaa4ca79e35e0b26534b3d06b2a85316237770052463b302165c25",
     "court-seal.webp": "59d21721f76a54602935f30a56e7dcaca367e3e4ab39e8c6c6160a9bc2e58857",
     "tools/party-cleaner/notice-pay-party-cleaner-offline.html": "2e7a99304f08f75efc767ef3d8bdc5b0941c69d98e95583ce7e92de5331a6d56"
@@ -35,22 +35,17 @@
     "Users.js": "1c5a944ffc80aca043570d9e70f3098ecde84e888c76663174b089b8c8adae73"
   },
   "tests": {
-    "regression_suites": 53,
-    "current_candidate_ci": 45213897467,
-    "responsive_widths": [
-      320,
-      344,
+    "browser_mock_widths": [
       360,
       390,
-      480,
       768,
       1280
     ],
-    "unchanged_engine_integration_0_7_39": {
-      "apps_script_transactions": 13,
-      "synthetic_http": 16,
-      "backup_restore_modules": 17
-    }
+    "roles": [
+      "ADMIN",
+      "COURIER"
+    ],
+    "backend_changed": false
   },
   "privacy": "No court records, database IDs, credentials or private test results are published.",
   "api_url_sha256": "14b57b6b6f68e5b4a87e0f347671335a654e17d5616a400d73ebc71066f69b47"
