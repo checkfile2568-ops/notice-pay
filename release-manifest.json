@@ -4,7 +4,7 @@
   "previous_public_commit": "ef07e3b9d08116b6c99cfc9ecde4201bdb0bf1e8",
   "backend_source": "private authoritative repository; provide --source-root",
   "web": {
-    "app.js": "7959e1e4ad4b3263b2d31611721a6ec99d0c297cb4f345f73b090f3fb5c5f2fe",
+    "app.js": "9db65569523e238ea3abe596aca75c770bfa0739aec09cabd5fba43f9aa01a9f",
     "app.css": "4432c7b75889c468ee93f20dc09e520ab4994288b61cb77f025218baefefe621",
     "index.html": "df2712bb209c7c575dd32664017fe9254aaa833679e1d42b21d6856c7a79aa3e",
     "config.js": "28af375211af25cd96188d50f2f154df4e18a1e77f76b0ed0b24bf7e9b41133e",
