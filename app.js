@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.48';
+  const UI_VERSION = '0.7.49';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -2964,7 +2964,7 @@
   };
   // Register menu only. Other tracking/report/finance screens retain their renderers.
   const delivery14Labels={OPEN:'ยังไม่มีวันส่งจริง',GREEN:'เหลือมากกว่า 5 วัน',YELLOW:'เหลือ 4–5 วัน',RED:'เหลือ 0–3 วัน',OVERDUE:'เกินกำหนด',SENT:'ส่งแล้ว',REVIEW:'รอตรวจวันที่'};
-  function delivery14RowsHtml(rows){return rows.map(r=>'<article class="clay d14-card"><header><b>'+esc(r.case_no||'ไม่ระบุเลขคดี')+'</b><span class="d14-status d14-'+esc(r.time_state.toLowerCase())+'">'+esc(r.time_text)+'</span></header><p>'+esc(r.officer)+' · '+esc(r.pay_type==='BUDGET'?'หมายฟรี':'หมายมีเงิน')+'</p><p class="small">เลขหมาย '+esc(r.notice_no||'—')+' · '+esc(r.notice_kind||'—')+'</p><p class="small">บ้านเลขที่ '+esc(r.house_no||'ไม่ระบุ')+(r.moo?' · ม.'+esc(r.moo):'')+' · ต.'+esc(r.tambon||'ไม่ระบุ')+' · อ.'+esc(r.amphoe||'ไม่ระบุ')+'</p><dl><div><dt>วันที่จ่ายหมาย</dt><dd>'+(r.issued_basis==='PERIOD'?esc(r.issued_from===r.issued_to?thDate(r.issued_to):thDate(r.issued_from)+' – '+thDate(r.issued_to))+'<small class="d14-est">ตามช่วงไฟล์ 50 · ไม่มีวันที่รายแถว</small>':esc(thDate(r.issued_date)||'ไม่ระบุ'))+'</dd></div><div><dt>ครบเป้าหมาย 14 วัน</dt><dd>'+(r.issued_basis==='PERIOD'&&r.deadline?'≈ ':'')+esc(thDate(r.deadline)||'รอตรวจวันที่')+'</dd></div><div><dt>วันที่ส่งจริง</dt><dd>'+esc(thDate(r.delivered_date)||'ยังไม่มีข้อมูล')+'</dd></div><div><dt>'+(r.time_state==='SENT'?'ระยะเวลาส่งจริง':'ผ่านมาจากวันจ่ายหมาย')+'</dt><dd>'+(r.elapsed===null?'รอตรวจวันที่':(r.elapsed_max!=null&&r.elapsed_max!==r.elapsed?num(r.elapsed)+'–'+num(r.elapsed_max):num(r.elapsed))+' วัน')+'</dd></div></dl>'+(r.time_state==='SENT'&&r.late_by?'<p class="tiny muted">วันส่งจริงหลังเป้าหมาย '+num(r.late_by)+' วัน · หยุดนับแล้ว</p>':'')+'</article>').join('');}
+  function delivery14RowsHtml(rows){return rows.map(r=>'<article class="clay d14-card"><header><b>'+esc(r.case_no||'ไม่ระบุเลขคดี')+'</b><span class="d14-status d14-'+esc(r.time_state.toLowerCase())+'">'+esc(r.time_text)+'</span></header><p>'+esc(r.officer)+' · '+esc(r.pay_type==='BUDGET'?'หมายฟรี':'หมายมีเงิน')+'</p><p class="small">เลขหมาย '+esc(r.notice_no||'—')+' · '+esc(r.notice_kind||'—')+'</p><p class="small">บ้านเลขที่ '+esc(r.house_no||'ไม่ระบุ')+(r.moo?' · ม.'+esc(r.moo):'')+' · ต.'+esc(r.tambon||'ไม่ระบุ')+' · อ.'+esc(r.amphoe||'ไม่ระบุ')+'</p><dl><div><dt>วันที่จ่ายหมาย</dt><dd>'+(r.issued_basis==='PERIOD'?'≈ '+esc(thDate(r.issued_to)):esc(thDate(r.issued_date)||'ไม่ระบุ'))+'</dd></div><div><dt>ครบ 14 วัน</dt><dd>'+(r.issued_basis==='PERIOD'&&r.deadline?'≈ ':'')+esc(thDate(r.deadline)||'รอตรวจวันที่')+'</dd></div></dl>'+'</article>').join('');}
   RENDER.delivery14=async m=>{
     /* 0.7.44 หมายในมือ: แสดงเฉพาะหมายที่ยังไม่มีวันส่งจริง (time_state OPEN = ทุกสถานะยกเว้น SENT)
        ลงผลส่งแล้ว → ออกจากหน้านี้ ไปดูใน รายการหมาย · อ่านอย่างเดียว ไม่เปลี่ยนสถานะเงิน */
