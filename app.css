@@ -753,3 +753,7 @@ th.onm,td.onm{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 .d14-pn{font-size:14px}.d14-pn b{font-size:20px}.d14-pt{display:flex;flex-wrap:wrap;gap:4px}.d14-pt .d14-status{font-size:12px;padding:2px 8px}
 .d14-all{justify-content:center;align-items:center}
 .d14-review{background:#ecefe9;color:#454b44}
+
+/* 0.7.50 หมายในมือรายคน: รายการยาว */
+.d14-list{margin-top:16px;padding:6px 18px}.d14-lrow{display:grid;grid-template-columns:minmax(120px,1.1fr) minmax(180px,2fr) minmax(160px,1.6fr) 120px 120px 130px;gap:12px;align-items:center;padding:12px 2px;border-bottom:1px solid #dfe9e2;font-size:14px;line-height:1.5}.d14-lrow:last-child{border-bottom:0}.d14-lhead{font-size:12.5px;font-weight:700;color:var(--muted);padding:10px 2px}.d14-lrow>span{min-width:0;overflow-wrap:anywhere}.d14-lcase{display:flex;gap:8px;align-items:center}.d14-ltype{font-weight:700}.d14-lrow small{color:var(--muted)}.d14-dot{flex:none;width:9px;height:9px;border-radius:50%;background:#3c9a5f}.d14-dot-yellow,.d14-dot-review{background:#d9a21b}.d14-dot-red{background:#d9534f}.d14-dot-overdue{background:#a02622}
+@media(max-width:860px){.d14-list{padding:4px 12px}.d14-lhead{display:none}.d14-lrow{grid-template-columns:1fr auto;gap:4px 10px;padding:12px 0}.d14-lrow>span:nth-child(2),.d14-lrow>span:nth-child(3){grid-column:1/-1}.d14-lrow>span[data-l]::before{content:attr(data-l) ' ';font-size:12px;color:var(--muted)}.d14-lrow>span:last-child{grid-column:2;grid-row:1;justify-self:end}}
