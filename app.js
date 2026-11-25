@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const C = window.NP_CONFIG || {};
-  const UI_VERSION = '0.7.47';
+  const UI_VERSION = '0.7.48';
   let navEpoch = 0;
   const requestKeys = new Map();
   const $ = (s, el) => (el || document).querySelector(s);
@@ -1356,20 +1356,53 @@
   /* เลือกหลายไฟล์ → ระบบรู้ชนิดเอง → ตรวจทุกไฟล์ → ป้าย 3 สีตามผลกระทบ → ยืนยันครั้งเดียว นำเข้าตามลำดับ 50 → 42 → 18 → 30
    * ใช้ API เดิมทุกตัว (import_preview/import_commit/ledger_import) ด้วยข้อมูลชุดเดียวกับนำเข้าทีละไฟล์ จึงได้ยอดเท่ากัน
    * ยอดที่ยืนยันรอบหรือจ่ายแล้วไม่เปลี่ยนทุกกรณี (ระบบล็อกฝั่งเซิร์ฟเวอร์) */
-  const BATCH_ORDER = ['ISSUE', 'RESULT', 'FREE18', 'PAY'];
-  const BATCH_KIND_TH = { ISSUE: '50 · จ่ายหมาย', RESULT: '42 · ผลหมาย', FREE18: '18 · ราคาหมายฟรี', PAY: '30 · บัญชีจ่ายเงิน' };
+  const BATCH_ORDER = ['ISSUE', 'RESULT', 'INHAND', 'FREE18', 'PAY'];
+  const BATCH_KIND_TH = { ISSUE: '50 · จ่ายหมาย', RESULT: '42 · ผลหมาย', INHAND: '36 · หมายในมือ (วันที่จ่าย)', FREE18: '18 · ราคาหมายฟรี', PAY: '30 · บัญชีจ่ายเงิน' };
   const BT = { files: [], epoch: 0 };
   /** ชนิดไฟล์จากหัวตาราง (15 แถวแรกของแผ่นแรก) */
   function detectImportKind(aoa) {
     for (let r = 0; r < Math.min(15, aoa.length); r++) {
       const H = (aoa[r] || []).map(normH), has = (h) => H.indexOf(normH(h)) >= 0;
       if (!has('เลขดำที่')) continue;
+      if (has('วันที่จ่ายหมาย') && has('หมายถึงใคร') && !has('ผู้ส่งหมาย')) return 'INHAND';   // 0.7.48 แบบ 36 บัญชีหมายที่รับผิดชอบ
       if (has('วันที่จ่าย') && has('ส่งหมายถึงใคร')) return 'PAY';
       if (has('เจ้าของหมาย') && has('หมายถึงใคร')) return 'FREE18';
       if (has('ส่งหมายให้ใคร') && has('วันที่ส่งหมาย')) return 'RESULT';
       if (has('หมายถึงใคร') && has('ผู้ส่งหมาย')) return 'ISSUE';
     }
     return '';
+  }
+  /** 0.7.48 แบบ 36: ช่วงรายคน "บัญชีหมายที่รับผิดชอบ โดย… ยังไม่ได้รายงานรวม N เรื่อง" · หัวตารางซ้ำทุกแผ่น
+   * ส่งเฉพาะ เลขคดี · รหัสผู้รับ R1 (คำนวณในเครื่อง) · ชื่อหมาย · วันที่จ่าย · ผู้ส่ง — ไม่ส่งชื่อคู่ความ/ผู้วางเงิน/ที่อยู่ */
+  function parseInhand36(aoa, wb) {
+    const F = window.NoticeImportFormat, d1904 = !!(wb && wb.Workbook && wb.Workbook.WBProps && wb.Workbook.WBProps.date1904);
+    let col = null, officer = '', expect = 0, got = 0, from = '', to = '';
+    const rows = [], sections = [], bad = [];
+    const close = () => { if (officer) sections.push({ officer: officer, expect: expect, got: got }); };
+    aoa.forEach((r, i) => {
+      const first = String(r[0] == null ? '' : r[0]).trim();
+      const line = (r || []).map((v) => String(v == null ? '' : v)).join(' ');
+      const sec = first.match(/^บัญชีหมายที่รับผิดชอบ\s*โดย\s*(.+?)\s*ยังไม่ได้รายงาน(?:รวม)?\s*([\d,]+)\s*เรื่อง/);
+      if (sec) { close(); officer = sec[1].trim(); expect = +sec[2].replace(/,/g, ''); got = 0; return; }
+      const per = line.match(/ตั้งแต่วันที่\s*(.+?)\s*ถึงวันที่\s*(.+?)\s*$/);
+      if (per && !from) { from = thIso(per[1].trim(), wb) || ''; to = thIso(per[2].trim(), wb) || ''; return; }
+      const H = (r || []).map(normH);
+      if (H.indexOf(normH('เลขดำที่')) >= 0 && H.indexOf(normH('หมายถึงใคร')) >= 0) {
+        const at = (h) => H.indexOf(normH(h));
+        col = { cs: at('เลขดำที่'), date: at('วันที่จ่ายหมาย'), kind: at('หมายอะไร'), who: at('หมายถึงใคร') };
+        return;
+      }
+      if (!col || !officer) return;
+      const cs = String(r[col.cs] == null ? '' : r[col.cs]).trim();
+      if (!cs || !/\d/.test(String(r[0]))) return;
+      got++;
+      const dt = F.date(r[col.date], d1904);
+      if (!dt) bad.push(i + 1);
+      rows.push({ case_no: cs, recipient: F.recipient(cs, r[col.who]), notice_kind: col.kind >= 0 ? String(r[col.kind] || '').trim() : '', issued_date: dt || '', officer: officer });
+    });
+    close();
+    return { rows: rows, sections: sections, bad: bad, period_from: from, period_to: to,
+             countBad: sections.filter((s) => s.expect !== s.got) };
   }
   const fyStartIso = (iso) => { const m = String(iso || '').match(/^(\d{4})-(\d{2})/); if (!m) return ''; const y = +m[2] >= 10 ? +m[1] : +m[1] - 1; return y + '-10-01'; };
   const todayIso = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
@@ -1381,6 +1414,7 @@
       if (real.HELD) return 'red';
       return (c.NEW || real.CHANGED || c.AMBIGUOUS || c.ERROR) ? 'amber' : 'green';
     }
+    if (x.kind === 'INHAND') return (p.counts && p.counts.FILL) ? 'amber' : 'green';
     if (x.kind === 'PAY') return (p.dates || []).some((d) => !d.locked && (d.new_rows || d.changed_rows)) ? 'amber' : 'green';
     return p.changed ? 'amber' : 'green';
   }
@@ -1402,9 +1436,9 @@
     return tags;
   }
   const batchPanelHtml = () => '<div class="clay panel" id="bt"><h3>นำเข้าหลายไฟล์พร้อมกัน <span class="pill g" style="font-size:12px">ใหม่</span></h3>' +
-    '<p class="small muted" style="margin:-4px 2px 10px">เลือกไฟล์ 50 · 42 · 18 · 30 ได้พร้อมกัน ไม่ต้องเลือกชนิดก่อน · ช่วงวันที่ย้อนหลังได้ ระบบตรวจและแจ้งผลกระทบก่อนบันทึก · ยอดที่ยืนยันรอบ/จ่ายแล้วไม่เปลี่ยน</p>' +
+    '<p class="small muted" style="margin:-4px 2px 10px">เลือกไฟล์ 50 · 42 · 36 · 18 · 30 ได้พร้อมกัน ไม่ต้องเลือกชนิดก่อน · ช่วงวันที่ย้อนหลังได้ ระบบตรวจและแจ้งผลกระทบก่อนบันทึก · ยอดที่ยืนยันรอบ/จ่ายแล้วไม่เปลี่ยน</p>' +
     '<label class="drop sunk" id="btDrop"><input type="file" id="btIn" accept=".xlsx,.xls,.csv" class="sr" multiple>' +
-    '<b>แตะเพื่อเลือกหลายไฟล์ หรือลากมาวางพร้อมกัน</b><span class="small muted">ระบบนำเข้าตามลำดับ 50 → 42 → 18 → 30 ให้เอง</span></label><div id="btList"></div></div>';
+    '<b>แตะเพื่อเลือกหลายไฟล์ หรือลากมาวางพร้อมกัน</b><span class="small muted">ระบบนำเข้าตามลำดับ 50 → 42 → 36 → 18 → 30 ให้เอง</span></label><div id="btList"></div></div>';
   function bindBatch() {
     const drop = $('#btDrop'); if (!drop) return;
     $('#btIn').addEventListener('change', (e) => { if (e.target.files.length) batchRead(Array.from(e.target.files)); e.target.value = ''; });
@@ -1428,8 +1462,19 @@
         x.sheet = x.wb.SheetNames[0];
         const aoa = XLSX.utils.sheet_to_json(x.wb.Sheets[x.sheet], { header: 1, raw: true, defval: '' });
         x.kind = detectImportKind(aoa);
-        if (!x.kind) throw new Error('ไม่รู้จักชนิดไฟล์ — รองรับ 50 · 42 · 18 · 30');
-        if (x.kind === 'PAY' || x.kind === 'FREE18') {
+        if (!x.kind) throw new Error('ไม่รู้จักชนิดไฟล์ — รองรับ 50 · 42 · 36 · 18 · 30');
+        if (x.kind === 'INHAND') {
+          const p = parseInhand36(aoa, x.wb);
+          if (!p.rows.length) throw new Error('ไม่พบแถวหมายในแบบ 36');
+          if (p.bad.length) throw new Error('อ่านวันที่จ่ายหมายไม่ได้ ' + p.bad.length + ' แถว (เช่น แถว ' + p.bad.slice(0, 3).join(', ') + ')');
+          const people = {}; p.sections.forEach((s) => { const o = people[s.officer] = people[s.officer] || { expect: s.expect, got: 0 }; o.got += s.got; });
+          const off = Object.keys(people).filter((k) => people[k].expect !== people[k].got);
+          if (off.length) throw new Error('จำนวนเรื่องไม่ตรงหัวรายคน: ' + off.map((k) => k + ' ' + people[k].got + '/' + people[k].expect).join(', '));
+          x.body = { rows: p.rows, file: x.file, sheet: x.sheet, period_from: p.period_from, period_to: p.period_to };
+          x.preview = await api('inhand_dates', x.body);
+          x.inhand = { people: Object.keys(people).length };
+          x.rowsN = p.rows.length; x.period = { from: p.period_from, to: p.period_to };
+        } else if (x.kind === 'PAY' || x.kind === 'FREE18') {
           const p = x.ledger = parseLedger(x.kind, aoa, x.wb);
           const totOk = p.footer === null || Math.abs(p.footer - p.sum) < 0.005, nOk = p.footerN === null || p.footerN === p.rows.length;
           if (!(totOk && nOk && !p.badDate && !p.grpBad.length && !p.wrongKind && p.rows.length > 0))
@@ -1447,7 +1492,8 @@
           x.preview = r; x.body = Object.assign({}, body, { preview_token: r.preview_token });
           x.rowsN = r.rows_total; x.money = r.totals ? r.totals.PAID.amount : null;
         }
-        x.period = batchPeriod(x); x.impact = batchImpact(x); x.status = 'ready';
+        if (x.kind !== 'INHAND') x.period = batchPeriod(x);
+        x.impact = batchImpact(x); x.status = 'ready';
       } catch (e) { x.status = 'error'; x.err = e.message; x.include = false; }
       x.wb = null; if (x.state) { x.state.wb = null; }
       if (ep !== BT.epoch) return;
@@ -1463,6 +1509,13 @@
       const real = p.real || { CHANGED: c.CHANGED, HELD: c.HELD };
       return 'ใหม่ ' + num(c.NEW) + ' · เดิมตรงกัน ' + num((c.SAME || 0) + (c.CHANGED - real.CHANGED) + (c.HELD - real.HELD)) + ' · ปรับปรุง ' + num(real.CHANGED) + ' · ขัดกับรอบที่จ่ายแล้ว ' + num(real.HELD) + ' · รอตรวจ ' + num((c.AMBIGUOUS || 0) + (c.ERROR || 0)) + (c.OUTSIDE ? ' · ก่อนปีงบเริ่มระบบ ' + num(c.OUTSIDE) : '') +
         (p.totals ? '<br>หมายมีเงิน ' + num(p.totals.PAID.n) + ' รายการ ' + num(p.totals.PAID.amount) + ' บาท · หมายฟรี ' + num(p.totals.BUDGET.n) + ' รายการ' : '');
+    }
+    if (x.kind === 'INHAND') {
+      const c = p.counts || {};
+      return num(x.rowsN) + ' เรื่อง · ' + num(x.inhand ? x.inhand.people : 0) + ' คน · <b>เติมวันที่จ่ายหมาย ' + num(c.FILL) + '</b> · มีวันที่ตรงแล้ว ' + num(c.SAME) +
+        (c.DIFF ? ' · วันที่ต่างจากระบบ (คงค่าเดิม) ' + num(c.DIFF) : '') + (c.LOCKED ? ' · เข้ารอบแล้ว ไม่แก้ ' + num(c.LOCKED) : '') +
+        (c.NOT_FOUND ? ' · ยังไม่พบในระบบ ' + num(c.NOT_FOUND) : '') + ((c.AMBIGUOUS || 0) + (c.ERROR || 0) ? ' · รอตรวจ ' + num((c.AMBIGUOUS || 0) + (c.ERROR || 0)) : '') +
+        '<br><span class="tiny muted">ใช้เติมวันที่จ่ายหมายเท่านั้น · ไม่สร้างหมายใหม่ · ไม่แก้ยอดเงิน' + (c.NOT_FOUND ? ' · หมายที่ยังไม่พบ ให้นำเข้าไฟล์ 50 ก่อนแล้วนำเข้า 36 ซ้ำ' : '') + '</span>';
     }
     if (x.kind === 'PAY') {
       const ds = p.dates || [], lk = ds.filter((d) => d.locked), op = ds.filter((d) => !d.locked);
@@ -1514,6 +1567,12 @@
     for (const x of todo) {
       if (stop) { x.result = { ok: false, html: 'ยังไม่นำเข้า (หยุดเพราะไฟล์ก่อนหน้าไม่สำเร็จ)' }; continue; }
       try {
+        if (x.kind === 'INHAND') {
+          const r = await api('inhand_dates', Object.assign({}, x.body, { commit: true }));
+          x.preview = r;
+          x.result = { ok: true, html: '<b>นำเข้าแล้ว</b> ชุด ' + esc(r.batch_id) + ' · เติมวันที่จ่ายหมาย ' + num(r.filled) + ' ฉบับ' + (r.counts.NOT_FOUND ? ' · ยังไม่พบในระบบ ' + num(r.counts.NOT_FOUND) : '') + (r.counts.DIFF ? ' · วันที่ต่าง คงค่าเดิม ' + num(r.counts.DIFF) : '') };
+          continue;
+        }
         const isLedger = x.kind === 'PAY' || x.kind === 'FREE18';
         // Reuse the approved file payload, but renew the preview after earlier commits.
         const probe = Object.assign({}, x.body);
@@ -2830,7 +2889,7 @@
   /* 0.7.0: workflow navigation and tracing, using the original clay cards and colors. */
   const differenceHtml = (v) => v === null ? '<span class="tiny muted">ยังไม่มียอดอ้างอิง</span>' : v > 0 ? '<span class="flag-up">เกิน '+baht2(v)+' ฿</span>' : v < 0 ? '<span class="flag-r">ขาด '+baht2(-v)+' ฿</span>' : '<span class="flag-ok">ยอดตรงกัน</span>';
   const statusHtml = (r) => '<span class="pill '+(r.status==='PAID'?'g':r.status==='REVIEW'?'r':r.status==='READY'?'est':'a')+'">'+esc(r.status_th)+'</span>';
-  const latestHtml = (last) => '<div class="note small">'+[['ISSUE','50 ทะเบียนหมาย'],['RESULT','42 ผลส่ง'],['FREE18','18 ราคาหมายฟรี'],['PAY','30 บัญชีจ่ายเงิน']].map(([k,lab])=>{const x=last[k];return '<span class="nb">'+lab+': '+esc(x?thDate(x.at,true):'ยังไม่พบการนำเข้า')+'</span>';}).join(' · ')+'</div>';
+  const latestHtml = (last) => '<div class="note small">'+[['ISSUE','50 ทะเบียนหมาย'],['RESULT','42 ผลส่ง'],['INHAND','36 หมายในมือ'],['FREE18','18 ราคาหมายฟรี'],['PAY','30 บัญชีจ่ายเงิน']].map(([k,lab])=>{const x=last[k];return '<span class="nb">'+lab+': '+esc(x?thDate(x.at,true):'ยังไม่พบการนำเข้า')+'</span>';}).join(' · ')+'</div>';
   function freeCheckBadge(r) {
     const c=r.free_check;if(!c||!c.state)return '';
     return '<br><span class="pill '+(c.state==='PENDING'?'a':'g')+'">'+(c.state==='PENDING'?'⚑ ':c.state==='CHECKED'?'✓ ':'')+esc(c.label)+'</span>';
@@ -2905,7 +2964,7 @@
   };
   // Register menu only. Other tracking/report/finance screens retain their renderers.
   const delivery14Labels={OPEN:'ยังไม่มีวันส่งจริง',GREEN:'เหลือมากกว่า 5 วัน',YELLOW:'เหลือ 4–5 วัน',RED:'เหลือ 0–3 วัน',OVERDUE:'เกินกำหนด',SENT:'ส่งแล้ว',REVIEW:'รอตรวจวันที่'};
-  function delivery14RowsHtml(rows){return rows.map(r=>'<article class="clay d14-card"><header><b>'+esc(r.case_no||'ไม่ระบุเลขคดี')+'</b><span class="d14-status d14-'+esc(r.time_state.toLowerCase())+'">'+esc(r.time_text)+'</span></header><p>'+esc(r.officer)+' · '+esc(r.pay_type==='BUDGET'?'หมายฟรี':'หมายมีเงิน')+'</p><p class="small">เลขหมาย '+esc(r.notice_no||'—')+' · '+esc(r.notice_kind||'—')+'</p><p class="small">บ้านเลขที่ '+esc(r.house_no||'ไม่ระบุ')+(r.moo?' · ม.'+esc(r.moo):'')+' · ต.'+esc(r.tambon||'ไม่ระบุ')+' · อ.'+esc(r.amphoe||'ไม่ระบุ')+'</p><dl><div><dt>วันที่จ่ายหมาย</dt><dd>'+esc(thDate(r.issued_date)||'ไม่ระบุ')+'</dd></div><div><dt>ครบเป้าหมาย 14 วัน</dt><dd>'+esc(thDate(r.deadline)||'รอตรวจวันที่')+'</dd></div><div><dt>วันที่ส่งจริง</dt><dd>'+esc(thDate(r.delivered_date)||'ยังไม่มีข้อมูล')+'</dd></div><div><dt>'+(r.time_state==='SENT'?'ระยะเวลาส่งจริง':'ผ่านมาจากวันจ่ายหมาย')+'</dt><dd>'+(r.elapsed===null?'รอตรวจวันที่':num(r.elapsed)+' วัน')+'</dd></div></dl>'+(r.time_state==='SENT'&&r.late_by?'<p class="tiny muted">วันส่งจริงหลังเป้าหมาย '+num(r.late_by)+' วัน · หยุดนับแล้ว</p>':'')+'</article>').join('');}
+  function delivery14RowsHtml(rows){return rows.map(r=>'<article class="clay d14-card"><header><b>'+esc(r.case_no||'ไม่ระบุเลขคดี')+'</b><span class="d14-status d14-'+esc(r.time_state.toLowerCase())+'">'+esc(r.time_text)+'</span></header><p>'+esc(r.officer)+' · '+esc(r.pay_type==='BUDGET'?'หมายฟรี':'หมายมีเงิน')+'</p><p class="small">เลขหมาย '+esc(r.notice_no||'—')+' · '+esc(r.notice_kind||'—')+'</p><p class="small">บ้านเลขที่ '+esc(r.house_no||'ไม่ระบุ')+(r.moo?' · ม.'+esc(r.moo):'')+' · ต.'+esc(r.tambon||'ไม่ระบุ')+' · อ.'+esc(r.amphoe||'ไม่ระบุ')+'</p><dl><div><dt>วันที่จ่ายหมาย</dt><dd>'+(r.issued_basis==='PERIOD'?esc(r.issued_from===r.issued_to?thDate(r.issued_to):thDate(r.issued_from)+' – '+thDate(r.issued_to))+'<small class="d14-est">ตามช่วงไฟล์ 50 · ไม่มีวันที่รายแถว</small>':esc(thDate(r.issued_date)||'ไม่ระบุ'))+'</dd></div><div><dt>ครบเป้าหมาย 14 วัน</dt><dd>'+(r.issued_basis==='PERIOD'&&r.deadline?'≈ ':'')+esc(thDate(r.deadline)||'รอตรวจวันที่')+'</dd></div><div><dt>วันที่ส่งจริง</dt><dd>'+esc(thDate(r.delivered_date)||'ยังไม่มีข้อมูล')+'</dd></div><div><dt>'+(r.time_state==='SENT'?'ระยะเวลาส่งจริง':'ผ่านมาจากวันจ่ายหมาย')+'</dt><dd>'+(r.elapsed===null?'รอตรวจวันที่':(r.elapsed_max!=null&&r.elapsed_max!==r.elapsed?num(r.elapsed)+'–'+num(r.elapsed_max):num(r.elapsed))+' วัน')+'</dd></div></dl>'+(r.time_state==='SENT'&&r.late_by?'<p class="tiny muted">วันส่งจริงหลังเป้าหมาย '+num(r.late_by)+' วัน · หยุดนับแล้ว</p>':'')+'</article>').join('');}
   RENDER.delivery14=async m=>{
     /* 0.7.44 หมายในมือ: แสดงเฉพาะหมายที่ยังไม่มีวันส่งจริง (time_state OPEN = ทุกสถานะยกเว้น SENT)
        ลงผลส่งแล้ว → ออกจากหน้านี้ ไปดูใน รายการหมาย · อ่านอย่างเดียว ไม่เปลี่ยนสถานะเงิน */

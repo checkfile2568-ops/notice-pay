@@ -1,15 +1,15 @@
 {
-  "version": "0.7.47",
+  "version": "0.7.48",
   "source_commit": "(ยังไม่บันทึกใน repo ส่วนตัว · หน้าเว็บอย่างเดียว)",
   "previous_public_commit": "ef07e3b9d08116b6c99cfc9ecde4201bdb0bf1e8",
   "backend_source": "private authoritative repository; provide --source-root",
   "web": {
-    "app.js": "040841322d985a2b6fda44c6a24746628ab06d10fcfe271071aae56fbce85eb5",
-    "app.css": "4432c7b75889c468ee93f20dc09e520ab4994288b61cb77f025218baefefe621",
-    "index.html": "bc21e180ef9a29ddc4efd3a80757959546c349be6d4a5aba890dc65c8ca8aa08",
-    "config.js": "2c633732fd6a838614d3cf98f7fd497ef003f37267b53e14acea4b42545d5802",
+    "app.js": "87e872b914060887beebe19a257dbfd9218a7ab4650ec962d4aea10bc7d18297",
+    "app.css": "d5b421356c20a7d61439ba1621dc66db9b64bbd4f5ce4c97fb13f7cf0b5eabf4",
+    "index.html": "56cfecf1696a2e32df9981f3fba630ce3856011d0e9d9da1f7f42fd409bfc52f",
+    "config.js": "df3d7bd95aeb4898fd5fa7ba575c01bdc44f00370485439d6acd3b3cf0de569f",
     "import-formats.js": "edc2fa8ec26b6b713bf654b513b2594cebed944d530133bc83bcb286259e87d1",
-    "sw.js": "46947bf4c76b7b4d27307d67c48f7d9e8c1880dc9df9db414ab2e561de2f0ef2",
+    "sw.js": "fff3a26f0ad18aa94e10e58322ac277f42648985901d5bc559c5646b9b284151",
     "report-export.js": "61b2798aecfaa4ca79e35e0b26534b3d06b2a85316237770052463b302165c25",
     "court-seal.webp": "59d21721f76a54602935f30a56e7dcaca367e3e4ab39e8c6c6160a9bc2e58857",
     "tools/party-cleaner/notice-pay-party-cleaner-offline.html": "2e7a99304f08f75efc767ef3d8bdc5b0941c69d98e95583ce7e92de5331a6d56"
